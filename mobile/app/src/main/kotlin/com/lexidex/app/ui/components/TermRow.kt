@@ -14,12 +14,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.lexidex.app.domain.TermOrigin
+import com.lexidex.app.ui.theme.LexidexSpacing
 
 /** DESIGN.md's "Term Index Row": at least 72dp tall, one truncated line each, ruled underneath. */
 @Composable
 fun TermRow(
     title: String,
     summary: String,
+    origin: TermOrigin,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -32,7 +35,7 @@ fun TermRow(
                 .padding(start = 18.dp, top = 11.dp, end = 14.dp, bottom = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
@@ -49,6 +52,11 @@ fun TermRow(
                     )
                 }
             }
+            TermChip(
+                text = origin.label(),
+                role = origin.chipRole(),
+                modifier = Modifier.padding(start = LexidexSpacing.tight),
+            )
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }

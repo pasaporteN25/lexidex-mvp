@@ -29,4 +29,7 @@ interface HistoryDao {
         """,
     )
     suspend fun recentlyViewed(limit: Int): List<RecentHistoryRow>
+
+    @Query("DELETE FROM history_entries WHERE term_slug = :slug AND term_origin = :origin")
+    suspend fun deleteByTerm(slug: String, origin: TermOrigin)
 }

@@ -65,6 +65,13 @@ class SearchViewModel(private val repository: CorpusRepository) : ViewModel() {
         }
     }
 
+    fun refresh() {
+        val query = _uiState.value.query
+        if (query.isNotBlank()) {
+            onQueryChange(query)
+        }
+    }
+
     fun onRandomClick() {
         viewModelScope.launch {
             repository.getRandomTerm().fold(

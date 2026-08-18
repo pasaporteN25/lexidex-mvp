@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 data class TermDetailUiState(
     val isLoading: Boolean = true,
     val term: TermDetail? = null,
+    val isFavorite: Boolean = false,
     val errorMessage: String? = null,
 )
 
@@ -42,11 +43,26 @@ class TermDetailViewModel(
                             errorMessage = if (term == null) "No se encontro ese termino." else null,
                         )
                     }
+                    if (term != null) {
+                        repository.recordHistoryView(term.slug, term.origin)
+                        repository.isFavorite(term.slug, term.origin).onSuccess { favorite ->
+                            _uiState.update { it.copy(isFavorite = favorite) }
+                        }
+                    }
                 },
                 onFailure = { error ->
                     _uiState.update { it.copy(isLoading = false, errorMessage = error.toUserMessage()) }
                 },
             )
+        }
+    }
+
+    fun onToggleFavorite() {
+        val term = _uiState.value.term ?: return
+        viewModelScope.launch {
+            repository.toggleFavorite(term.slug, term.origin).onSuccess { favorite ->
+                _uiState.update { it.copy(isFavorite = favorite) }
+            }
         }
     }
 

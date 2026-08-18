@@ -16,7 +16,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -39,16 +42,26 @@ import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
 import com.lexidex.app.ui.components.ChipRole
 import com.lexidex.app.ui.components.TermChip
+import com.lexidex.app.ui.components.chipRole
+import com.lexidex.app.ui.components.label
 import com.lexidex.app.ui.theme.LexidexSpacing
+import com.lexidex.app.ui.theme.extendedColors
 
 @Composable
 fun TermDetailScreen(
     viewModel: TermDetailViewModel,
     onBack: () -> Unit,
     onRelationClick: (String) -> Unit,
+    onEditClick: (String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    TermDetailContent(uiState = uiState, onBack = onBack, onRelationClick = onRelationClick)
+    TermDetailContent(
+        uiState = uiState,
+        onBack = onBack,
+        onRelationClick = onRelationClick,
+        onEditClick = onEditClick,
+        onToggleFavorite = viewModel::onToggleFavorite,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,6 +70,8 @@ private fun TermDetailContent(
     uiState: TermDetailUiState,
     onBack: () -> Unit,
     onRelationClick: (String) -> Unit,
+    onEditClick: (String) -> Unit,
+    onToggleFavorite: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -65,6 +80,23 @@ private fun TermDetailContent(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                },
+                actions = {
+                    val term = uiState.term
+                    if (term != null) {
+                        IconButton(onClick = onToggleFavorite) {
+                            Icon(
+                                if (uiState.isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                                contentDescription = if (uiState.isFavorite) "Quitar de favoritos" else "Marcar como favorito",
+                                tint = if (uiState.isFavorite) MaterialTheme.extendedColors.amber else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        if (term.editable) {
+                            IconButton(onClick = { onEditClick(term.slug) }) {
+                                Icon(Icons.Default.Edit, contentDescription = "Editar termino")
+                            }
+                        }
                     }
                 },
             )
@@ -140,6 +172,7 @@ private fun RecordHeader(term: TermDetail) {
                 horizontalArrangement = Arrangement.spacedBy(LexidexSpacing.micro),
                 modifier = Modifier.padding(top = LexidexSpacing.compact),
             ) {
+                TermChip(text = term.origin.label(), role = term.origin.chipRole())
                 TermChip(text = term.language, role = ChipRole.Neutral)
                 TermChip(text = term.status, role = statusChipRole(term.status))
             }

@@ -7,3 +7,13 @@ object SearchRoute
 
 @Serializable
 data class TermDetailRoute(val slug: String)
+
+/** Null [slug] means "create a new personal term"; a real slug means "edit this one". */
+@Serializable
+data class PersonalTermEditorRoute(val slug: String? = null)
+
+@Serializable
+object FavoritesRoute
+
+@Serializable
+object HistoryRoute

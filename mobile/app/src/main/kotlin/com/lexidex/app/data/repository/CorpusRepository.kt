@@ -164,6 +164,8 @@ class CorpusRepository(
         if (userTermDao().deleteBySlug(slug) == 0) {
             throw CorpusError.PersonalTermNotFound(slug)
         }
+        favoriteDao().remove(slug, TermOrigin.PERSONAL)
+        historyDao().deleteByTerm(slug, TermOrigin.PERSONAL)
     }
 
     private suspend fun requireNoDuplicate(normalizedTitle: String, language: String, excludeUid: String?) {

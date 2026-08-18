@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -38,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.lexidex.app.R
 import com.lexidex.app.domain.TermSummary
+import com.lexidex.app.ui.OnResume
 import com.lexidex.app.ui.components.TermRow
 import com.lexidex.app.ui.theme.LexidexSpacing
 import kotlinx.coroutines.flow.collectLatest
@@ -46,8 +50,12 @@ import kotlinx.coroutines.flow.collectLatest
 fun SearchScreen(
     viewModel: SearchViewModel,
     onTermClick: (String) -> Unit,
+    onCreateClick: () -> Unit,
+    onFavoritesClick: () -> Unit,
+    onHistoryClick: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    OnResume(viewModel::refresh)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(viewModel, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -63,6 +71,9 @@ fun SearchScreen(
         onQueryChange = viewModel::onQueryChange,
         onRandomClick = viewModel::onRandomClick,
         onTermClick = onTermClick,
+        onCreateClick = onCreateClick,
+        onFavoritesClick = onFavoritesClick,
+        onHistoryClick = onHistoryClick,
     )
 }
 
@@ -73,6 +84,9 @@ private fun SearchContent(
     onQueryChange: (String) -> Unit,
     onRandomClick: () -> Unit,
     onTermClick: (String) -> Unit,
+    onCreateClick: () -> Unit,
+    onFavoritesClick: () -> Unit,
+    onHistoryClick: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -81,8 +95,17 @@ private fun SearchContent(
                     Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
                 },
                 actions = {
+                    IconButton(onClick = onHistoryClick) {
+                        Icon(Icons.Default.History, contentDescription = "Historial")
+                    }
+                    IconButton(onClick = onFavoritesClick) {
+                        Icon(Icons.Default.Star, contentDescription = "Favoritos")
+                    }
                     IconButton(onClick = onRandomClick) {
                         Icon(Icons.Default.Casino, contentDescription = "Termino aleatorio")
+                    }
+                    IconButton(onClick = onCreateClick) {
+                        Icon(Icons.Default.Add, contentDescription = "Crear termino personal")
                     }
                 },
             )
@@ -144,7 +167,12 @@ private fun SearchResults(uiState: SearchUiState, onTermClick: (String) -> Unit)
         uiState.results.isEmpty() -> MessageBox("Sin resultados para \"${uiState.query}\"")
         else -> LazyColumn {
             items(uiState.results, key = { it.slug }) { term ->
-                TermRow(title = term.title, summary = term.summary, onClick = { onTermClick(term.slug) })
+                TermRow(
+                    title = term.title,
+                    summary = term.summary,
+                    origin = term.origin,
+                    onClick = { onTermClick(term.slug) },
+                )
             }
         }
     }
