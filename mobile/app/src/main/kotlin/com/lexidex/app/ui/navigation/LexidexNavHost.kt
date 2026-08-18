@@ -17,7 +17,7 @@ fun LexidexNavHost(repository: CorpusRepository) {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = SearchRoute) {
         composable<SearchRoute> {
-            val viewModel = viewModel(factory = SearchViewModel.factory(repository))
+            val viewModel = viewModel<SearchViewModel>(factory = SearchViewModel.factory(repository))
             SearchScreen(
                 viewModel = viewModel,
                 onTermClick = { slug -> navController.navigate(TermDetailRoute(slug)) },
@@ -25,7 +25,9 @@ fun LexidexNavHost(repository: CorpusRepository) {
         }
         composable<TermDetailRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<TermDetailRoute>()
-            val viewModel = viewModel(factory = TermDetailViewModel.factory(repository, route.slug))
+            val viewModel = viewModel<TermDetailViewModel>(
+                factory = TermDetailViewModel.factory(repository, route.slug),
+            )
             TermDetailScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },

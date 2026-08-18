@@ -22,7 +22,9 @@ import com.lexidex.app.ui.theme.LexidexTheme
 fun LexidexApp(repository: CorpusRepository) {
     LexidexTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            val readinessViewModel = viewModel(factory = AppReadinessViewModel.factory(repository))
+            val readinessViewModel = viewModel<AppReadinessViewModel>(
+                factory = AppReadinessViewModel.factory(repository),
+            )
             val readiness by readinessViewModel.state.collectAsStateWithLifecycle()
             when (val state = readiness) {
                 AppReadiness.Loading -> LoadingGate()

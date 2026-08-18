@@ -1,6 +1,7 @@
 package com.lexidex.app.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -15,6 +16,7 @@ import com.lexidex.app.R
  * platform's neutral interface stack (Roboto), never Aptos/Segoe UI - those
  * are Windows/Office-licensed fonts unavailable to bundle on Android.
  */
+@OptIn(ExperimentalTextApi::class)
 private val ArchivoNarrow = FontFamily(
     Font(
         R.font.archivo_narrow,

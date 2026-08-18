@@ -38,14 +38,14 @@ import androidx.room3.PrimaryKey
     ],
 )
 data class TermRelationEntity(
-    @PrimaryKey val id: Long,
+    @PrimaryKey(autoGenerate = true) val id: Long? = null,
     val uid: String,
     @ColumnInfo(name = "source_term_id") val sourceTermId: Long,
     @ColumnInfo(name = "target_term_id") val targetTermId: Long,
     @ColumnInfo(name = "relation_type") val relationType: String,
     val origin: String,
     val confidence: Double,
-    val bidirectional: Boolean,
+    @ColumnInfo(defaultValue = "0") val bidirectional: Boolean,
     @ColumnInfo(name = "evidence_occurrence_id") val evidenceOccurrenceId: Long?,
     @ColumnInfo(name = "created_at") val createdAt: String,
 )

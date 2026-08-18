@@ -9,8 +9,6 @@ import androidx.room3.PrimaryKey
 /**
  * Mirrors `source_occurrences` in docs/corpus-schema.sql: every appearance of a term in the
  * original import, kept even when identities are deduplicated so evidence is never lost.
- * `imports` itself isn't modeled as a Room entity - nothing in this pass reads it - so
- * `import_uid` has no `@ForeignKey`, only the real schema's index.
  */
 @Entity(
     tableName = "source_occurrences",
@@ -27,6 +25,12 @@ import androidx.room3.PrimaryKey
             childColumns = ["source_id"],
             onDelete = ForeignKey.SET_NULL,
         ),
+        ForeignKey(
+            entity = ImportEntity::class,
+            parentColumns = ["uid"],
+            childColumns = ["import_uid"],
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
     indices = [
         Index(value = ["term_id"], name = "idx_occurrences_term"),
@@ -34,7 +38,7 @@ import androidx.room3.PrimaryKey
     ],
 )
 data class SourceOccurrenceEntity(
-    @PrimaryKey val id: Long,
+    @PrimaryKey(autoGenerate = true) val id: Long? = null,
     @ColumnInfo(name = "import_uid") val importUid: String,
     @ColumnInfo(name = "term_id") val termId: Long,
     @ColumnInfo(name = "source_id") val sourceId: Long?,
@@ -43,5 +47,5 @@ data class SourceOccurrenceEntity(
     @ColumnInfo(name = "group_number") val groupNumber: Long,
     @ColumnInfo(name = "raw_line") val rawLine: String,
     @ColumnInfo(name = "raw_value") val rawValue: String,
-    val note: String,
+    @ColumnInfo(defaultValue = "''") val note: String,
 )

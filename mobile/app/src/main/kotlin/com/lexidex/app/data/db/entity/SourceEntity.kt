@@ -23,15 +23,15 @@ import androidx.room3.PrimaryKey
     ],
 )
 data class SourceEntity(
-    @PrimaryKey val id: Long,
+    @PrimaryKey(autoGenerate = true) val id: Long? = null,
     val uid: String,
     @ColumnInfo(name = "term_id") val termId: Long,
     @ColumnInfo(name = "source_kind") val sourceKind: String,
     val url: String,
     @ColumnInfo(name = "canonical_url") val canonicalUrl: String,
     val host: String,
-    val language: String,
-    @ColumnInfo(name = "license_name") val licenseName: String,
+    @ColumnInfo(defaultValue = "'und'") val language: String,
+    @ColumnInfo(name = "license_name", defaultValue = "''") val licenseName: String,
     @ColumnInfo(name = "retrieved_at") val retrievedAt: String?,
-    @ColumnInfo(name = "content_sha256") val contentSha256: String,
+    @ColumnInfo(name = "content_sha256", defaultValue = "''") val contentSha256: String,
 )

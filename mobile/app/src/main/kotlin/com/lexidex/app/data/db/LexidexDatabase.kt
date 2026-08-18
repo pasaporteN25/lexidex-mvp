@@ -5,6 +5,7 @@ import androidx.room3.RoomDatabase
 import com.lexidex.app.data.db.dao.TermDao
 import com.lexidex.app.data.db.entity.AliasEntity
 import com.lexidex.app.data.db.entity.CategoryEntity
+import com.lexidex.app.data.db.entity.ImportEntity
 import com.lexidex.app.data.db.entity.SourceEntity
 import com.lexidex.app.data.db.entity.SourceOccurrenceEntity
 import com.lexidex.app.data.db.entity.TagEntity
@@ -23,6 +24,7 @@ import com.lexidex.app.data.db.entity.TermTagCrossRef
 @Database(
     entities = [
         TermEntity::class,
+        ImportEntity::class,
         SourceEntity::class,
         SourceOccurrenceEntity::class,
         AliasEntity::class,

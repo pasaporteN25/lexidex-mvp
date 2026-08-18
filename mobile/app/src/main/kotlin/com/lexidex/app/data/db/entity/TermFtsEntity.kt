@@ -14,7 +14,7 @@ import androidx.room3.FtsOptions
 @Fts5(
     contentEntity = TermEntity::class,
     tokenizer = FtsOptions.TOKENIZER_UNICODE61,
-    tokenizerArgs = ["remove_diacritics=2"],
+    tokenizerArgs = ["remove_diacritics", "2"],
 )
 @Entity(tableName = "terms_fts")
 data class TermFtsEntity(

@@ -61,12 +61,15 @@ class CorpusRepository(private val databaseProvider: CorpusDatabaseProvider) {
     private suspend fun termDao(): TermDao = databaseProvider.get().termDao()
 
     private suspend fun buildDetail(dao: TermDao, term: TermEntity): TermDetail {
-        val categories = dao.getCategoriesForTerm(term.id).map { it.name }
-        val tags = dao.getTagsForTerm(term.id).map { it.name }
-        val sources = dao.getSourcesForTerm(term.id).map { it.toDomain() }
-        val occurrenceCount = dao.countOccurrencesForTerm(term.id)
-        val notes = dao.getNotesForTerm(term.id)
-        val relations = dao.getRelatedTerms(term.id).map { it.toDomain() }
+        // id is nullable only because Room requires that type for an INTEGER PRIMARY KEY rowid
+        // alias to match the pre-packaged schema; every row actually read from the table has one.
+        val termId = requireNotNull(term.id)
+        val categories = dao.getCategoriesForTerm(termId).map { it.name }
+        val tags = dao.getTagsForTerm(termId).map { it.name }
+        val sources = dao.getSourcesForTerm(termId).map { it.toDomain() }
+        val occurrenceCount = dao.countOccurrencesForTerm(termId)
+        val notes = dao.getNotesForTerm(termId)
+        val relations = dao.getRelatedTerms(termId).map { it.toDomain() }
         return term.toDetail(categories, tags, sources, occurrenceCount, notes, relations)
     }
 
@@ -78,6 +81,7 @@ class CorpusRepository(private val databaseProvider: CorpusDatabaseProvider) {
         } catch (e: PackageIntegrityException) {
             Result.failure(CorpusError.PackageCorrupted(e))
         } catch (e: Exception) {
+            android.util.Log.e("CorpusRepository", "Unexpected corpus error", e)
             Result.failure(CorpusError.Unexpected(e))
         }
 }
