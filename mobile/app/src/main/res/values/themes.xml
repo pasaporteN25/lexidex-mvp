@@ -1,0 +1,7 @@
+<resources>
+    <!-- Pre-Compose window background only; MaterialTheme in Kotlin owns the real theming. -->
+    <style name="Theme.Lexidex" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

@@ -1,0 +1,19 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- A record card with a dog-eared corner, standing in for the "ficha" concept. -->
+    <path
+        android:fillColor="#EDF5F1"
+        android:pathData="M26,18 L68,18 L82,32 L82,90 L26,90 Z" />
+    <path
+        android:fillColor="#197562"
+        android:pathData="M34,44 L74,44 L74,48 L34,48 Z" />
+    <path
+        android:fillColor="#197562"
+        android:pathData="M34,58 L66,58 L66,62 L34,62 Z" />
+    <path
+        android:fillColor="#197562"
+        android:pathData="M34,72 L74,72 L74,76 L34,76 Z" />
+</vector>

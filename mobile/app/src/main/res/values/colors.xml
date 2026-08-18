@@ -1,0 +1,4 @@
+<resources>
+    <!-- DESIGN.md `teal` - launcher adaptive icon background only; Compose owns all in-app color. -->
+    <color name="ic_launcher_background">#197562</color>
+</resources>
