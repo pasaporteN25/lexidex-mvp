@@ -39,6 +39,10 @@ interface TermDao {
     @Query("SELECT COUNT(*) FROM terms")
     suspend fun countTerms(): Long
 
+    /** Mirrors find_existing_term's canonical-package half in backend/lexidex_api.py. */
+    @Query("SELECT slug FROM terms WHERE normalized_title = :normalizedTitle AND language = :language LIMIT 1")
+    suspend fun findByNormalizedTitle(normalizedTitle: String, language: String): String?
+
     /** Deterministic "term of the day": the term at a stable rank in slug order. */
     @Query("SELECT * FROM terms ORDER BY slug LIMIT 1 OFFSET :rank")
     suspend fun getTermAtSlugRank(rank: Long): TermEntity?

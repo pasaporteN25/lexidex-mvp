@@ -15,6 +15,9 @@ data class TermDetail(
     val occurrenceCount: Long,
     val notes: List<String>,
     val relations: List<TermRelation>,
+    val origin: TermOrigin,
+    /** Personal terms are editable; canonical terms never are (server-computed on web too). */
+    val editable: Boolean,
 )
 
 data class TermSource(

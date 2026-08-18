@@ -1,0 +1,34 @@
+package com.lexidex.app.data.userdb
+
+import androidx.room3.ColumnTypeConverters
+import androidx.room3.Database
+import androidx.room3.RoomDatabase
+import com.lexidex.app.data.userdb.dao.FavoriteDao
+import com.lexidex.app.data.userdb.dao.HistoryDao
+import com.lexidex.app.data.userdb.dao.UserTermDao
+import com.lexidex.app.data.userdb.entity.FavoriteEntity
+import com.lexidex.app.data.userdb.entity.HistoryEntryEntity
+import com.lexidex.app.data.userdb.entity.UserTermEntity
+import com.lexidex.app.data.userdb.entity.UserTermFtsEntity
+
+/**
+ * The user's own writable catalog (docs/decisions/0002-personal-catalog-overlay.md): personal
+ * terms, favorites, history. A small, independent artifact Room creates and owns outright -
+ * unlike LexidexDatabase, there's no external file and no identity-check workaround needed.
+ */
+@Database(
+    entities = [
+        UserTermEntity::class,
+        UserTermFtsEntity::class,
+        FavoriteEntity::class,
+        HistoryEntryEntity::class,
+    ],
+    version = 1,
+    exportSchema = false,
+)
+@ColumnTypeConverters(StringListConverter::class, TermOriginConverter::class)
+abstract class LexidexUserDatabase : RoomDatabase() {
+    abstract fun userTermDao(): UserTermDao
+    abstract fun favoriteDao(): FavoriteDao
+    abstract fun historyDao(): HistoryDao
+}

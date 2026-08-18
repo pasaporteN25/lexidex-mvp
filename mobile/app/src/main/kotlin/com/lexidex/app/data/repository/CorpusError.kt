@@ -8,5 +8,15 @@ sealed class CorpusError(message: String, cause: Throwable? = null) : Exception(
     class PackageCorrupted(cause: PackageIntegrityException) :
         CorpusError(cause.message ?: "Package integrity check failed", cause)
 
+    /** A field failed validation (backend/lexidex_api.py's validate_term_payload criteria). */
+    class InvalidField(val field: String, reason: String) : CorpusError(reason)
+
+    /** A term with this normalized title + language already exists, in either catalog. */
+    class DuplicateTitle(val existingSlug: String) :
+        CorpusError("Ya existe un termino con ese titulo e idioma.")
+
+    /** The personal term being edited/deleted no longer exists. */
+    class PersonalTermNotFound(slug: String) : CorpusError("El termino personal '$slug' no existe.")
+
     class Unexpected(cause: Throwable) : CorpusError("Unexpected corpus error", cause)
 }

@@ -80,7 +80,7 @@ class SearchViewModel(private val repository: CorpusRepository) : ViewModel() {
             repository.getDailyTerm().fold(
                 onSuccess = { term ->
                     val summary = term?.let {
-                        TermSummary(it.slug, it.title, it.summary, it.language, it.status)
+                        TermSummary(it.slug, it.title, it.summary, it.language, it.status, it.origin)
                     }
                     _uiState.update { it.copy(isLoadingDaily = false, dailyTerm = summary) }
                 },
