@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 2,
+  "name": "Lexidex",
+  "status": "canonical",
+  "source": "frontend/styles.css and DESIGN.md",
+  "generatedAt": "2026-08-15T00:00:00Z",
+  "direction": {
+    "name": "Archivo de evidencias",
+    "thesis": "Una interfaz offline-first de consulta y mantenimiento que hace visible la procedencia sin sacrificar la lectura.",
+    "principles": [
+      "Archivo operativo antes que escaparate.",
+      "El paquete canonico es de solo lectura; el conocimiento personal es claramente editable.",
+      "La jerarquia se construye con reglas, tono, tipografia y densidad, no con tarjetas flotantes.",
+      "Los roles semanticos de color se conservan entre los temas claro y oscuro."
+    ]
+  },
+  "colors": {
+    "light": {
+      "canvas": "#e8ecea",
+      "surface": "#ffffff",
+      "surfaceSubtle": "#f3f6f4",
+      "surfaceStrong": "#e0e7e3",
+      "ink": "#17201e",
+      "inkSoft": "#53615d",
+      "line": "#cbd4d0",
+      "lineStrong": "#98a7a1",
+      "rail": "#14211e",
+      "railSoft": "#1c2c28",
+      "railInk": "#edf5f1",
+      "railMuted": "#a9b9b3",
+      "teal": "#197562",
+      "tealSoft": "#dcece6",
+      "cobalt": "#345d9d",
+      "cobaltSoft": "#e1e8f4",
+      "vermilion": "#a94732",
+      "vermilionSoft": "#f4e2dd",
+      "amber": "#8d650e",
+      "amberSoft": "#f5ebce",
+      "focus": "#e3a928"
+    },
+    "dark": {
+      "canvas": "#0b100f",
+      "surface": "#141b19",
+      "surfaceSubtle": "#101614",
+      "surfaceStrong": "#202a27",
+      "ink": "#edf4f1",
+      "inkSoft": "#a8b6b1",
+      "line": "#2a3632",
+      "lineStrong": "#44534e",
+      "rail": "#080d0c",
+      "railSoft": "#111a18",
+      "railInk": "#f1f7f4",
+      "railMuted": "#9eada8",
+      "teal": "#55b49d",
+      "tealSoft": "#173b32",
+      "cobalt": "#88a9df",
+      "cobaltSoft": "#202f49",
+      "vermilion": "#e18770",
+      "vermilionSoft": "#43251e",
+      "amber": "#e2bc61",
+      "amberSoft": "#3c321b",
+      "focus": "#efbf4b"
+    },
+    "semanticRoles": {
+      "actionAndSelection": "teal",
+      "packageAndProvenance": "cobalt",
+      "errorAndDestructiveAction": "vermilion",
+      "seedAndReview": "amber",
+      "keyboardFocus": "focus"
+    }
+  },
+  "typography": {
+    "display": {
+      "family": "Archivo Narrow, sans-serif",
+      "weight": 650,
+      "usage": "Nombres de registros, marca y encabezados de alta jerarquia."
+    },
+    "ui": {
+      "family": "Aptos, Segoe UI Variable, Segoe UI, sans-serif",
+      "usage": "Contenido, controles, metadatos y formularios."
+    },
+    "scale": {
+      "recordTitle": { "size": "46px", "lineHeight": 1.02, "mobileSize": "34px" },
+      "sectionTitle": { "size": "25px", "lineHeight": 1.1 },
+      "body": { "size": "15px", "lineHeight": 1.72 },
+      "meta": { "size": "11px", "lineHeight": 1.4 },
+      "label": { "size": "10px", "weight": 700, "transform": "uppercase" }
+    }
+  },
+  "tokens": {
+    "spacing": {
+      "micro": "4px",
+      "tight": "7px",
+      "compact": "10px",
+      "control": "14px",
+      "panel": "18px",
+      "section": "24px",
+      "record": "36px"
+    },
+    "radii": {
+      "compact": "6px",
+      "control": "7px",
+      "surface": "10px",
+      "dialog": "14px",
+      "pill": "999px"
+    },
+    "elevation": {
+      "dialogLight": "0 18px 50px rgba(19, 29, 26, 0.2)",
+      "dialogDark": "0 22px 60px rgba(0, 0, 0, 0.5)",
+      "snackbar": "0 12px 32px rgba(0, 0, 0, 0.3)"
+    },
+    "motion": {
+      "control": "160ms ease-out",
+      "entry": "260ms ease-out",
+      "reducedMotion": "1ms"
+    },
+    "focus": {
+      "outline": "3px solid var(--focus)",
+      "offset": "2px"
+    }
+  },
+  "layout": {
+    "desktop": "228px minmax(340px, 390px) minmax(0, 1fr)",
+    "contentMeasure": "72ch",
+    "breakpoints": [
+      {
+        "maxWidth": "1180px",
+        "behavior": "El riel se compacta a 196px y el indice a 320-360px."
+      },
+      {
+        "maxWidth": "940px",
+        "behavior": "El riel se convierte en barra superior y el indice y detalle permanecen disponibles."
+      },
+      {
+        "maxWidth": "720px",
+        "behavior": "Las zonas se apilan; la navegacion queda horizontal y adherida arriba."
+      },
+      {
+        "maxWidth": "520px",
+        "behavior": "Filtros, formularios y metadatos pasan a una sola columna."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "button-primary",
+      "selector": ".primary-action",
+      "purpose": "Accion principal, incluido crear un termino personal.",
+      "tokens": ["teal", "control"],
+      "minimumHeight": "44px",
+      "snippet": "<button class=\"ds-button ds-button--primary primary-action\" type=\"button\">Nuevo termino</button>"
+    },
+    {
+      "id": "button-secondary",
+      "selector": ".secondary-action",
+      "purpose": "Cancelar o ejecutar una accion secundaria sin competir con la accion principal.",
+      "tokens": ["surface", "lineStrong", "control"],
+      "minimumHeight": "44px",
+      "snippet": "<button class=\"ds-button ds-button--secondary secondary-action\" type=\"button\">Cancelar</button>"
+    },
+    {
+      "id": "button-danger",
+      "selector": ".danger-action",
+      "purpose": "Confirmar un borrado de un termino personal.",
+      "tokens": ["vermilion", "control"],
+      "minimumHeight": "44px",
+      "snippet": "<button class=\"ds-button ds-button--danger danger-action\" type=\"button\">Eliminar</button>"
+    },
+    {
+      "id": "search-field",
+      "selector": ".search-field input",
+      "purpose": "Busqueda local por FTS5 con foco visible y objetivo tactil amplio.",
+      "tokens": ["surface", "lineStrong", "teal", "focus"],
+      "minimumHeight": "46px",
+      "snippet": "<label class=\"ds-field search-field\"><span class=\"sr-only\">Buscar</span><input type=\"search\" placeholder=\"Buscar terminos\" /></label>"
+    },
+    {
+      "id": "provenance-chip",
+      "selector": ".origin-mark, .status-mark, .chip",
+      "purpose": "Distinguir procedencia, estado, categoria y etiquetas sin ocultar semantica.",
+      "tokens": ["cobalt", "teal", "amber", "vermilion", "pill"],
+      "snippet": "<span class=\"ds-chip origin-mark package\">Paquete</span>"
+    },
+    {
+      "id": "term-row",
+      "selector": ".term-row",
+      "purpose": "Fila seleccionable del indice con resumen, idioma y origen visibles.",
+      "tokens": ["line", "tealSoft", "teal"],
+      "minimumHeight": "72px",
+      "snippet": "<button class=\"ds-term-row term-row\" type=\"button\"><span class=\"term-row-main\"><strong>Termino</strong><span>Resumen o fuente</span></span><span class=\"origin-mark package\">Paquete</span></button>"
+    },
+    {
+      "id": "record-header",
+      "selector": ".record-header",
+      "purpose": "Presentar el termino seleccionado con identidad, estado, metadatos y acciones de mantenimiento.",
+      "tokens": ["teal", "surface", "ink", "lineStrong"],
+      "snippet": "<header class=\"ds-record-header record-header\"><div class=\"record-title-row\"><h2>Termino</h2></div><p class=\"record-summary\">Resumen verificable.</p></header>"
+    },
+    {
+      "id": "term-dialog",
+      "selector": ".term-dialog",
+      "purpose": "Crear o editar exclusivamente el archivo personal, separado del paquete inmutable.",
+      "tokens": ["surface", "lineStrong", "dialog", "dialogLight", "dialogDark"],
+      "snippet": "<dialog class=\"ds-dialog term-dialog\"><form><header class=\"dialog-header\"><h2>Nuevo termino</h2></header><div class=\"form-grid\"></div><footer class=\"dialog-actions\"></footer></form></dialog>"
+    },
+    {
+      "id": "snackbar",
+      "selector": ".snackbar",
+      "purpose": "Confirmar operaciones sin interrumpir el flujo de lectura.",
+      "tokens": ["ink", "surface", "snackbar"],
+      "snippet": "<div class=\"ds-snackbar snackbar visible\" role=\"status\">Termino guardado</div>"
+    }
+  ],
+  "accessibility": {
+    "minimumTapTarget": "44px",
+    "keyboard": "Los controles interactivos tienen :focus-visible de 3px con offset de 2px.",
+    "motion": "La interfaz respeta prefers-reduced-motion.",
+    "theme": "El control de tema persiste en el navegador y conserva los mismos roles semanticos.",
+    "content": "La procedencia no depende solo del color: se muestra como texto en badges y metadatos."
+  },
+  "implementation": {
+    "css": "frontend/styles.css",
+    "themeScript": "frontend/theme.js",
+    "interactionScript": "frontend/app.js",
+    "humanReference": "DESIGN.md"
+  }
+}

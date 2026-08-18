@@ -1,0 +1,52 @@
+{
+  "title": "Direccion para Lexidex Android",
+  "question": "Archivo de evidencias convierte cada termino en un registro consultable y verificable. Podes elegirlo, pedir otro sorteo o usar el estandar Material 3.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Archivo de evidencias",
+      "kicker": "DIRECCION PROPUESTA",
+      "lineage": "registros de acceso de museos y archivos cientificos",
+      "thesis": "Cada termino es una ficha viva cuya fuente, idioma y relaciones se pueden comprobar sin abandonar la lectura.",
+      "palette": [
+        "#F4F6F2",
+        "#18211F",
+        "#2F6F60",
+        "#315E8A",
+        "#C18A32"
+      ],
+      "materials": [
+        "etiquetas de procedencia",
+        "indices archivisticos",
+        "Material 3"
+      ],
+      "viewport": "Pantalla compacta borde a borde: contexto arriba, busqueda dominante, termino del dia abierto como registro y un indice continuo debajo.",
+      "risk": "Puede sentirse burocratico si los metadatos pesan mas que el contenido y la exploracion."
+    }
+  ],
+  "reroll": {
+    "registers": [
+      "safer",
+      "bolder"
+    ]
+  },
+  "canon": true,
+  "canonCard": {
+    "label": "Biblioteca Material 3",
+    "thesis": "Una aplicacion Android de conocimiento clara y familiar, ejecutada con componentes Material convencionales.",
+    "palette": [
+      "#FFFFFF",
+      "#1B1B1F",
+      "#3F51B5",
+      "#E2E2EC"
+    ],
+    "materials": [
+      "Material 3",
+      "listas estandar",
+      "tarjetas tonales"
+    ],
+    "viewport": "Top app bar, campo de busqueda, tarjetas de descubrimiento y navegacion inferior esperable.",
+    "risk": "Seria facil de aprender, pero podria resultar indistinguible de otras bibliotecas y apps de notas."
+  },
+  "steer": true
+}

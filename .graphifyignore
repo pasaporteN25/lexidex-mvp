@@ -1,0 +1,8 @@
+.agents/
+.codex/
+graphify-out/
+node_modules/
+.expo/
+__pycache__/
+*.sqlite
+*.db

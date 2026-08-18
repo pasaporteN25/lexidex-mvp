@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#14211e" />
+    <title>Lexidex</title>
+    <script src="theme.js"></script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!--
+    THESIS: Lexidex is a working evidence archive, not a card-grid encyclopedia.
+    OWN-WORLD: Graphite, paper-white, teal, cobalt and vermilion; ruled records, compact controls and explicit provenance.
+    STORY: Narrow the corpus, inspect one record, then add or maintain private knowledge without touching the package.
+    FIRST VIEWPORT: Utility rail at left, searchable index at center, active evidence record at right; Add term is the primary rail action.
+    FORM: User-pinned Archivo de evidencias direction; grounded candidate 3; seed 5ffacdab.
+    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    -->
+    <div class="app-shell">
+      <aside class="utility-rail" aria-label="Navegacion principal">
+        <header class="brand">
+          <span class="brand-mark" aria-hidden="true">LX</span>
+          <div>
+            <h1>Lexidex</h1>
+            <p id="packageLabel">Archivo local</p>
+          </div>
+        </header>
+
+        <button id="addTermButton" class="primary-action" type="button">
+          <span class="add-label-long">Agregar termino</span>
+          <span class="add-label-short" aria-hidden="true">Agregar</span>
+        </button>
+
+        <nav class="rail-nav" aria-label="Acciones de biblioteca">
+          <button id="libraryButton" class="rail-button active" type="button">
+            <span>Biblioteca</span>
+            <span id="libraryCount" class="rail-count">0</span>
+          </button>
+          <button id="dailyButton" class="rail-button" type="button">
+            <span>Termino del dia</span>
+          </button>
+          <button id="randomButton" class="rail-button" type="button">
+            <span>Registro al azar</span>
+          </button>
+        </nav>
+
+        <dl class="rail-stats" id="stats" aria-label="Resumen del corpus"></dl>
+
+        <div class="rail-footer">
+          <label class="theme-control" for="themeToggle">
+            <span class="theme-label"><span class="theme-label-prefix">Tema </span>oscuro</span>
+            <input id="themeToggle" type="checkbox" role="switch" aria-label="Tema oscuro" title="Alternar tema oscuro" />
+            <span class="switch-track" aria-hidden="true"><span></span></span>
+          </label>
+          <p><span class="status-dot" aria-hidden="true"></span>Disponible sin conexion</p>
+        </div>
+      </aside>
+
+      <section class="index-panel" aria-label="Indice de terminos">
+        <header class="index-header">
+          <div class="index-title">
+            <h2>Biblioteca</h2>
+            <span id="personalCount">0 personales</span>
+          </div>
+          <label class="search-field" for="searchInput">
+            <span class="sr-only">Buscar termino</span>
+            <input
+              id="searchInput"
+              type="search"
+              placeholder="Buscar en titulos y contenido"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+        </header>
+
+        <details class="filter-panel" id="filterPanel" open>
+          <summary>
+            <span>Filtrar y ordenar</span>
+            <span id="activeFilterCount" class="filter-count">Sin filtros</span>
+          </summary>
+          <div class="filter-grid">
+            <label>
+              <span>Idioma</span>
+              <select id="languageFilter"><option value="">Todos</option></select>
+            </label>
+            <label>
+              <span>Origen</span>
+              <select id="originFilter">
+                <option value="">Todos</option>
+                <option value="package">Paquete</option>
+                <option value="personal">Personal</option>
+              </select>
+            </label>
+            <label>
+              <span>Tipo</span>
+              <select id="kindFilter"><option value="">Todos</option></select>
+            </label>
+            <label>
+              <span>Estado</span>
+              <select id="statusFilter"><option value="">Todos</option></select>
+            </label>
+            <label>
+              <span>Fuente</span>
+              <select id="sourceFilter"><option value="">Todas</option></select>
+            </label>
+            <label>
+              <span>Orden</span>
+              <select id="sortFilter">
+                <option value="title_asc">Titulo A-Z</option>
+                <option value="title_desc">Titulo Z-A</option>
+                <option value="newest">Mas recientes</option>
+                <option value="oldest">Mas antiguos</option>
+                <option value="language">Idioma</option>
+                <option value="source">Fuente</option>
+                <option value="relevance">Relevancia</option>
+              </select>
+            </label>
+          </div>
+          <button id="clearFiltersButton" class="text-action" type="button">
+            Limpiar filtros
+          </button>
+        </details>
+
+        <div class="result-bar">
+          <span id="resultStatus" aria-live="polite">Cargando indice...</span>
+        </div>
+        <nav class="term-list" id="termList" aria-label="Resultados"></nav>
+        <footer class="pagination" aria-label="Paginacion">
+          <button id="previousPageButton" type="button">Anterior</button>
+          <span id="pageStatus">Pagina 1</span>
+          <button id="nextPageButton" type="button">Siguiente</button>
+        </footer>
+      </section>
+
+      <main class="detail" id="detail" aria-live="polite">
+        <div class="empty-state">
+          <h2>Abri un registro</h2>
+          <p>Selecciona un termino del indice para revisar su evidencia.</p>
+        </div>
+      </main>
+    </div>
+
+    <dialog id="termDialog" class="term-dialog" aria-labelledby="termDialogTitle">
+      <form id="termForm">
+        <header class="dialog-header">
+          <div>
+            <h2 id="termDialogTitle">Nuevo termino</h2>
+            <p>Se guardara en tu archivo personal.</p>
+          </div>
+        </header>
+
+        <div class="form-grid">
+          <label class="wide-field">
+            <span>Titulo</span>
+            <input name="title" maxlength="200" required autocomplete="off" />
+          </label>
+          <label>
+            <span>Idioma</span>
+            <input name="language" list="languageOptions" maxlength="24" value="es" required />
+          </label>
+          <label>
+            <span>Tipo</span>
+            <select name="kind">
+              <option value="reference">Referencia</option>
+              <option value="article">Articulo</option>
+              <option value="query">Consulta</option>
+            </select>
+          </label>
+          <label>
+            <span>Estado</span>
+            <select name="status">
+              <option value="seed">Semilla</option>
+              <option value="enriched">Enriquecido</option>
+              <option value="reviewed">Revisado</option>
+              <option value="archived">Archivado</option>
+            </select>
+          </label>
+          <label class="wide-field">
+            <span>Resumen</span>
+            <textarea name="summary" rows="3" maxlength="2000"></textarea>
+          </label>
+          <label class="wide-field">
+            <span>Contenido</span>
+            <textarea name="content" rows="7" maxlength="100000"></textarea>
+          </label>
+          <label class="wide-field">
+            <span>URL de fuente</span>
+            <input name="source_url" type="url" maxlength="2048" placeholder="https://" />
+          </label>
+          <label>
+            <span>Categorias</span>
+            <input name="categories" maxlength="1000" placeholder="Historia, Ciencia" />
+          </label>
+          <label>
+            <span>Etiquetas</span>
+            <input name="tags" maxlength="1000" placeholder="archivo, pendiente" />
+          </label>
+          <label class="wide-field">
+            <span>Notas privadas</span>
+            <textarea name="notes" rows="3" maxlength="5000"></textarea>
+          </label>
+        </div>
+
+        <p id="termFormError" class="form-error" role="alert"></p>
+        <footer class="dialog-actions">
+          <button id="cancelTermButton" class="secondary-action" type="button">Cancelar</button>
+          <button id="saveTermButton" class="primary-action" type="submit">Guardar termino</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="deleteDialog" class="confirm-dialog" aria-labelledby="deleteDialogTitle">
+      <form id="deleteForm">
+        <h2 id="deleteDialogTitle">Eliminar termino personal</h2>
+        <p id="deleteMessage">Esta accion no se puede deshacer.</p>
+        <footer class="dialog-actions">
+          <button id="cancelDeleteButton" class="secondary-action" type="button">Cancelar</button>
+          <button class="danger-action" type="submit">Eliminar</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <datalist id="languageOptions">
+      <option value="es"></option>
+      <option value="en"></option>
+      <option value="pt"></option>
+      <option value="fr"></option>
+      <option value="de"></option>
+      <option value="it"></option>
+      <option value="und"></option>
+    </datalist>
+
+    <div id="snackbar" class="snackbar" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
