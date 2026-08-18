@@ -122,9 +122,10 @@ Avance:
 - La API combina ambos origenes con filtros, orden, facetas y paginacion.
 - La aplicacion Android nativa tiene una primera entrega funcional (busqueda
   FTS5, ficha con procedencia, relaciones bidireccionales, termino diario y
-  aleatorio) verificada contra el mismo catalogo semilla de 4.490 terminos;
-  favoritos, notas, historial y descarga de paquetes quedan pendientes (ver
-  `mobile/README.md`).
+  aleatorio) verificada contra el mismo catalogo semilla de 4.490 terminos, mas
+  terminos personales, favoritos e historial en una base de usuario separada
+  que se fusiona con el paquete en busqueda y ficha; migracion entre versiones
+  de paquete y descarga remota quedan pendientes (ver `mobile/README.md`).
 
 Siguiente hito inmediato:
 

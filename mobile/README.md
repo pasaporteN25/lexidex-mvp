@@ -22,9 +22,12 @@ El esquema usa FTS5. La capa de datos usa Room 3 (`androidx.room3`) con
 sistema no garantiza FTS5 en todos los dispositivos.
 
 La base canonica es de solo lectura: ningun DAO en `data/db/dao/` expone
-insert/update/delete. Favoritos, notas, historial y preferencias iran en una
-base de usuario separada (todavia no implementada), de modo que un paquete
-pueda reemplazarse atomicamente sin perder datos personales.
+insert/update/delete. Favoritos, terminos personales e historial viven en una
+base de usuario separada (`data/userdb/`, `lexidex-user.sqlite`,
+docs/decisions/0002-personal-catalog-overlay.md), de modo que un paquete
+pueda reemplazarse atomicamente sin perder datos personales. `CorpusRepository`
+fusiona ambas fuentes en las busquedas y la ficha; si un slug colisiona, el
+termino personal gana, igual que en el backend.
 
 ### Nota tecnica: por que no se usa `createFromAsset`
 
@@ -53,7 +56,13 @@ en ese archivo debe actualizarse a mano; un valor desactualizado falla fuerte
    Verificado en emulador contra el paquete real (4.490 terminos): busqueda,
    procedencia, apariciones, relaciones bidireccionales, termino del dia y
    aleatorio funcionan sin errores.
-3. ⬜ Agregar favoritos, notas e historial en almacenamiento local separado.
+3. ✅ Agregar terminos personales, favoritos e historial en una base de usuario
+   separada. Verificado en emulador: crear/editar/eliminar un termino
+   personal, que aparezca combinado con el paquete en la busqueda con su
+   distintivo "personal", marcarlo favorito, verlo en Favoritos e Historial,
+   y confirmar que al eliminarlo desaparece de la busqueda (con refresco
+   automatico al volver a la pantalla) y de Favoritos/Historial sin dejar
+   referencias huerfanas.
 4. ⬜ Verificar instalacion, checksum y migracion entre versiones de paquete.
 5. ⬜ Preparar descarga opcional de paquetes para una etapa posterior al modelo
    de amenazas.
@@ -64,19 +73,25 @@ en ese archivo debe actualizarse a mano; un valor desactualizado falla fuerte
 mobile/app/src/main/kotlin/com/lexidex/app/
   data/
     corpus/       # Verificacion de checksum + apertura del paquete Room
-    db/            # Entidades y DAO Room (espejan docs/corpus-schema.sql)
-    repository/    # CorpusRepository: la API que consume la UI
-  domain/         # Modelos de dominio (TermSummary, TermDetail, ...)
+    db/            # Entidades y DAO Room del paquete (espejan docs/corpus-schema.sql)
+    userdb/        # Entidades y DAO Room de lexidex-user.sqlite (terminos, favoritos, historial)
+    repository/    # CorpusRepository: fusiona ambas bases; la API que consume la UI
+  domain/         # Modelos de dominio (TermSummary, TermDetail, HistoryItem, ...)
   ui/
     theme/         # Material 3 desde los tokens de DESIGN.md
-    search/        # Busqueda + termino del dia + aleatorio
-    detail/         # Ficha: procedencia, categorias/etiquetas, relaciones
-    navigation/    # NavHost de 2 destinos (Search, TermDetail)
+    search/        # Busqueda combinada + termino del dia + aleatorio
+    detail/         # Ficha: procedencia, categorias/etiquetas, relaciones, favorito
+    editor/        # Crear/editar/eliminar un termino personal
+    favorites/     # Lista de favoritos
+    history/       # Lista de vistos recientemente
+    navigation/    # NavHost de 5 destinos (Search, TermDetail, PersonalTermEditor, Favorites, History)
 ```
 
-Sin DI framework en este paso (una sola dependencia de solo lectura no lo
-justifica); ver `ui/ViewModelFactory.kt`. Se puede introducir Hilt cuando
-llegue la base de usuario (paso 3) si la complejidad lo amerita.
+Sin DI framework por ahora: la base de usuario (paso 3) llego y seguimos sin
+Hilt porque `CorpusRepository` sigue siendo la unica dependencia que las
+pantallas necesitan (ahora con dos `DatabaseProvider` en vez de uno); ver
+`ui/ViewModelFactory.kt`. Si aparecen mas dependencias transversales, ese es
+el momento de reconsiderarlo.
 
 ## Compilar y correr
 
