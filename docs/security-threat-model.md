@@ -62,6 +62,15 @@ auditables de una lectura:
 El backend implementa los mismos controles en `fetch_knowledge_json` y
 `require_allowlisted_url` (`backend/lexidex_api.py`), que sirven al frontend
 web a traves de `GET /api/knowledge/search` y `GET /api/knowledge/article`.
+
+`tools/enrich_corpus.py` (agregado el 2026-08-19) usa **ese mismo** fetcher
+para completar los extractos del paquete, en vez de reimplementarlo: es la
+razon por la que un proceso masivo sigue estando sujeto a la misma allowlist y
+a los mismos limites. Es la unica pieza que hace muchas llamadas seguidas, y
+por eso agrega dos cosas propias: pide de a 20 titulos por consulta en lugar
+de uno por termino, y espera con retroceso creciente ante un 429 en vez de
+insistir. No corre en el servidor ni en la aplicacion: es una herramienta de
+construccion de paquetes, fuera del camino de ejecucion del usuario.
 Ambas implementaciones son espejo y deben cambiar juntas. Como la web consulta
 su propio backend y no a Wikipedia, **no hizo falta relajar el CSP**: sigue
 con `connect-src 'self'` e `img-src 'self' data:`.

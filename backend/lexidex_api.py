@@ -1178,7 +1178,11 @@ def fetch_knowledge_json(url):
                 continue
             if code == 404:
                 raise ApiError(404, "source_not_found", "La fuente no tiene ese articulo.") from err
-            raise ApiError(502, "source_unavailable", f"La fuente respondio {code}.") from err
+            # El status viaja en details para que quien llame pueda distinguir un 429 (esperar y
+            # reintentar) de un error definitivo, sin tener que parsear el mensaje.
+            raise ApiError(
+                502, "source_unavailable", f"La fuente respondio {code}.", {"status": code}
+            ) from err
         except urllib.error.URLError as err:
             raise ApiError(
                 504, "source_unreachable", "No se pudo contactar la fuente externa."

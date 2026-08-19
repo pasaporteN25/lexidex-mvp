@@ -178,26 +178,55 @@ una tabla nueva.
 Depende solo de 3.1. El resto de subtareas son chicas y en su mayoria
 secuenciales dentro de cada plataforma.
 
-## 4. Preview o contenido completo sin salir de la app ⬜
+## 4. Preview o contenido completo sin salir de la app 🔶
 
 Pedido: no depender del link externo para ver de que trata un termino, y que
 sirva para trabajar sin conexion.
 
-**Recomendacion: no abrir esta epica todavia por separado.** Se superpone
-directamente con la epica 5 (busqueda de Wikipedia): en cuanto un termino se
-cree eligiendolo de una busqueda de Wikipedia en vez de pegando un link a
-mano, el campo `content` va a tener el extracto real ya guardado localmente
-- eso *ya es* la preview offline, sin trabajo adicional. Retomar este punto
-recien despues de que la epica 5 este implementada, para ver que falta de
-verdad.
+Resuelto para terminos nuevos por la epica 5 (lo que se crea buscando en
+Wikipedia ya guarda su extracto y se lee sin conexion) y, desde el 2026-08-19,
+tambien para el paquete: `tools/enrich_corpus.py` completa el extracto de
+entrada de los ~4.500 terminos importados del txt, que hasta entonces eran
+solo un titulo y un link.
 
-Si mas adelante se pide el **articulo completo** (no solo el resumen) cacheado
-para lectura 100% offline, eso es un pedido bastante mas grande: tamano de
-almacenamiento por termino, licencia de reuso del contenido de Wikipedia
-(CC BY-SA exige atribucion), y sanitizar HTML/Markdown antes de mostrarlo en
-vez de solo escaparlo (ya anotado como pendiente de diseño en
-`docs/security-threat-model.md`, seccion "Contenido malicioso"). Marcarlo como
-"a definir mas adelante" hasta que se decida si vale la pena.
+### Como se resolvio el tamano
+
+El pedido explicito fue que ocupe lo menos posible. Lo que se hizo, en orden
+de cuanto aporto cada cosa:
+
+1. **La tabla FTS ya era de contenido externo** (`content='terms'` en
+   `docs/corpus-schema.sql`), asi que el texto no se duplica en el indice.
+   Era la optimizacion mas grande y ya estaba puesta.
+2. **Recorte a 800 caracteres en limite de oracion.** Medido sobre una muestra
+   real de 199 articulos: sin corte proyectaba 5,3 MB de texto; a 800 baja a
+   2,6 MB. Como la mediana sin cortar es 904 bytes, la mayoria de los
+   extractos quedan enteros y solo se poda la cola larga. El corte busca el
+   final de oracion anterior al tope, nunca parte una frase al medio.
+3. **`VACUUM` al cerrar el paquete**, que devuelve las paginas liberadas por
+   las actualizaciones.
+
+Queda **sin aplicar** una opcion mas: `detail=none` en la tabla FTS5 achicaria
+el indice, y la busqueda no usa frases ni NEAR (son tokens sueltos con
+prefijo, ver `fts_match_query` y `FtsQueryBuilder.kt`), pero degradaria el
+ranking `bm25()` que si se usa. No se toco porque el indice no resulto ser la
+parte grande; reconsiderarlo si el paquete vuelve a crecer.
+
+### Pedidos a Wikipedia: de a lotes, no de a uno
+
+Un pedido por termino son ~4.500 llamadas y Wikipedia devuelve **429** muy
+rapido: en la primera prueba fallaron 39 de 60. La Action API acepta hasta 20
+titulos por consulta (`prop=extracts&exintro&explaintext`), lo que baja a
+~230 pedidos y ademas es mucho mas cortes. Con eso la tasa de exito paso a
+199/199 en la muestra. El tool reintenta con espera creciente solo ante 429,
+que es una peticion de esperar y no un fallo del articulo.
+
+### Lo que sigue pendiente
+
+El **articulo completo** en vez de la introduccion. Es bastante mas grande:
+tamano por termino, y sobre todo que habria que sanear HTML con lista blanca
+antes de mostrarlo en vez de solo escaparlo (ya anotado en
+`docs/security-threat-model.md`, seccion "Contenido malicioso"). Hoy el
+contenido es texto plano, que es lo que permite seguir escapando sin sanear.
 
 ## 5. Alta de terminos buscando en Wikipedia en vez de pegar un link ✅
 
