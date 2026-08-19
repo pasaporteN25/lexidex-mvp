@@ -135,6 +135,10 @@ Siguiente hito inmediato:
 - Ejecutar el modelo de amenazas del paso 7.
 - Disenar el enriquecimiento controlado y los fragmentos con referencias.
 - Construir una primera consulta RAG local evaluable sobre contenido enriquecido.
+- Backlog de funcionalidades del catalogo personal (ver todos los terminos
+  guardados, etiquetas navegables, colecciones, y alta de terminos buscando en
+  Wikipedia en vez de pegar un link) partido en tareas chicas en
+  `docs/personal-catalog-roadmap.md`.
 
 La entrega debe demostrar de punta a punta:
 
