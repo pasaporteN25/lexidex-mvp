@@ -59,9 +59,21 @@ auditables de una lectura:
 - Lo que se guarda es texto plano (el `extract` de la API REST), nunca HTML,
   asi que el escapado que ya hacen las interfaces sigue alcanzando.
 
-El backend todavia no hace ninguna llamada saliente; cuando se implemente su
-mitad (tarea 5.2 de `personal-catalog-roadmap.md`) le corresponden los mismos
-controles y esta seccion debe actualizarse.
+El backend implementa los mismos controles en `fetch_knowledge_json` y
+`require_allowlisted_url` (`backend/lexidex_api.py`), que sirven al frontend
+web a traves de `GET /api/knowledge/search` y `GET /api/knowledge/article`.
+Ambas implementaciones son espejo y deben cambiar juntas. Como la web consulta
+su propio backend y no a Wikipedia, **no hizo falta relajar el CSP**: sigue
+con `connect-src 'self'` e `img-src 'self' data:`.
+
+Cubierto por tests en `tests/test_canonical_api.py`
+(`ExternalKnowledgeSourceTest`): rechazo de esquemas y hosts fuera de la
+allowlist, sufijos enganosos del tipo `wikipedia.org.ejemplo.invalido`, FQDN
+con punto final, imposibilidad de que el codigo de idioma dirija el host, y
+que una consulta vacia no genere trafico.
+
+Lo que sigue sin implementarse, y conserva su compuerta original: traer una
+URL elegida por el usuario, y descargar paquetes de conocimiento.
 
 ## Limites de confianza
 

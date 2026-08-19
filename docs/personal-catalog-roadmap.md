@@ -184,7 +184,12 @@ vez de solo escaparlo (ya anotado como pendiente de diseño en
 `docs/security-threat-model.md`, seccion "Contenido malicioso"). Marcarlo como
 "a definir mas adelante" hasta que se decida si vale la pena.
 
-## 5. Alta de terminos buscando en Wikipedia en vez de pegar un link ⬜
+## 5. Alta de terminos buscando en Wikipedia en vez de pegar un link ✅
+
+**Completada el 2026-08-19**, en las dos plataformas. Queda como trabajo
+futuro, no bloqueante: sumar una segunda fuente de conocimiento implementando
+la misma interfaz, y decidir si alguna vez se unifica todo detras del backend
+(ver ADR 0003).
 
 La epica mas grande de la lista, y la que mas se pidio explicitamente: que
 tanto Android como la version de escritorio eviten el paso de "buscar en
@@ -236,24 +241,20 @@ mueven enteras al backend y Android/web pasan a ser solo consumidores)
       ADR [0003](decisions/0003-knowledge-source-adapters.md), junto con el
       alcance de contenido (extracto de entrada ahora, articulo completo mas
       adelante) y los controles de red exigidos.
-- [ ] **5.2** _(Opus 5)_ Escribir el fetcher en Python siguiendo el checklist
-      de SSRF ya citado, con tests de regresion (mismo espiritu que
-      `test_verifies_package_checksum_and_rejects_tampering`, ya en
-      `tests/test_canonical_api.py`). Codigo sensible a seguridad con varios
-      casos borde (redirecciones, DNS rebinding, corte de streaming) - vale
-      la pena el modelo mas cuidadoso.
-- [ ] **5.3** _(Sonnet 5)_ Endpoint de busqueda en el backend (usa la API de
-      busqueda/OpenSearch de Wikipedia): devuelve titulo + extracto corto y,
-      si se puede, miniatura - nunca el articulo completo en este paso. Una
-      vez que 5.2 resolvio lo peligroso, esto es enchufar una API externa ya
-      acotada.
-- [ ] **5.4** _(Sonnet 5)_ Endpoint de "traer articulo": dado un titulo
-      elegido, trae el resumen (no necesariamente el cuerpo completo - ver
-      epica 4 sobre licencias y tamano).
-- [ ] **5.5** _(Sonnet 5)_ Web: reemplazar o complementar el campo "URL de
-      fuente" del formulario de alta por un buscador que consulta 5.3, muestra
-      resultados, y al elegir uno completa titulo/resumen/contenido/fuente
-      llamando a 5.4.
+- [x] **5.2** ✅ `fetch_knowledge_json` + `require_allowlisted_url` en
+      `backend/lexidex_api.py`, espejo del fetcher de Kotlin (los dos deben
+      cambiar juntos). 7 tests nuevos en `tests/test_canonical_api.py` cubren
+      la allowlist, el sufijo enganoso, el punto final del FQDN, que el idioma
+      no pueda dirigir el host, y que una consulta vacia no toque la red.
+- [x] **5.3** ✅ `GET /api/knowledge/search?q=&language=&limit=`. Devuelve
+      titulo + descripcion (texto plano); nunca se lee `excerpt`, que viene con
+      marcado.
+- [x] **5.4** ✅ `GET /api/knowledge/article?id=&language=`. Devuelve el
+      `extract` de entrada como texto plano, mas la URL del articulo.
+- [x] **5.5** ✅ Web: panel de busqueda arriba del formulario de alta. El campo
+      "URL de fuente" se conserva; al elegir un resultado se completan titulo,
+      idioma, resumen, contenido y fuente. No hizo falta tocar el CSP, que era
+      justamente el punto de la opcion elegida en 5.1.
 - [x] **5.6a** ✅ Android: sin dependencia nueva. `AllowlistedHttpFetcher`
       sobre `HttpURLConnection` (en Android ya esta respaldado por OkHttp), con
       allowlist de host, timeouts, tope de tamano cortado durante la lectura y
@@ -266,10 +267,12 @@ mueven enteras al backend y Android/web pasan a ser solo consumidores)
 - [x] **5.6c** ✅ Android: al elegir un resultado se completan titulo, idioma,
       resumen, contenido y URL de fuente; categorias, etiquetas y notas quedan
       intactas por ser anotaciones propias del usuario.
-- [ ] **5.7** _(Sonnet 5)_ Verificar en ambas plataformas, con red y sin red:
-      confirmar que sin conexion el alta manual (pegando texto/link a mano)
-      sigue funcionando como alternativa, no se rompe el camino que ya existe
-      hoy.
+- [x] **5.7** ✅ Verificado en ambas. Android: busqueda e importacion reales
+      contra Wikipedia en el emulador, y con la red apagada la busqueda falla
+      con un mensaje claro mientras el catalogo local y el alta manual siguen
+      funcionando. Web: busqueda, importacion y guardado reales, mas un alta
+      manual sin tocar el buscador. Sin errores en logcat ni en la consola del
+      navegador.
 - [x] **5.8** ✅ Interfaz `KnowledgeSource` (`search` / `fetch` + identidad)
       con `KnowledgeSearchResult` y `KnowledgeArticle` como unico vocabulario
       que ve la UI, de modo que sumar otra fuente sea implementar la interfaz.

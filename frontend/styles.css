@@ -1053,6 +1053,76 @@ dialog::backdrop {
   font-size: var(--text-form);
 }
 
+/* Busqueda en una fuente externa al crear un termino (ADR 0003). */
+.lookup-panel {
+  margin: 0 26px;
+  padding: 14px 0 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.lookup-row {
+  display: flex;
+  gap: 9px;
+}
+
+.lookup-row input {
+  flex: 1;
+  min-height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  caret-color: var(--teal);
+}
+
+.lookup-row input:focus {
+  border-color: var(--teal);
+}
+
+.lookup-status {
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  font-size: var(--text-compact);
+}
+
+.lookup-results {
+  margin: 8px 0 14px;
+  padding: 0;
+  list-style: none;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.lookup-result {
+  display: block;
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.lookup-result:hover,
+.lookup-result:focus-visible {
+  border-color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.lookup-result-title {
+  display: block;
+  font-weight: 600;
+}
+
+.lookup-result-note {
+  display: block;
+  color: var(--ink-soft);
+  font-size: var(--text-compact);
+}
+
 .form-grid {
   min-height: 0;
   padding: 22px 26px;

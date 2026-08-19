@@ -152,6 +152,22 @@
           </div>
         </header>
 
+        <section id="lookupPanel" class="lookup-panel">
+          <div class="lookup-row">
+            <input
+              id="lookupQuery"
+              type="search"
+              maxlength="200"
+              autocomplete="off"
+              placeholder="Buscar en Wikipedia en vez de pegar un link"
+              aria-label="Buscar un termino en Wikipedia"
+            />
+            <button id="lookupButton" class="secondary-action" type="button">Buscar</button>
+          </div>
+          <p id="lookupStatus" class="lookup-status" role="status"></p>
+          <ul id="lookupResults" class="lookup-results"></ul>
+        </section>
+
         <div class="form-grid">
           <label class="wide-field">
             <span>Titulo</span>

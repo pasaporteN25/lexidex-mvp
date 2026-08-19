@@ -8,11 +8,13 @@ import random
 import re
 import sqlite3
 import unicodedata
+import urllib.error
+import urllib.request
 import uuid
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +32,16 @@ WORD_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
 LANGUAGE_PATTERN = re.compile(r"^(?:und|[a-z]{2,3}(?:-[a-z0-9]{2,8})*)$")
 ALLOWED_KINDS = {"article", "reference", "query"}
 ALLOWED_STATUSES = {"seed", "enriched", "reviewed", "archived"}
+# Busqueda en fuentes externas (ADR 0003). El host lo fija el codigo, nunca el usuario.
+KNOWLEDGE_ALLOWED_HOSTS = {"wikipedia.org"}
+KNOWLEDGE_USER_AGENT = "Lexidex/0.1 (aplicacion personal de consulta offline)"
+KNOWLEDGE_TIMEOUT_SECONDS = 10
+KNOWLEDGE_MAX_RESPONSE_BYTES = 512 * 1024
+KNOWLEDGE_MAX_REDIRECTS = 3
+KNOWLEDGE_SEARCH_LIMIT = 10
+KNOWLEDGE_MAX_SEARCH_LIMIT = 25
+KNOWLEDGE_FALLBACK_LANGUAGE = "es"
+WIKIPEDIA_LANGUAGE_PATTERN = re.compile(r"^[a-z]{2,3}$")
 ALLOWED_SORTS = {
     "title_asc",
     "title_desc",
@@ -1115,6 +1127,147 @@ class CatalogStore:
         )
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Deja que los 3xx lleguen como HTTPError para revalidar el destino antes de seguirlo."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_knowledge_opener = urllib.request.build_opener(_NoRedirectHandler)
+
+
+def require_allowlisted_url(url):
+    """Unico punto donde se decide si una URL saliente es aceptable (ADR 0003)."""
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "https":
+        raise ApiError(502, "source_unavailable", "La fuente externa solo se consulta por https.")
+    # rstrip(".") para que un FQDN como "es.wikipedia.org." no evada la comparacion por sufijo.
+    host = (parsed.hostname or "").lower().rstrip(".")
+    allowed = any(
+        host == candidate or host.endswith("." + candidate)
+        for candidate in KNOWLEDGE_ALLOWED_HOSTS
+    )
+    if not allowed:
+        raise ApiError(502, "source_unavailable", "El host consultado no esta permitido.")
+
+
+def fetch_knowledge_json(url):
+    """
+    GET acotado contra una fuente externa: solo https, solo hosts de la allowlist, con timeout,
+    tope de tamano y recorrido manual de redirecciones revalidando cada salto. Es el espejo en
+    Python de `AllowlistedHttpFetcher.kt`; los dos deben cambiar juntos.
+    """
+    target = url
+    for _ in range(KNOWLEDGE_MAX_REDIRECTS + 1):
+        require_allowlisted_url(target)
+        request = urllib.request.Request(
+            target,
+            headers={"User-Agent": KNOWLEDGE_USER_AGENT, "Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            with _knowledge_opener.open(request, timeout=KNOWLEDGE_TIMEOUT_SECONDS) as response:
+                raw = response.read(KNOWLEDGE_MAX_RESPONSE_BYTES + 1)
+        except urllib.error.HTTPError as err:
+            code = err.code
+            location = err.headers.get("Location") if err.headers else None
+            err.close()
+            if code in (301, 302, 303, 307, 308) and location:
+                target = urljoin(target, location)
+                continue
+            if code == 404:
+                raise ApiError(404, "source_not_found", "La fuente no tiene ese articulo.") from err
+            raise ApiError(502, "source_unavailable", f"La fuente respondio {code}.") from err
+        except urllib.error.URLError as err:
+            raise ApiError(
+                504, "source_unreachable", "No se pudo contactar la fuente externa."
+            ) from err
+
+        if len(raw) > KNOWLEDGE_MAX_RESPONSE_BYTES:
+            raise ApiError(
+                502, "source_too_large", "La respuesta de la fuente es demasiado grande."
+            )
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ApiError(
+                502, "source_unavailable", "La fuente devolvio una respuesta ilegible."
+            ) from exc
+
+    raise ApiError(502, "source_unavailable", "Demasiadas redirecciones en la fuente externa.")
+
+
+def wikipedia_language(language):
+    """Reduce el idioma del catalogo a un subdominio de Wikipedia; nada mas puede formar el host."""
+    base = (language or "").strip().lower().split("-")[0]
+    if base and base != "und" and WIKIPEDIA_LANGUAGE_PATTERN.match(base):
+        return base
+    return KNOWLEDGE_FALLBACK_LANGUAGE
+
+
+def wikipedia_search(query, language, limit):
+    """
+    Candidatos para crear un termino. Se lee `description` (texto plano) y nunca `excerpt`, que
+    viene con marcado `<span class="searchmatch">`.
+    """
+    text = (query or "").strip()
+    if not text:
+        return []
+    lang = wikipedia_language(language)
+    safe_limit = max(1, min(int(limit or KNOWLEDGE_SEARCH_LIMIT), KNOWLEDGE_MAX_SEARCH_LIMIT))
+    url = f"https://{lang}.wikipedia.org/w/rest.php/v1/search/page?" + urlencode(
+        {"q": text, "limit": safe_limit}
+    )
+    payload = fetch_knowledge_json(url)
+    pages = payload.get("pages") if isinstance(payload, dict) else None
+    results = []
+    for page in pages or []:
+        if not isinstance(page, dict):
+            continue
+        key = page.get("key") or ""
+        if not key:
+            continue
+        results.append(
+            {
+                "source_id": "wikipedia",
+                "external_id": key,
+                "title": page.get("title") or key.replace("_", " "),
+                "description": page.get("description") or "",
+                "language": lang,
+            }
+        )
+    return results
+
+
+def wikipedia_article(external_id, language):
+    """El `extract` del resumen es texto plano, que es lo que permite seguir escapando sin sanear."""
+    key = (external_id or "").strip()
+    if not key:
+        raise ApiError(400, "required_field", "El campo id es obligatorio.")
+    lang = wikipedia_language(language)
+    url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(key, safe='')}"
+    payload = fetch_knowledge_json(url)
+    if not isinstance(payload, dict):
+        raise ApiError(502, "source_unavailable", "La fuente devolvio una respuesta inesperada.")
+
+    content_urls = payload.get("content_urls")
+    desktop = content_urls.get("desktop") if isinstance(content_urls, dict) else None
+    source_url = desktop.get("page") if isinstance(desktop, dict) else ""
+    if not source_url:
+        source_url = f"https://{lang}.wikipedia.org/wiki/{quote(key, safe='')}"
+
+    return {
+        "source_id": "wikipedia",
+        "external_id": key,
+        "title": payload.get("title") or key.replace("_", " "),
+        "summary": payload.get("description") or "",
+        "content": payload.get("extract") or "",
+        "source_url": source_url,
+        "language": payload.get("lang") or lang,
+    }
+
+
 def is_allowed_write_origin(origin, host):
     if not origin:
         return True
@@ -1191,6 +1344,28 @@ class LexidexHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def handle_knowledge_get(self, path, query):
+        if path == "/api/knowledge/search":
+            items = wikipedia_search(
+                query_value(query, "q"),
+                query_value(query, "language"),
+                bounded_query_int(
+                    query,
+                    "limit",
+                    KNOWLEDGE_SEARCH_LIMIT,
+                    minimum=1,
+                    maximum=KNOWLEDGE_MAX_SEARCH_LIMIT,
+                ),
+            )
+            self.send_json(200, {"items": items})
+        elif path == "/api/knowledge/article":
+            self.send_json(
+                200,
+                wikipedia_article(query_value(query, "id"), query_value(query, "language")),
+            )
+        else:
+            self.send_json(404, {"error": "not_found"})
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
@@ -1198,6 +1373,15 @@ class LexidexHandler(BaseHTTPRequestHandler):
 
         if not path.startswith("/api"):
             self.send_static(parsed.path)
+            return
+
+        # Las rutas de fuentes externas no tocan ninguna base, asi que se resuelven antes de
+        # abrir conexiones (ADR 0003).
+        if path.startswith("/api/knowledge/"):
+            try:
+                self.handle_knowledge_get(path, query)
+            except ApiError as error:
+                self.send_api_error(error)
             return
 
         package_conn, user_conn = self.store.connections()

@@ -239,5 +239,111 @@ class CanonicalApiTest(unittest.TestCase):
         api.verify_package_checksum(standalone)
 
 
+class ExternalKnowledgeSourceTest(unittest.TestCase):
+    """
+    Cubre los controles de red del ADR 0003 sin salir a internet: lo que se prueba es que la
+    politica se aplique, no que Wikipedia responda.
+    """
+
+    def test_rejects_urls_outside_the_allowlist(self):
+        for url in (
+            "http://es.wikipedia.org/w/rest.php/v1/search/page",  # sin TLS
+            "https://ejemplo.invalido/w/rest.php/v1/search/page",  # otro host
+            "https://wikipedia.org.ejemplo.invalido/x",  # sufijo enganoso
+            "https://evil.test/?a=es.wikipedia.org",  # el host real no es Wikipedia
+        ):
+            with self.subTest(url=url):
+                with self.assertRaises(api.ApiError) as caught:
+                    api.require_allowlisted_url(url)
+                self.assertEqual(caught.exception.status, 502)
+
+    def test_accepts_wikipedia_hosts_including_trailing_dot(self):
+        api.require_allowlisted_url("https://es.wikipedia.org/w/rest.php/v1/search/page")
+        api.require_allowlisted_url("https://wikipedia.org/x")
+        # Un FQDN con punto final apunta al mismo lugar y no debe evadir la comparacion.
+        api.require_allowlisted_url("https://es.wikipedia.org./x")
+
+    def test_language_cannot_steer_the_host(self):
+        # Cualquier cosa que no sea un codigo de 2-3 letras cae al idioma por defecto, asi que
+        # cadenas con puntos, barras o arroba nunca llegan a formar parte del subdominio.
+        for hostile in (
+            "es.evil.test",
+            "es/../../evil",
+            "es@evil.test",
+            "und",
+            "",
+            "toolongcode",
+        ):
+            with self.subTest(language=hostile):
+                self.assertEqual(api.wikipedia_language(hostile), "es")
+
+        self.assertEqual(api.wikipedia_language("EN"), "en")
+        self.assertEqual(api.wikipedia_language("pt-BR"), "pt")
+
+    def test_search_with_blank_query_never_touches_the_network(self):
+        def explode(_url):
+            raise AssertionError("no deberia consultarse la fuente con una consulta vacia")
+
+        original = api.fetch_knowledge_json
+        api.fetch_knowledge_json = explode
+        try:
+            self.assertEqual(api.wikipedia_search("   ", "es", 10), [])
+        finally:
+            api.fetch_knowledge_json = original
+
+    def test_search_maps_pages_and_ignores_markup_carrying_excerpt(self):
+        captured = {}
+
+        def fake_fetch(url):
+            captured["url"] = url
+            return {
+                "pages": [
+                    {
+                        "key": "Jorge_Luis_Borges",
+                        "title": "Jorge Luis Borges",
+                        "description": "escritor argentino",
+                        "excerpt": 'texto con <span class="searchmatch">marcado</span>',
+                    },
+                    {"title": "sin key, se descarta"},
+                ]
+            }
+
+        original = api.fetch_knowledge_json
+        api.fetch_knowledge_json = fake_fetch
+        try:
+            items = api.wikipedia_search("borges", "es", 10)
+        finally:
+            api.fetch_knowledge_json = original
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["external_id"], "Jorge_Luis_Borges")
+        self.assertEqual(items[0]["description"], "escritor argentino")
+        self.assertNotIn("excerpt", items[0])
+        self.assertTrue(captured["url"].startswith("https://es.wikipedia.org/"))
+
+    def test_article_falls_back_to_a_wiki_url_when_the_source_omits_one(self):
+        original = api.fetch_knowledge_json
+        api.fetch_knowledge_json = lambda _url: {
+            "title": "Marea",
+            "description": "movimiento del mar",
+            "extract": "La marea es el cambio periodico del nivel del mar.",
+            "lang": "es",
+        }
+        try:
+            article = api.wikipedia_article("Marea", "es")
+        finally:
+            api.fetch_knowledge_json = original
+
+        self.assertEqual(article["source_url"], "https://es.wikipedia.org/wiki/Marea")
+        self.assertEqual(
+            article["content"], "La marea es el cambio periodico del nivel del mar."
+        )
+
+    def test_article_requires_an_id(self):
+        with self.assertRaises(api.ApiError) as caught:
+            api.wikipedia_article("  ", "es")
+        self.assertEqual(caught.exception.status, 400)
+
+
 if __name__ == "__main__":
     unittest.main()

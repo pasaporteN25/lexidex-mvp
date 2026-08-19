@@ -44,6 +44,10 @@ const elements = {
   termFormError: document.querySelector("#termFormError"),
   saveTermButton: document.querySelector("#saveTermButton"),
   cancelTermButton: document.querySelector("#cancelTermButton"),
+  lookupQuery: document.querySelector("#lookupQuery"),
+  lookupButton: document.querySelector("#lookupButton"),
+  lookupStatus: document.querySelector("#lookupStatus"),
+  lookupResults: document.querySelector("#lookupResults"),
   deleteDialog: document.querySelector("#deleteDialog"),
   deleteForm: document.querySelector("#deleteForm"),
   deleteMessage: document.querySelector("#deleteMessage"),
@@ -441,10 +445,91 @@ function setFormValue(name, value) {
   formField(name).value = value ?? "";
 }
 
+function resetLookup(query = "") {
+  elements.lookupQuery.value = query;
+  elements.lookupStatus.textContent = "";
+  elements.lookupResults.replaceChildren();
+}
+
+/**
+ * Busca en una fuente externa (ADR 0003) a traves del backend, que es quien aplica la allowlist
+ * de hosts y los limites. Es siempre opcional: cargar los campos a mano sigue funcionando igual,
+ * y es lo que queda cuando no hay red.
+ */
+async function runLookup() {
+  const query = elements.lookupQuery.value.trim();
+  if (!query) {
+    return;
+  }
+  elements.lookupResults.replaceChildren();
+  elements.lookupStatus.textContent = "Buscando...";
+  elements.lookupButton.disabled = true;
+  try {
+    const language = formField("language").value || "es";
+    const payload = await api(
+      `/api/knowledge/search?q=${encodeURIComponent(query)}&language=${encodeURIComponent(language)}`
+    );
+    renderLookupResults(payload.items || []);
+  } catch (error) {
+    elements.lookupStatus.textContent =
+      error.status === 504
+        ? "No se pudo contactar la fuente. Podes cargar el termino a mano igual."
+        : error.message;
+  } finally {
+    elements.lookupButton.disabled = false;
+  }
+}
+
+function renderLookupResults(items) {
+  if (!items.length) {
+    elements.lookupStatus.textContent = "Sin resultados.";
+    return;
+  }
+  elements.lookupStatus.textContent = "";
+  const nodes = items.map((item) => {
+    const entry = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "lookup-result";
+    button.innerHTML = `
+      <span class="lookup-result-title">${escapeHtml(item.title)}</span>
+      ${item.description ? `<span class="lookup-result-note">${escapeHtml(item.description)}</span>` : ""}
+    `;
+    button.addEventListener("click", () => importLookupResult(item));
+    entry.append(button);
+    return entry;
+  });
+  elements.lookupResults.replaceChildren(...nodes);
+}
+
+/**
+ * Completa el formulario con el articulo elegido. Solo se pisan los campos que la fuente puede
+ * llenar; categorias, etiquetas y notas son anotaciones propias del usuario y se conservan.
+ */
+async function importLookupResult(item) {
+  elements.lookupStatus.textContent = "Trayendo el articulo...";
+  try {
+    const article = await api(
+      `/api/knowledge/article?id=${encodeURIComponent(item.external_id)}` +
+        `&language=${encodeURIComponent(item.language || "es")}`
+    );
+    setFormValue("title", article.title);
+    setFormValue("language", article.language);
+    setFormValue("summary", article.summary);
+    setFormValue("content", article.content);
+    setFormValue("source_url", article.source_url);
+    resetLookup();
+    elements.termFormError.textContent = "";
+  } catch (error) {
+    elements.lookupStatus.textContent = error.message;
+  }
+}
+
 function openTermDialog(term = null) {
   state.editingSlug = term?.slug || null;
   elements.termForm.reset();
   elements.termFormError.textContent = "";
+  resetLookup();
   elements.termDialogTitle.textContent = term ? "Editar termino" : "Nuevo termino";
   elements.saveTermButton.textContent = term ? "Guardar cambios" : "Guardar termino";
 
@@ -645,6 +730,14 @@ elements.clearFiltersButton.addEventListener("click", resetFilters);
 elements.themeToggle.addEventListener("change", () => applyTheme(elements.themeToggle.checked));
 elements.termForm.addEventListener("submit", saveTerm);
 elements.cancelTermButton.addEventListener("click", () => elements.termDialog.close());
+elements.lookupButton.addEventListener("click", runLookup);
+elements.lookupQuery.addEventListener("keydown", (event) => {
+  // El campo vive dentro del <form>, asi que Enter enviaria el formulario entero.
+  if (event.key === "Enter") {
+    event.preventDefault();
+    runLookup();
+  }
+});
 elements.deleteForm.addEventListener("submit", deleteTerm);
 elements.cancelDeleteButton.addEventListener("click", () => elements.deleteDialog.close());
 
