@@ -12,6 +12,24 @@ detallado y mas vivo que esos dos.
 Convencion de estado, igual que en `docs/roadmap.md` y `mobile/README.md`:
 ✅ hecho y verificado · 🔶 en progreso · ⬜ pendiente.
 
+Cada tarea tiene ademas un modelo de Anthropic sugerido, con este criterio:
+
+- **Haiku 4.5**: cambio mecanico en un solo archivo que calca un patron ya
+  existente al lado (otra query, otro selector) - poco margen de ambiguedad.
+- **Sonnet 5**: el piso por defecto para este proyecto. Cualquier tarea que
+  cruce varias capas (DAO -> repositorio -> ViewModel -> pantalla -> nav), o
+  que necesite compilar/instalar/depurar contra el emulador o el backend real.
+  Es el modelo que hizo todo el trabajo verificado hasta ahora en este
+  repositorio (busqueda, ficha, favoritos, historial, migracion de paquete),
+  incluyendo encontrar y corregir varios bugs reales que no eran obvios de
+  antemano - por eso es el piso, no Haiku, pese a que varias tareas parezcan
+  chicas en el papel.
+- **Opus 5**: decisiones de diseno sin un patron existente para calcar
+  (una tabla de datos nueva, una interfaz pensada para extensibilidad futura),
+  o codigo sensible a seguridad con muchos casos borde (el fetcher SSRF).
+  Tambien marco asi las preguntas que en realidad le corresponden a Lucas como
+  project owner, no a un modelo, cuando pide una recomendacion tecnica previa.
+
 ## Estado actual (para no repetir trabajo)
 
 Antes de escribir codigo para cualquiera de las epicas de abajo, vale la pena
@@ -61,22 +79,24 @@ Pantalla nueva en Android que liste *todos* los terminos personales, no solo
 los favoritos o los vistos recientemente. Mismo patron que ya existe para
 Favoritos e Historial, aplicado a la base completa.
 
-- [ ] **1.1** Agregar `UserTermDao.listAll(limit, offset): List<UserTermEntity>`
+- [ ] **1.1** _(Haiku 4.5)_ Agregar `UserTermDao.listAll(limit, offset): List<UserTermEntity>`
       (orden por titulo), espejando `combined_list_terms(origin=personal)`
-      del backend.
-- [ ] **1.2** Agregar `CorpusRepository.listPersonalTerms()` como wrapper fino
-      sobre 1.1, igual que `listFavorites()`.
-- [ ] **1.3** Pantalla nueva "Mis terminos" (`MyTermsViewModel` +
+      del backend. Calca 3 queries que ya estan arriba en el mismo archivo.
+- [ ] **1.2** _(Haiku 4.5)_ Agregar `CorpusRepository.listPersonalTerms()` como
+      wrapper fino sobre 1.1, igual que `listFavorites()`.
+- [ ] **1.3** _(Sonnet 5)_ Pantalla nueva "Mis terminos" (`MyTermsViewModel` +
       `MyTermsScreen`), copiando casi literal `FavoritesScreen.kt` /
-      `FavoritesViewModel.kt` como plantilla.
-- [ ] **1.4** Ruta de navegacion + punto de entrada. La barra superior de
-      Search ya tiene 4 iconos (historial, favoritos, aleatorio, crear); antes
-      de agregar un quinto, evaluar agrupar Favoritos/Historial/Mis terminos
-      en un unico menu desplegable para no saturar la barra. Es una decision
-      chica de UI, no bloquea el resto.
-- [ ] **1.5** Compilar, instalar en el emulador y verificar a mano: crear 2-3
-      terminos personales, confirmar que todos aparecen en "Mis terminos"
-      aunque no esten en Favoritos ni en Historial.
+      `FavoritesViewModel.kt` como plantilla. Es Compose multi-archivo; esta
+      sesion ya mostro que hasta copias casi literales de Compose pueden
+      esconder un import o una API rota que solo aparece al compilar.
+- [ ] **1.4** _(Sonnet 5)_ Ruta de navegacion + punto de entrada. La barra
+      superior de Search ya tiene 4 iconos (historial, favoritos, aleatorio,
+      crear); antes de agregar un quinto, evaluar agrupar Favoritos/Historial/
+      Mis terminos en un unico menu desplegable para no saturar la barra. Es
+      una decision chica de UI, no bloquea el resto.
+- [ ] **1.5** _(Sonnet 5)_ Compilar, instalar en el emulador y verificar a
+      mano: crear 2-3 terminos personales, confirmar que todos aparecen en
+      "Mis terminos" aunque no esten en Favoritos ni en Historial.
 
 Ningun paso de esta epica necesita cambios en backend o web.
 
@@ -86,21 +106,23 @@ Aclaracion importante: el campo de etiquetas **ya existe** (se carga al crear
 un termino, se guarda, se muestra como chip). Esta epica es sobre *usarlas
 para navegar*, no sobre crearlas de nuevo.
 
-- [ ] **2.1** Backend: agregar filtro por etiqueta en `add_catalog_filters`
-      (`backend/lexidex_api.py:511`) - un query param `tag=` que filtre contra
-      la lista JSON de tags. Sumar un test junto a los que ya existen para los
-      otros filtros.
-- [ ] **2.2** Web: exponer el filtro nuevo en la UI, mismo estilo que el
-      selector de idioma/origen que ya esta en `frontend/app.js`.
-- [ ] **2.3** Android: hacer que `TermChip` acepte un `onClick` opcional
-      (`ui/components/TermChip.kt`), y que el chip de una etiqueta en la
-      ficha navegue a una lista filtrada por esa etiqueta.
-- [ ] **2.4** Android: agregar la query de soporte (`searchByTag` o similar)
-      en `TermDao` y `UserTermDao` para que 2.3 tenga de donde traer los
-      resultados.
-- [ ] **2.5** Verificar en las tres superficies: crear un termino con una
-      etiqueta compartida por otro termino existente, confirmar que tocar la
-      etiqueta muestra ambos.
+- [ ] **2.1** _(Sonnet 5)_ Backend: agregar filtro por etiqueta en
+      `add_catalog_filters` (`backend/lexidex_api.py:511`) - un query param
+      `tag=` que filtre contra la lista JSON de tags. Toca SQL contra JSON,
+      vale la pena algo de cuidado. Sumar un test junto a los que ya existen
+      para los otros filtros.
+- [ ] **2.2** _(Haiku 4.5)_ Web: exponer el filtro nuevo en la UI, mismo
+      estilo que el selector de idioma/origen que ya esta en `frontend/app.js`.
+- [ ] **2.3** _(Haiku 4.5)_ Android: hacer que `TermChip` acepte un `onClick`
+      opcional (`ui/components/TermChip.kt`) - agregar un parametro a un
+      composable chico.
+- [ ] **2.4** _(Sonnet 5)_ Android: agregar la query de soporte (`searchByTag`
+      o similar) en `TermDao` y `UserTermDao` para que 2.3/3 navegue a algo.
+      Nueva query FTS/LIKE contra JSON en dos DAOs distintos, con los mismos
+      matices de FTS5 que ya aparecieron esta sesion.
+- [ ] **2.5** _(Sonnet 5)_ Verificar en las tres superficies: crear un termino
+      con una etiqueta compartida por otro termino existente, confirmar que
+      tocar la etiqueta muestra ambos.
 
 Independiente de la epica 1; se pueden hacer en paralelo o en cualquier orden
 relativo.
@@ -111,26 +133,32 @@ Agrupar terminos (personales y del paquete, igual que ya hacen favoritos) bajo
 un nombre elegido por el usuario. Es la unica epica de esta lista que necesita
 una tabla nueva.
 
-- [ ] **3.1** Decision chica de alcance (2-3 lineas alcanzan, no hace falta un
-      ADR completo): ¿una coleccion es solo local al dispositivo, igual que
-      favoritos hoy, o se piensa sincronizable a futuro? Para esta primera
-      version: local, mismo criterio que favoritos/historial. Dejar esa
-      decision escrita ya sea en este archivo o en un ADR corto antes de 3.2.
-- [ ] **3.2** Backend: tabla `collections` (id, nombre, fecha) + tabla puente
-      `collection_terms` (collection_id, term_slug, term_origin) - mismo
-      patron sin FK cruzada que ya usa `favorites`. Endpoints CRUD de
+- [ ] **3.1** _(Opus 5, o mejor Lucas directamente)_ Decision chica de alcance
+      (2-3 lineas alcanzan, no hace falta un ADR completo): ¿una coleccion es
+      solo local al dispositivo, igual que favoritos hoy, o se piensa
+      sincronizable a futuro? Para esta primera version: local, mismo criterio
+      que favoritos/historial. Es una decision de producto, no de codigo; si
+      se le pide a un modelo que proponga algo antes de que Lucas confirme,
+      Opus por no haber un patron existente para calcar. Dejar esa decision
+      escrita ya sea en este archivo o en un ADR corto antes de 3.2.
+- [ ] **3.2** _(Sonnet 5)_ Backend: tabla `collections` (id, nombre, fecha) +
+      tabla puente `collection_terms` (collection_id, term_slug, term_origin)
+      - mismo patron sin FK cruzada que ya usa `favorites`. Endpoints CRUD de
       colecciones y de agregar/quitar un termino.
-- [ ] **3.3** Web: UI para crear/nombrar una coleccion y agregar/quitar
-      terminos desde la ficha.
-- [ ] **3.4** Android: entidades Room + DAO + `CollectionRepository` (o
-      extension de `CorpusRepository`) espejando 3.2.
-- [ ] **3.5** Android: pantallas - lista de colecciones, detalle de una
-      coleccion (lista de terminos, reusa `TermRow`), y accion "agregar a
-      coleccion" desde la ficha (`TermDetailScreen`).
-- [ ] **3.6** Verificar en ambas plataformas: crear una coleccion, agregar un
-      termino del paquete y uno personal a la misma coleccion, confirmar que
-      ambos aparecen y que borrar el termino personal no rompe la coleccion
-      (mismo cuidado que ya se aplico con favoritos/historial huerfanos).
+- [ ] **3.3** _(Sonnet 5)_ Web: UI para crear/nombrar una coleccion y agregar/
+      quitar terminos desde la ficha.
+- [ ] **3.4** _(Sonnet 5)_ Android: entidades Room + DAO +
+      `CollectionRepository` (o extension de `CorpusRepository`) espejando
+      3.2. Sigue el patron de favoritos/historial pero es la primera tabla
+      puente de verdad nueva, no una copia exacta.
+- [ ] **3.5** _(Sonnet 5)_ Android: pantallas - lista de colecciones, detalle
+      de una coleccion (lista de terminos, reusa `TermRow`), y accion
+      "agregar a coleccion" desde la ficha (`TermDetailScreen`).
+- [ ] **3.6** _(Sonnet 5)_ Verificar en ambas plataformas: crear una
+      coleccion, agregar un termino del paquete y uno personal a la misma
+      coleccion, confirmar que ambos aparecen y que borrar el termino
+      personal no rompe la coleccion (mismo cuidado que ya se aplico con
+      favoritos/historial huerfanos).
 
 Depende solo de 3.1. El resto de subtareas son chicas y en su mayoria
 secuenciales dentro de cada plataforma.
@@ -203,36 +231,47 @@ exponer el backend en red por otro motivo.
 ### Tareas (asumiendo que se elige la opcion A; si se elige B, 5.3 y 5.4 se
 mueven enteras al backend y Android/web pasan a ser solo consumidores)
 
-- [ ] **5.1** Cerrar la decision de arriba y dejarla escrita (ADR corto o una
-      seccion en este archivo).
-- [ ] **5.2** Escribir el fetcher en Python siguiendo el checklist de SSRF ya
-      citado, con tests de regresion (mismo espiritu que
+- [ ] **5.1** _(Lucas; Opus 5 si se quiere una recomendacion tecnica antes de
+      decidir)_ Cerrar la decision de arriba y dejarla escrita (ADR corto o
+      una seccion en este archivo).
+- [ ] **5.2** _(Opus 5)_ Escribir el fetcher en Python siguiendo el checklist
+      de SSRF ya citado, con tests de regresion (mismo espiritu que
       `test_verifies_package_checksum_and_rejects_tampering`, ya en
-      `tests/test_canonical_api.py`).
-- [ ] **5.3** Endpoint de busqueda en el backend (usa la API de busqueda/
-      OpenSearch de Wikipedia): devuelve titulo + extracto corto y, si se
-      puede, miniatura - nunca el articulo completo en este paso.
-- [ ] **5.4** Endpoint de "traer articulo": dado un titulo elegido, trae el
-      resumen (no necesariamente el cuerpo completo - ver epica 4 sobre
-      licencias y tamano).
-- [ ] **5.5** Web: reemplazar o complementar el campo "URL de fuente" del
-      formulario de alta por un buscador que consulta 5.3, muestra resultados,
-      y al elegir uno completa titulo/resumen/contenido/fuente llamando a 5.4.
-- [ ] **5.6a** Android: agregar la dependencia de red minima (ver las skills
-      `android-retrofit` o `kmp-ktor` ya disponibles en este entorno) apuntando
-      a Wikipedia directamente (opcion A) o al backend (opcion B, segun 5.1).
-- [ ] **5.6b** Android: pantalla o dialogo de busqueda dentro de
+      `tests/test_canonical_api.py`). Codigo sensible a seguridad con varios
+      casos borde (redirecciones, DNS rebinding, corte de streaming) - vale
+      la pena el modelo mas cuidadoso.
+- [ ] **5.3** _(Sonnet 5)_ Endpoint de busqueda en el backend (usa la API de
+      busqueda/OpenSearch de Wikipedia): devuelve titulo + extracto corto y,
+      si se puede, miniatura - nunca el articulo completo en este paso. Una
+      vez que 5.2 resolvio lo peligroso, esto es enchufar una API externa ya
+      acotada.
+- [ ] **5.4** _(Sonnet 5)_ Endpoint de "traer articulo": dado un titulo
+      elegido, trae el resumen (no necesariamente el cuerpo completo - ver
+      epica 4 sobre licencias y tamano).
+- [ ] **5.5** _(Sonnet 5)_ Web: reemplazar o complementar el campo "URL de
+      fuente" del formulario de alta por un buscador que consulta 5.3, muestra
+      resultados, y al elegir uno completa titulo/resumen/contenido/fuente
+      llamando a 5.4.
+- [ ] **5.6a** _(Sonnet 5)_ Android: agregar la dependencia de red minima (ver
+      las skills `android-retrofit` o `kmp-ktor` ya disponibles en este
+      entorno) apuntando a Wikipedia directamente (opcion A) o al backend
+      (opcion B, segun 5.1). Primera vez que Android hace una llamada de red,
+      pero las skills ya dan la receta.
+- [ ] **5.6b** _(Sonnet 5)_ Android: pantalla o dialogo de busqueda dentro de
       `PersonalTermEditorScreen`, reusando el patron de estado
       `UiState`/`Effect` ya establecido en el resto de la app.
-- [ ] **5.6c** Android: al elegir un resultado, completar el formulario igual
-      que hace 5.5 en web.
-- [ ] **5.7** Verificar en ambas plataformas, con red y sin red: confirmar que
-      sin conexion el alta manual (pegando texto/link a mano) sigue
-      funcionando como alternativa, no se rompe el camino que ya existe hoy.
-- [ ] **5.8** Nota de diseño para 5.2-5.6 (no es una tarea aparte): dejar el
-      "adapter" de busqueda con una interfaz simple (`search(query)`,
+- [ ] **5.6c** _(Haiku 4.5)_ Android: al elegir un resultado, completar el
+      formulario igual que hace 5.5 en web. Una vez que 5.6a/5.6b existen,
+      esto es cablear un callback - mecanico.
+- [ ] **5.7** _(Sonnet 5)_ Verificar en ambas plataformas, con red y sin red:
+      confirmar que sin conexion el alta manual (pegando texto/link a mano)
+      sigue funcionando como alternativa, no se rompe el camino que ya existe
+      hoy.
+- [ ] **5.8** _(Opus 5)_ Nota de diseño para 5.2-5.6 (no es una tarea aparte):
+      dejar el "adapter" de busqueda con una interfaz simple (`search(query)`,
       `fetch(id)`) para que agregar otra fuente de conocimiento mas adelante
       sea implementar la misma interfaz, no reescribir la UI de busqueda.
+      Diseno pensado para extensibilidad futura, no un patron a calcar.
 
 ---
 
