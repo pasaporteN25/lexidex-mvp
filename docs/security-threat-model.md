@@ -21,7 +21,7 @@ denegacion de servicio, secretos, privacidad y cadena de suministro.
 
 | Superficie | Implementada hoy | Nota |
 | --- | --- | --- |
-| Importacion de URLs arbitrarias | No | Cero llamadas de red salientes en el backend o en `tools/`. `source_url` solo se guarda como texto validado, nunca se descarga. |
+| Importacion de URLs arbitrarias | No | El usuario nunca elige el destino. `source_url` se sigue guardando como texto validado y nunca se descarga. Desde 2026-08-19 hay busqueda contra Wikipedia (ADR 0003), pero contra un host fijo de una allowlist, con el aporte del usuario viajando solo como parametro codificado: ver "Busqueda en fuentes externas" mas abajo. |
 | Sincronizacion remota o cuentas | No | No hay autenticacion, sesiones ni sincronizacion en ningun modulo. |
 | Carga de archivos no confiables | No | No existe endpoint de upload. |
 | Servidor fuera de localhost | Posible con un flag | `--host` en `lexidex_api.py` y `-HostAddress` en `start-lexidex.ps1` aceptan cualquier direccion; nada en el codigo bloquea o advierte si no es loopback. |
@@ -31,6 +31,37 @@ Cuatro de las cinco superficies simplemente no existen todavia, asi que no
 generan riesgo activo. La quinta -el servidor fuera de localhost- es la unica
 que un cambio de un solo parametro podria activar hoy sin que el codigo lo
 acompane con controles.
+
+### Busqueda en fuentes externas (agregado el 2026-08-19)
+
+La aplicacion Android ahora puede consultar Wikipedia al crear un termino
+(ADR [0003](decisions/0003-knowledge-source-adapters.md)), y declara el
+permiso `INTERNET` por primera vez. Esto **no** abre la superficie de
+"importacion de URLs arbitrarias", y la diferencia es la que decide que
+controles corresponden: el host lo fija la aplicacion, no el usuario. El
+aporte del usuario viaja siempre como parametro de consulta o segmento de
+ruta ya codificado, nunca como destino.
+
+Los controles implementados viven concentrados en un solo archivo,
+`mobile/.../data/knowledge/AllowlistedHttpFetcher.kt`, para que sean
+auditables de una lectura:
+
+- Solo `https`, y solo hacia hosts de una allowlist (`wikipedia.org` y sus
+  subdominios), comparada por sufijo real y no por `contains`.
+- El codigo de idioma se reduce a dos o tres letras minusculas antes de
+  formar el subdominio, de modo que no pueda dirigir el host.
+- Timeout de conexion y de lectura (10 s cada uno).
+- Tope de 512 KiB por respuesta, cortado durante la lectura y no despues de
+  bufferear el cuerpo entero.
+- Las redirecciones se recorren a mano, revalidando esquema y host en **cada**
+  salto, con un maximo de 3.
+- User-Agent identificable.
+- Lo que se guarda es texto plano (el `extract` de la API REST), nunca HTML,
+  asi que el escapado que ya hacen las interfaces sigue alcanzando.
+
+El backend todavia no hace ninguna llamada saliente; cuando se implemente su
+mitad (tarea 5.2 de `personal-catalog-roadmap.md`) le corresponden los mismos
+controles y esta seccion debe actualizarse.
 
 ## Limites de confianza
 

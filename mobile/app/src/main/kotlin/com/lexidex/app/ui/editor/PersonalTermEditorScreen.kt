@@ -1,26 +1,38 @@
 package com.lexidex.app.ui.editor
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -33,15 +45,33 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.lexidex.app.data.knowledge.KnowledgeSearchResult
 import com.lexidex.app.ui.theme.LexidexSpacing
 import kotlinx.coroutines.flow.collectLatest
 
 private val KINDS = listOf("article", "reference", "query")
 private val STATUSES = listOf("seed", "enriched", "reviewed", "archived")
+
+/**
+ * The external-lookup half of the editor, grouped rather than passed as six loose callbacks -
+ * the form already takes eleven. [sourceName] null means no source is configured and the whole
+ * lookup entry point disappears, leaving manual entry exactly as it was.
+ */
+private data class KnowledgeSearchActions(
+    val sourceName: String?,
+    val onOpen: () -> Unit,
+    val onClose: () -> Unit,
+    val onQueryChange: (String) -> Unit,
+    val onSubmit: () -> Unit,
+    val onSelect: (KnowledgeSearchResult) -> Unit,
+)
 
 @Composable
 fun PersonalTermEditorScreen(
@@ -65,6 +95,14 @@ fun PersonalTermEditorScreen(
     PersonalTermEditorContent(
         uiState = uiState,
         isEditing = viewModel.isEditing,
+        search = KnowledgeSearchActions(
+            sourceName = viewModel.knowledgeSourceName,
+            onOpen = viewModel::onOpenSearch,
+            onClose = viewModel::onCloseSearch,
+            onQueryChange = viewModel::onSearchQueryChange,
+            onSubmit = viewModel::onSubmitSearch,
+            onSelect = viewModel::onSelectSearchResult,
+        ),
         onTitleChange = viewModel::onTitleChange,
         onLanguageChange = viewModel::onLanguageChange,
         onKindChange = viewModel::onKindChange,
@@ -86,6 +124,7 @@ fun PersonalTermEditorScreen(
 private fun PersonalTermEditorContent(
     uiState: PersonalTermEditorUiState,
     isEditing: Boolean,
+    search: KnowledgeSearchActions,
     onTitleChange: (String) -> Unit,
     onLanguageChange: (String) -> Unit,
     onKindChange: (String) -> Unit,
@@ -140,6 +179,20 @@ private fun PersonalTermEditorContent(
         ) {
             if (uiState.errorMessage != null) {
                 Text(uiState.errorMessage, color = MaterialTheme.colorScheme.error)
+            }
+            if (search.sourceName != null) {
+                OutlinedButton(onClick = search.onOpen, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                    Text(
+                        "Buscar en ${search.sourceName}",
+                        modifier = Modifier.padding(start = LexidexSpacing.tight),
+                    )
+                }
+                Text(
+                    "O carga los campos a mano, como siempre.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             TextField(
                 value = uiState.title,
@@ -206,6 +259,10 @@ private fun PersonalTermEditorContent(
         }
     }
 
+    if (uiState.isSearchOpen && search.sourceName != null) {
+        KnowledgeSearchDialog(uiState = uiState, sourceName = search.sourceName, search = search)
+    }
+
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
@@ -220,6 +277,106 @@ private fun PersonalTermEditorContent(
                 TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancelar") }
             },
         )
+    }
+}
+
+@Composable
+private fun KnowledgeSearchDialog(
+    uiState: PersonalTermEditorUiState,
+    sourceName: String,
+    search: KnowledgeSearchActions,
+) {
+    Dialog(onDismissRequest = search.onClose) {
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f),
+        ) {
+            Column(modifier = Modifier.padding(LexidexSpacing.panel)) {
+                Text("Buscar en $sourceName", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    "Se busca en la edicion en \"${uiState.language}\".",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = LexidexSpacing.micro),
+                )
+                TextField(
+                    value = uiState.searchQuery,
+                    onValueChange = search.onQueryChange,
+                    label = { Text("Termino a buscar") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { search.onSubmit() }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = LexidexSpacing.compact),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(LexidexSpacing.tight),
+                    modifier = Modifier.padding(top = LexidexSpacing.tight),
+                ) {
+                    TextButton(onClick = search.onSubmit, enabled = uiState.canSubmitSearch) {
+                        Text("Buscar")
+                    }
+                    TextButton(onClick = search.onClose) { Text("Cancelar") }
+                }
+
+                if (uiState.isSearching || uiState.isImporting) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                if (uiState.searchErrorMessage != null) {
+                    Text(
+                        uiState.searchErrorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = LexidexSpacing.tight),
+                    )
+                }
+                if (uiState.hasSearched && !uiState.isSearching && uiState.searchResults.isEmpty() &&
+                    uiState.searchErrorMessage == null
+                ) {
+                    Text(
+                        "Sin resultados para \"${uiState.searchQuery}\".",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = LexidexSpacing.tight),
+                    )
+                }
+
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(uiState.searchResults, key = { it.externalId }) { result ->
+                        SearchResultRow(
+                            result = result,
+                            enabled = !uiState.isImporting,
+                            onClick = { search.onSelect(result) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchResultRow(result: KnowledgeSearchResult, enabled: Boolean, onClick: () -> Unit) {
+    Column {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(vertical = LexidexSpacing.compact),
+        ) {
+            Text(result.title, style = MaterialTheme.typography.titleMedium)
+            if (result.description.isNotBlank()) {
+                Text(
+                    result.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 

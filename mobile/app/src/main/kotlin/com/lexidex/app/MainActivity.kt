@@ -12,7 +12,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val application = application as LexidexApplication
         setContent {
-            LexidexApp(repository = application.corpusRepository)
+            LexidexApp(
+                repository = application.corpusRepository,
+                knowledgeSources = application.knowledgeSources,
+            )
         }
     }
 }

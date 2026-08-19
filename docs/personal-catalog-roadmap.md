@@ -231,9 +231,11 @@ exponer el backend en red por otro motivo.
 ### Tareas (asumiendo que se elige la opcion A; si se elige B, 5.3 y 5.4 se
 mueven enteras al backend y Android/web pasan a ser solo consumidores)
 
-- [ ] **5.1** _(Lucas; Opus 5 si se quiere una recomendacion tecnica antes de
-      decidir)_ Cerrar la decision de arriba y dejarla escrita (ADR corto o
-      una seccion en este archivo).
+- [x] **5.1** ✅ Decidido el 2026-08-19: cada cliente resuelve su propia red
+      (Android directo a Wikipedia, la web via su backend). Escrito en
+      ADR [0003](decisions/0003-knowledge-source-adapters.md), junto con el
+      alcance de contenido (extracto de entrada ahora, articulo completo mas
+      adelante) y los controles de red exigidos.
 - [ ] **5.2** _(Opus 5)_ Escribir el fetcher en Python siguiendo el checklist
       de SSRF ya citado, con tests de regresion (mismo espiritu que
       `test_verifies_package_checksum_and_rejects_tampering`, ya en
@@ -252,26 +254,27 @@ mueven enteras al backend y Android/web pasan a ser solo consumidores)
       fuente" del formulario de alta por un buscador que consulta 5.3, muestra
       resultados, y al elegir uno completa titulo/resumen/contenido/fuente
       llamando a 5.4.
-- [ ] **5.6a** _(Sonnet 5)_ Android: agregar la dependencia de red minima (ver
-      las skills `android-retrofit` o `kmp-ktor` ya disponibles en este
-      entorno) apuntando a Wikipedia directamente (opcion A) o al backend
-      (opcion B, segun 5.1). Primera vez que Android hace una llamada de red,
-      pero las skills ya dan la receta.
-- [ ] **5.6b** _(Sonnet 5)_ Android: pantalla o dialogo de busqueda dentro de
-      `PersonalTermEditorScreen`, reusando el patron de estado
-      `UiState`/`Effect` ya establecido en el resto de la app.
-- [ ] **5.6c** _(Haiku 4.5)_ Android: al elegir un resultado, completar el
-      formulario igual que hace 5.5 en web. Una vez que 5.6a/5.6b existen,
-      esto es cablear un callback - mecanico.
+- [x] **5.6a** ✅ Android: sin dependencia nueva. `AllowlistedHttpFetcher`
+      sobre `HttpURLConnection` (en Android ya esta respaldado por OkHttp), con
+      allowlist de host, timeouts, tope de tamano cortado durante la lectura y
+      recorrido de redirecciones revalidando cada salto. Permiso `INTERNET`
+      agregado al manifiesto.
+- [x] **5.6b** ✅ Android: `KnowledgeSearchDialog` dentro de
+      `PersonalTermEditorScreen`, con el estado de busqueda viviendo en
+      `PersonalTermEditorUiState`. Envio explicito (no busqueda por tecla) para
+      no pegarle al servicio en cada pulsacion.
+- [x] **5.6c** ✅ Android: al elegir un resultado se completan titulo, idioma,
+      resumen, contenido y URL de fuente; categorias, etiquetas y notas quedan
+      intactas por ser anotaciones propias del usuario.
 - [ ] **5.7** _(Sonnet 5)_ Verificar en ambas plataformas, con red y sin red:
       confirmar que sin conexion el alta manual (pegando texto/link a mano)
       sigue funcionando como alternativa, no se rompe el camino que ya existe
       hoy.
-- [ ] **5.8** _(Opus 5)_ Nota de diseño para 5.2-5.6 (no es una tarea aparte):
-      dejar el "adapter" de busqueda con una interfaz simple (`search(query)`,
-      `fetch(id)`) para que agregar otra fuente de conocimiento mas adelante
-      sea implementar la misma interfaz, no reescribir la UI de busqueda.
-      Diseno pensado para extensibilidad futura, no un patron a calcar.
+- [x] **5.8** ✅ Interfaz `KnowledgeSource` (`search` / `fetch` + identidad)
+      con `KnowledgeSearchResult` y `KnowledgeArticle` como unico vocabulario
+      que ve la UI, de modo que sumar otra fuente sea implementar la interfaz.
+      `LexidexApplication` ya expone una **lista** de fuentes, no una sola.
+      Falta el espejo en Python cuando se haga 5.2.
 
 ---
 

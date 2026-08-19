@@ -3,6 +3,8 @@ package com.lexidex.app.ui.editor
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lexidex.app.data.knowledge.KnowledgeSearchResult
+import com.lexidex.app.data.knowledge.KnowledgeSource
 import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.data.repository.PersonalTermInput
 import com.lexidex.app.ui.toUserMessage
@@ -31,8 +33,18 @@ data class PersonalTermEditorUiState(
     val isSaving: Boolean = false,
     val isDeleting: Boolean = false,
     val errorMessage: String? = null,
+    // Lookup against an external knowledge source (ADR 0003). Always optional: every field above
+    // stays editable by hand, which is what keeps term creation working with no network.
+    val isSearchOpen: Boolean = false,
+    val searchQuery: String = "",
+    val searchResults: List<KnowledgeSearchResult> = emptyList(),
+    val isSearching: Boolean = false,
+    val hasSearched: Boolean = false,
+    val isImporting: Boolean = false,
+    val searchErrorMessage: String? = null,
 ) {
     val canSave: Boolean get() = title.isNotBlank() && !isSaving && !isDeleting
+    val canSubmitSearch: Boolean get() = searchQuery.isNotBlank() && !isSearching && !isImporting
 }
 
 sealed interface PersonalTermEditorEffect {
@@ -44,6 +56,7 @@ sealed interface PersonalTermEditorEffect {
 class PersonalTermEditorViewModel(
     private val repository: CorpusRepository,
     private val editSlug: String?,
+    private val knowledgeSources: List<KnowledgeSource> = emptyList(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(PersonalTermEditorUiState())
     val uiState: StateFlow<PersonalTermEditorUiState> = _uiState.asStateFlow()
@@ -52,6 +65,11 @@ class PersonalTermEditorViewModel(
     val effects: Flow<PersonalTermEditorEffect> = _effects.receiveAsFlow()
 
     val isEditing: Boolean get() = editSlug != null
+
+    /** Null when no source is configured, which hides the lookup entry point entirely. */
+    private val knowledgeSource: KnowledgeSource? = knowledgeSources.firstOrNull()
+
+    val knowledgeSourceName: String? get() = knowledgeSource?.displayName
 
     init {
         if (editSlug != null) loadForEdit(editSlug)
@@ -97,6 +115,85 @@ class PersonalTermEditorViewModel(
     fun onCategoriesTextChange(value: String) = _uiState.update { it.copy(categoriesText = value) }
     fun onTagsTextChange(value: String) = _uiState.update { it.copy(tagsText = value) }
     fun onNotesChange(value: String) = _uiState.update { it.copy(notes = value) }
+
+    // region Busqueda en una fuente externa (ADR 0003)
+
+    /** Seeds the query with whatever title was already typed, so the common case is one tap. */
+    fun onOpenSearch() = _uiState.update {
+        it.copy(
+            isSearchOpen = true,
+            searchQuery = it.searchQuery.ifBlank { it.title },
+            searchErrorMessage = null,
+        )
+    }
+
+    fun onCloseSearch() = _uiState.update { it.copy(isSearchOpen = false, searchErrorMessage = null) }
+
+    fun onSearchQueryChange(value: String) = _uiState.update { it.copy(searchQuery = value) }
+
+    /**
+     * Explicit submit rather than search-as-you-type: each call is a request to someone else's
+     * service, so it fires when the user asks for it, not on every keystroke.
+     */
+    fun onSubmitSearch() {
+        val source = knowledgeSource ?: return
+        val state = _uiState.value
+        if (!state.canSubmitSearch) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSearching = true, searchErrorMessage = null) }
+            runCatching { source.search(state.searchQuery, state.language) }.fold(
+                onSuccess = { results ->
+                    _uiState.update {
+                        it.copy(isSearching = false, hasSearched = true, searchResults = results)
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isSearching = false,
+                            hasSearched = true,
+                            searchResults = emptyList(),
+                            searchErrorMessage = error.toUserMessage(),
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    /**
+     * Fills the form from the chosen article. Only the fields the source can speak to are
+     * overwritten; categories, tags and notes are the user's own annotations and survive.
+     */
+    fun onSelectSearchResult(result: KnowledgeSearchResult) {
+        val source = knowledgeSource ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isImporting = true, searchErrorMessage = null) }
+            runCatching { source.fetch(result) }.fold(
+                onSuccess = { article ->
+                    _uiState.update {
+                        it.copy(
+                            isImporting = false,
+                            isSearchOpen = false,
+                            errorMessage = null,
+                            title = article.title,
+                            language = article.language,
+                            summary = article.summary,
+                            content = article.content,
+                            sourceUrl = article.sourceUrl,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(isImporting = false, searchErrorMessage = error.toUserMessage())
+                    }
+                },
+            )
+        }
+    }
+
+    // endregion
 
     fun onSave() {
         val state = _uiState.value
@@ -145,7 +242,11 @@ class PersonalTermEditorViewModel(
     }
 
     companion object {
-        fun factory(repository: CorpusRepository, editSlug: String?): ViewModelProvider.Factory =
-            viewModelFactoryOf { PersonalTermEditorViewModel(repository, editSlug) }
+        fun factory(
+            repository: CorpusRepository,
+            editSlug: String?,
+            knowledgeSources: List<KnowledgeSource>,
+        ): ViewModelProvider.Factory =
+            viewModelFactoryOf { PersonalTermEditorViewModel(repository, editSlug, knowledgeSources) }
     }
 }

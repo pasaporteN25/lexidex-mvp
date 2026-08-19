@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+        Solo para buscar terminos en fuentes externas al crearlos (ADR 0003). El catalogo, la
+        busqueda y todo el resto siguen funcionando sin conexion: la red es un camino adicional,
+        nunca uno obligatorio.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name=".LexidexApplication"
         android:allowBackup="true"

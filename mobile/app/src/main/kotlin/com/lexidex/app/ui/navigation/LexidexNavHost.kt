@@ -7,6 +7,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.lexidex.app.data.knowledge.KnowledgeSource
 import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.ui.detail.TermDetailScreen
 import com.lexidex.app.ui.detail.TermDetailViewModel
@@ -20,7 +21,7 @@ import com.lexidex.app.ui.search.SearchScreen
 import com.lexidex.app.ui.search.SearchViewModel
 
 @Composable
-fun LexidexNavHost(repository: CorpusRepository) {
+fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<KnowledgeSource> = emptyList()) {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = SearchRoute) {
         composable<SearchRoute> {
@@ -48,7 +49,7 @@ fun LexidexNavHost(repository: CorpusRepository) {
         composable<PersonalTermEditorRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<PersonalTermEditorRoute>()
             val viewModel = viewModel<PersonalTermEditorViewModel>(
-                factory = PersonalTermEditorViewModel.factory(repository, route.slug),
+                factory = PersonalTermEditorViewModel.factory(repository, route.slug, knowledgeSources),
             )
             PersonalTermEditorScreen(
                 viewModel = viewModel,

@@ -13,13 +13,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lexidex.app.data.knowledge.KnowledgeSource
 import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.ui.navigation.LexidexNavHost
 import com.lexidex.app.ui.theme.LexidexSpacing
 import com.lexidex.app.ui.theme.LexidexTheme
 
 @Composable
-fun LexidexApp(repository: CorpusRepository) {
+fun LexidexApp(repository: CorpusRepository, knowledgeSources: List<KnowledgeSource> = emptyList()) {
     LexidexTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             val readinessViewModel = viewModel<AppReadinessViewModel>(
@@ -28,7 +29,7 @@ fun LexidexApp(repository: CorpusRepository) {
             val readiness by readinessViewModel.state.collectAsStateWithLifecycle()
             when (val state = readiness) {
                 AppReadiness.Loading -> LoadingGate()
-                AppReadiness.Ready -> LexidexNavHost(repository)
+                AppReadiness.Ready -> LexidexNavHost(repository, knowledgeSources)
                 is AppReadiness.Error -> ErrorGate(state.message)
             }
         }
