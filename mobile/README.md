@@ -63,7 +63,17 @@ en ese archivo debe actualizarse a mano; un valor desactualizado falla fuerte
    y confirmar que al eliminarlo desaparece de la busqueda (con refresco
    automatico al volver a la pantalla) y de Favoritos/Historial sin dejar
    referencias huerfanas.
-4. ⬜ Verificar instalacion, checksum y migracion entre versiones de paquete.
+4. ✅ Migracion entre versiones de paquete. `CorpusDatabaseProvider` guarda un
+   marcador (`lexidex.sqlite.installed.json`) con el `package_id`/`package_version`/
+   sha256 que produjo la copia en almacenamiento privado; si el paquete bundleado
+   en una actualizacion futura tiene un checksum distinto, la copia anterior se
+   reemplaza de forma atomica (copia a `.tmp`, siembra el identity hash, y recien
+   entonces hace `renameTo` sobre el archivo real) sin tocar `lexidex-user.sqlite`.
+   Verificado con un paquete de prueba real (mismo esquema, checksum distinto):
+   la migracion reemplaza el archivo, favoritos/terminos personales/historial
+   sobreviven intactos, y el paquete migrado sigue siendo buscable. Tambien
+   verificado el caso de una instalacion previa a este marcador (el archivo ya
+   existe pero no hay marcador): se adopta sin recopiar.
 5. ⬜ Preparar descarga opcional de paquetes para una etapa posterior al modelo
    de amenazas.
 

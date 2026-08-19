@@ -11,23 +11,25 @@ import kotlinx.serialization.json.Json
 /** The bundled package failed integrity verification and must not be activated. */
 class PackageIntegrityException(message: String) : Exception(message)
 
-private val manifestJson = Json { ignoreUnknownKeys = true }
+internal val manifestJson = Json { ignoreUnknownKeys = true }
 
 /**
  * Verifies a bundled knowledge package's checksum against its manifest before Room is ever
  * allowed to open it - the same fail-closed criterion as `verify_package_checksum` in
  * backend/lexidex_api.py: a missing manifest is skipped (nothing to check against), a manifest
  * that exists but won't parse is a hard failure, and a hash mismatch is always a hard failure.
+ * Returns the parsed manifest (null only when there is none to read) so callers such as
+ * [CorpusDatabaseProvider] can compare package identity/version for migration.
  */
 object PackageVerifier {
     private const val STREAM_BUFFER_BYTES = 1 shl 20 // 1 MiB, matches the backend's read chunk size
 
-    suspend fun verify(context: Context, manifestAssetPath: String, databaseAssetPath: String) =
+    suspend fun verify(context: Context, manifestAssetPath: String, databaseAssetPath: String): PackageManifest? =
         withContext(Dispatchers.IO) {
             val manifestText = try {
                 context.assets.open(manifestAssetPath).use { it.readBytes().decodeToString() }
             } catch (e: FileNotFoundException) {
-                return@withContext
+                return@withContext null
             }
 
             val manifest = try {
@@ -42,7 +44,7 @@ object PackageVerifier {
             val expectedFileName = manifest.artifacts.database.file
             val actualFileName = databaseAssetPath.substringAfterLast('/')
             if (expected.isBlank() || expectedFileName != actualFileName) {
-                return@withContext
+                return@withContext manifest
             }
 
             val actual = sha256OfAsset(context, databaseAssetPath)
@@ -53,6 +55,7 @@ object PackageVerifier {
                         "El paquete puede estar corrupto o haber sido reemplazado; no se abrira.",
                 )
             }
+            manifest
         }
 
     private fun sha256OfAsset(context: Context, assetPath: String): String {

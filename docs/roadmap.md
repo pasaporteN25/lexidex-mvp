@@ -124,8 +124,11 @@ Avance:
   FTS5, ficha con procedencia, relaciones bidireccionales, termino diario y
   aleatorio) verificada contra el mismo catalogo semilla de 4.490 terminos, mas
   terminos personales, favoritos e historial en una base de usuario separada
-  que se fusiona con el paquete en busqueda y ficha; migracion entre versiones
-  de paquete y descarga remota quedan pendientes (ver `mobile/README.md`).
+  que se fusiona con el paquete en busqueda y ficha. La migracion entre
+  versiones de paquete tambien esta implementada y verificada: una actualizacion
+  que bundlea un paquete con checksum distinto reemplaza la copia canonica de
+  forma atomica sin tocar los datos personales. Descarga remota de paquetes
+  queda pendiente (ver `mobile/README.md`).
 
 Siguiente hito inmediato:
 
