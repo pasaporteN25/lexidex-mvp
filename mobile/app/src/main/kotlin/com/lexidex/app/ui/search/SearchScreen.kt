@@ -13,10 +13,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +34,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,6 +58,7 @@ fun SearchScreen(
     viewModel: SearchViewModel,
     onTermClick: (String) -> Unit,
     onCreateClick: () -> Unit,
+    onMyTermsClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
 ) {
@@ -72,6 +80,7 @@ fun SearchScreen(
         onRandomClick = viewModel::onRandomClick,
         onTermClick = onTermClick,
         onCreateClick = onCreateClick,
+        onMyTermsClick = onMyTermsClick,
         onFavoritesClick = onFavoritesClick,
         onHistoryClick = onHistoryClick,
     )
@@ -85,6 +94,7 @@ private fun SearchContent(
     onRandomClick: () -> Unit,
     onTermClick: (String) -> Unit,
     onCreateClick: () -> Unit,
+    onMyTermsClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
 ) {
@@ -95,12 +105,14 @@ private fun SearchContent(
                     Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
                 },
                 actions = {
-                    IconButton(onClick = onHistoryClick) {
-                        Icon(Icons.Default.History, contentDescription = "Historial")
-                    }
-                    IconButton(onClick = onFavoritesClick) {
-                        Icon(Icons.Default.Star, contentDescription = "Favoritos")
-                    }
+                    // Las tres listas van juntas en un menu: como iconos sueltos sumaban cinco
+                    // acciones en la barra y ninguna se leia. Aleatorio y crear quedan directos
+                    // por ser las dos acciones, no navegacion.
+                    ListsMenu(
+                        onMyTermsClick = onMyTermsClick,
+                        onFavoritesClick = onFavoritesClick,
+                        onHistoryClick = onHistoryClick,
+                    )
                     IconButton(onClick = onRandomClick) {
                         Icon(Icons.Default.Casino, contentDescription = "Termino aleatorio")
                     }
@@ -129,6 +141,35 @@ private fun SearchContent(
                 DailyTermSection(uiState, onTermClick)
             }
         }
+    }
+}
+
+@Composable
+private fun ListsMenu(
+    onMyTermsClick: () -> Unit,
+    onFavoritesClick: () -> Unit,
+    onHistoryClick: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    IconButton(onClick = { expanded = true }) {
+        Icon(Icons.Default.MoreVert, contentDescription = "Mis listas")
+    }
+    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenuItem(
+            text = { Text("Mis terminos") },
+            leadingIcon = { Icon(Icons.Default.CollectionsBookmark, contentDescription = null) },
+            onClick = { expanded = false; onMyTermsClick() },
+        )
+        DropdownMenuItem(
+            text = { Text("Favoritos") },
+            leadingIcon = { Icon(Icons.Default.Star, contentDescription = null) },
+            onClick = { expanded = false; onFavoritesClick() },
+        )
+        DropdownMenuItem(
+            text = { Text("Historial") },
+            leadingIcon = { Icon(Icons.Default.History, contentDescription = null) },
+            onClick = { expanded = false; onHistoryClick() },
+        )
     }
 }
 

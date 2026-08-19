@@ -59,46 +59,54 @@ saber esto porque cambia el tamano real de la tarea:
 Como project leader dejo esto priorizado, pero es una sugerencia, no una
 imposicion:
 
-1. **Ver todos los terminos guardados** - lo que mas esta molestando hoy,
-   chico, cero riesgo, no bloquea nada.
-2. **Etiquetas para encontrar mas rapido** - chico, independiente del punto 1
-   pero se complementan bien (lista completa + filtro por etiqueta).
+1. ~~**Ver todos los terminos guardados**~~ ✅ hecho el 2026-08-19.
+2. **Etiquetas para encontrar mas rapido** - chico, independiente de todo.
 3. **Colecciones** - mediano, independiente de todo lo demas.
-4. **Alta de terminos buscando en Wikipedia** - el mas grande y el mas
-   pedido explicitamente ("evitar pasar por Google"). Conviene arrancar la
-   decision de arquitectura (tarea 5.1) en paralelo con 1-3, porque es la de
-   mayor tiempo de espera, aunque el codigo en si se escriba despues.
-5. **Preview / contenido sin salir de la app** - depende de como termine el
-   punto 4; ver la nota en esa epica antes de empezarla por separado.
+4. ~~**Alta de terminos buscando en Wikipedia**~~ ✅ hecho el 2026-08-19.
+5. **Preview / contenido sin salir de la app** - parcialmente resuelto por la
+   epica 5: los terminos importados ya guardan el extracto y se leen sin
+   conexion. Queda solo la decision del articulo completo.
+6. **Pantalla de opciones (procedencia y almacenamiento)** - chico.
+7. **Actualizar el paquete base con un txt nuevo** - procedimiento, no
+   funcionalidad; se dispara cuando llegue el archivo.
 
 ---
 
-## 1. Ver todos los terminos guardados ⬜
+## 1. Ver todos los terminos guardados ✅
 
-Pantalla nueva en Android que liste *todos* los terminos personales, no solo
-los favoritos o los vistos recientemente. Mismo patron que ya existe para
-Favoritos e Historial, aplicado a la base completa.
+**Completada el 2026-08-19** (solo Android; backend y web ya lo tenian via
+`?origin=personal`).
 
-- [ ] **1.1** _(Haiku 4.5)_ Agregar `UserTermDao.listAll(limit, offset): List<UserTermEntity>`
-      (orden por titulo), espejando `combined_list_terms(origin=personal)`
-      del backend. Calca 3 queries que ya estan arriba en el mismo archivo.
-- [ ] **1.2** _(Haiku 4.5)_ Agregar `CorpusRepository.listPersonalTerms()` como
-      wrapper fino sobre 1.1, igual que `listFavorites()`.
-- [ ] **1.3** _(Sonnet 5)_ Pantalla nueva "Mis terminos" (`MyTermsViewModel` +
-      `MyTermsScreen`), copiando casi literal `FavoritesScreen.kt` /
-      `FavoritesViewModel.kt` como plantilla. Es Compose multi-archivo; esta
-      sesion ya mostro que hasta copias casi literales de Compose pueden
-      esconder un import o una API rota que solo aparece al compilar.
-- [ ] **1.4** _(Sonnet 5)_ Ruta de navegacion + punto de entrada. La barra
-      superior de Search ya tiene 4 iconos (historial, favoritos, aleatorio,
-      crear); antes de agregar un quinto, evaluar agrupar Favoritos/Historial/
-      Mis terminos en un unico menu desplegable para no saturar la barra. Es
-      una decision chica de UI, no bloquea el resto.
-- [ ] **1.5** _(Sonnet 5)_ Compilar, instalar en el emulador y verificar a
-      mano: crear 2-3 terminos personales, confirmar que todos aparecen en
-      "Mis terminos" aunque no esten en Favoritos ni en Historial.
+- [x] **1.1** ✅ `UserTermDao.listAll(limit, offset)`, ordenado por titulo con
+      `COLLATE NOCASE` igual que el backend.
+- [x] **1.2** ✅ `CorpusRepository.listPersonalTerms()`.
+- [x] **1.3** ✅ `MyTermsViewModel` + `MyTermsScreen` en `ui/myterms/`. El
+      titulo muestra el total ("Mis terminos (2)") porque esa es justamente la
+      pregunta que trae a la pantalla. El estado vacio aclara que los terminos
+      del paquete no aparecen aca.
+- [x] **1.4** ✅ Ruta `MyTermsRoute`. Las tres listas (Mis terminos, Favoritos,
+      Historial) pasaron a un menu desplegable: como iconos sueltos eran cinco
+      acciones en la barra y ninguna se leia. Aleatorio y crear quedan
+      directos por ser acciones, no navegacion.
+- [x] **1.5** ✅ Verificado en el emulador: los dos terminos personales
+      existentes aparecen aunque ninguno este en Favoritos ni en Historial, que
+      era exactamente el caso que antes no se podia ver.
 
-Ningun paso de esta epica necesita cambios en backend o web.
+## 1b. Deteccion de duplicados (ya existia, verificado) ✅
+
+Pregunta del 2026-08-19: si al guardar se verifica que el termino no exista.
+**Si, y contra los dos catalogos.** `requireNoDuplicate` compara titulo
+normalizado + idioma contra la base personal y contra el paquete canonico
+antes de insertar; es la misma regla de ADR 0002 y el mismo criterio que
+`find_existing_term` en el backend. Aplica igual al alta manual y a la
+importada desde Wikipedia, porque las dos pasan por `createPersonalTerm`.
+
+Verificado en el emulador: intentar crear "Jorge Luis Borges" cuando ya
+existe muestra "Ya existe un termino con ese titulo e idioma."
+
+Limitacion conocida, por si en algun momento molesta: la comparacion es por
+titulo, no por `source_url`. Importar el mismo articulo de Wikipedia bajo dos
+titulos distintos (por ejemplo el articulo y su redireccion) no se detecta.
 
 ## 2. Etiquetas para encontrar terminos mas rapido ⬜
 
@@ -278,6 +286,45 @@ mueven enteras al backend y Android/web pasan a ser solo consumidores)
       que ve la UI, de modo que sumar otra fuente sea implementar la interfaz.
       `LexidexApplication` ya expone una **lista** de fuentes, no una sola.
       Falta el espejo en Python cuando se haga 5.2.
+
+## 6. Pantalla de opciones: de donde sale y donde se guarda la informacion ⬜
+
+Pedido del 2026-08-19. Hoy la respuesta existe pero solo en documentos, no en
+la aplicacion: no hay forma de ver desde el telefono que paquete esta
+instalado, ni donde vive lo que uno guarda.
+
+- [ ] **6.1** _(Sonnet 5)_ Android: pantalla "Opciones"/"Acerca de" que muestre
+      el paquete instalado (`package_id`, `package_version`, sha256 abreviado y
+      fecha) leyendo el marcador `lexidex.sqlite.installed.json` que ya escribe
+      `CorpusDatabaseProvider`, mas el conteo de terminos del paquete y del
+      catalogo personal.
+- [ ] **6.2** _(Sonnet 5)_ Explicar las dos bases en lenguaje llano: el paquete
+      es de solo lectura y se reemplaza entero al actualizar; lo personal vive
+      aparte y sobrevive. Incluir la ruta real de ambos archivos.
+- [ ] **6.3** _(Haiku 4.5)_ Mostrar tambien que fuentes externas estan
+      habilitadas (hoy solo Wikipedia) y aclarar que solo se consultan cuando
+      uno busca explicitamente.
+- [ ] **6.4** _(Sonnet 5)_ Equivalente en la web, reusando `/api/stats`, que ya
+      devuelve los conteos.
+
+Candidato natural para sumar despues: un boton de exportar el catalogo
+personal desde esa misma pantalla (copia de seguridad). No esta pedido todavia.
+
+## 7. Actualizar el paquete base con un `palabras.txt` nuevo ⬜
+
+No es una funcionalidad sino un **procedimiento** que ya esta construido y
+nunca se ejecuto de punta a punta con datos nuevos. Cuando llegue el txt
+actualizado:
+
+- [ ] **7.1** _(Sonnet 5)_ Correr `tools/build_corpus.py` con el txt nuevo y un
+      `package_version` nuevo, generando `data/packages/palabras-vX/`.
+- [ ] **7.2** _(Sonnet 5)_ Revisar el reporte de importacion (duplicados, URLs
+      invalidas, idiomas) antes de adoptarlo.
+- [ ] **7.3** _(Haiku 4.5)_ Copiar el paquete nuevo a los assets de Android y
+      apuntar `PACKAGE_DIR` a el.
+- [ ] **7.4** _(Sonnet 5)_ Verificar en el emulador que la migracion automatica
+      lo reemplaza y que favoritos, terminos personales e historial sobreviven.
+      El mecanismo ya existe y esta probado; esto seria su primer uso real.
 
 ---
 

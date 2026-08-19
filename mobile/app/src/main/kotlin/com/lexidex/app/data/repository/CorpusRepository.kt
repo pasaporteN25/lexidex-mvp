@@ -25,6 +25,7 @@ import kotlinx.coroutines.CancellationException
 
 private const val DEFAULT_SEARCH_LIMIT = 50
 private const val DEFAULT_HISTORY_LIMIT = 50
+private const val DEFAULT_PERSONAL_LIST_LIMIT = 500
 
 /** Days from the proleptic-Gregorian epoch (year 1) to the Unix epoch - `date(1970,1,1).toordinal()` in Python. */
 private const val PYTHON_ORDINAL_EPOCH_OFFSET = 719_163L
@@ -175,6 +176,15 @@ class CorpusRepository(
             throw CorpusError.DuplicateTitle(existing)
         }
     }
+
+    /**
+     * El catalogo personal completo, independiente de si un termino esta en favoritos o fue visto
+     * alguna vez. Es el equivalente de `?origin=personal` que la API ya expone para la web.
+     */
+    suspend fun listPersonalTerms(limit: Int = DEFAULT_PERSONAL_LIST_LIMIT, offset: Int = 0): Result<List<TermSummary>> =
+        corpusResult {
+            userTermDao().listAll(limit, offset).map { it.toSummary() }
+        }
 
     // endregion
 

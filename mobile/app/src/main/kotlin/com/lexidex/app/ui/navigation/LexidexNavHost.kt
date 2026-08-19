@@ -17,6 +17,8 @@ import com.lexidex.app.ui.favorites.FavoritesScreen
 import com.lexidex.app.ui.favorites.FavoritesViewModel
 import com.lexidex.app.ui.history.HistoryScreen
 import com.lexidex.app.ui.history.HistoryViewModel
+import com.lexidex.app.ui.myterms.MyTermsScreen
+import com.lexidex.app.ui.myterms.MyTermsViewModel
 import com.lexidex.app.ui.search.SearchScreen
 import com.lexidex.app.ui.search.SearchViewModel
 
@@ -30,8 +32,18 @@ fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<Knowledg
                 viewModel = viewModel,
                 onTermClick = { slug -> navController.navigate(TermDetailRoute(slug)) },
                 onCreateClick = { navController.navigate(PersonalTermEditorRoute()) },
+                onMyTermsClick = { navController.navigate(MyTermsRoute) },
                 onFavoritesClick = { navController.navigate(FavoritesRoute) },
                 onHistoryClick = { navController.navigate(HistoryRoute) },
+            )
+        }
+        composable<MyTermsRoute> {
+            val viewModel = viewModel<MyTermsViewModel>(factory = MyTermsViewModel.factory(repository))
+            MyTermsScreen(
+                viewModel = viewModel,
+                onTermClick = { slug -> navController.navigate(TermDetailRoute(slug)) },
+                onCreateClick = { navController.navigate(PersonalTermEditorRoute()) },
+                onBack = { navController.popBackStack() },
             )
         }
         composable<TermDetailRoute> { backStackEntry ->
