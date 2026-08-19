@@ -1,19 +1,19 @@
 {
   "artifacts": {
     "database": {
-      "bytes": 4763648,
+      "bytes": 4816896,
       "file": "lexidex.sqlite",
-      "sha256": "67b625cf836681d23b09bd2f787c007fd1323f24643860e20cdaaf0e69cadb18"
+      "sha256": "25af4e0ecaffdc505ed8fad05372a44d96d49b85c1e0bbfd5027da52d749dab4"
     },
     "import_report": {
       "bytes": 3420,
       "file": "import-report.json",
-      "sha256": "72c0efddcec43eddca99445eb03f357fd4e59be7fad916cdfcc437b8ec053915"
+      "sha256": "378244626ba75618bbd2ad26bd698712aeaf62c98a7e3f5523bfcec305522542"
     },
     "seed_catalog": {
-      "bytes": 1957561,
+      "bytes": 1980676,
       "file": "seeds.jsonl",
-      "sha256": "4d833114596dce373de8c6bbc364a726982951891e8546ca30eb2c21754eccb9"
+      "sha256": "bbe3907a4af51c2fda6950c7eaff12e4ec84bb634fb09b09f4674e4971ed8e4f"
     }
   },
   "capabilities": {
@@ -25,26 +25,26 @@
   "corpus_schema_version": 2,
   "counts": {
     "annotated_lines": 4,
-    "blank_lines": 9,
-    "canonical_duplicate_groups": 166,
-    "duplicate_occurrences": 178,
-    "exact_duplicate_groups": 161,
+    "blank_lines": 0,
+    "canonical_duplicate_groups": 170,
+    "duplicate_occurrences": 183,
+    "exact_duplicate_groups": 165,
     "external_url_occurrences": 69,
     "free_text_occurrences": 5,
     "groups": 5,
     "invalid_urls": 0,
     "multi_url_lines": 2,
-    "occurrences": 4668,
+    "occurrences": 4726,
     "relation_hints": 2,
     "separators": 4,
-    "unique_sources": 4486,
-    "unique_terms": 4490,
-    "url_occurrences": 4663,
+    "unique_sources": 4539,
+    "unique_terms": 4543,
+    "url_occurrences": 4721,
     "urls_with_fragment": 9,
     "urls_with_query": 8,
-    "wikipedia_occurrences": 4594
+    "wikipedia_occurrences": 4652
   },
-  "created_at": "2026-08-11T01:02:08Z",
+  "created_at": "2026-08-19T22:15:17Z",
   "limitations": [
     "This is a seed catalog; article bodies and summaries were not fetched.",
     "Block membership is preserved but does not create semantic relations.",
@@ -52,14 +52,14 @@
     "Cross-language concept identity requires enrichment through authoritative IDs."
   ],
   "package_id": "lexidex.palabras",
-  "package_version": "0.1.0-seed.1",
+  "package_version": "0.2.0-seed.1",
   "parser_version": "1.0.0",
   "schema_version": 1,
   "source": {
-    "bytes": 237310,
+    "bytes": 240200,
     "encoding": "utf-8",
     "file": "palabras.txt",
-    "lines": 4679,
-    "sha256": "8e9348c4db761b3b0a0a37c44ef57f8115ffa37d37bb08d7904d557ed14e8cca"
+    "lines": 4728,
+    "sha256": "c019bb00a98b00f30e29fc1d258f7bbb720023c1fd588a7cd572bd3e0d79296f"
   }
 }

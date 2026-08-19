@@ -58,7 +58,7 @@ fun SearchScreen(
     viewModel: SearchViewModel,
     onTermClick: (String) -> Unit,
     onCreateClick: () -> Unit,
-    onMyTermsClick: () -> Unit,
+    onCatalogClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
 ) {
@@ -80,7 +80,7 @@ fun SearchScreen(
         onRandomClick = viewModel::onRandomClick,
         onTermClick = onTermClick,
         onCreateClick = onCreateClick,
-        onMyTermsClick = onMyTermsClick,
+        onCatalogClick = onCatalogClick,
         onFavoritesClick = onFavoritesClick,
         onHistoryClick = onHistoryClick,
     )
@@ -94,7 +94,7 @@ private fun SearchContent(
     onRandomClick: () -> Unit,
     onTermClick: (String) -> Unit,
     onCreateClick: () -> Unit,
-    onMyTermsClick: () -> Unit,
+    onCatalogClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
 ) {
@@ -105,20 +105,21 @@ private fun SearchContent(
                     Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
                 },
                 actions = {
-                    // Las tres listas van juntas en un menu: como iconos sueltos sumaban cinco
-                    // acciones en la barra y ninguna se leia. Aleatorio y crear quedan directos
-                    // por ser las dos acciones, no navegacion.
-                    ListsMenu(
-                        onMyTermsClick = onMyTermsClick,
-                        onFavoritesClick = onFavoritesClick,
-                        onHistoryClick = onHistoryClick,
-                    )
+                    // El menu va ultimo, o sea mas a la derecha: es la convencion de Material
+                    // para el overflow y ademas es donde el pulgar espera encontrarlo.
                     IconButton(onClick = onRandomClick) {
                         Icon(Icons.Default.Casino, contentDescription = "Termino aleatorio")
                     }
                     IconButton(onClick = onCreateClick) {
                         Icon(Icons.Default.Add, contentDescription = "Crear termino personal")
                     }
+                    // Las listas van juntas en un menu: como iconos sueltos sumaban cinco acciones
+                    // en la barra y ninguna se leia.
+                    ListsMenu(
+                        onCatalogClick = onCatalogClick,
+                        onFavoritesClick = onFavoritesClick,
+                        onHistoryClick = onHistoryClick,
+                    )
                 },
             )
         },
@@ -146,19 +147,19 @@ private fun SearchContent(
 
 @Composable
 private fun ListsMenu(
-    onMyTermsClick: () -> Unit,
+    onCatalogClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     IconButton(onClick = { expanded = true }) {
-        Icon(Icons.Default.MoreVert, contentDescription = "Mis listas")
+        Icon(Icons.Default.MoreVert, contentDescription = "Mas opciones")
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
         DropdownMenuItem(
-            text = { Text("Mis terminos") },
+            text = { Text("Ver todos los terminos") },
             leadingIcon = { Icon(Icons.Default.CollectionsBookmark, contentDescription = null) },
-            onClick = { expanded = false; onMyTermsClick() },
+            onClick = { expanded = false; onCatalogClick() },
         )
         DropdownMenuItem(
             text = { Text("Favoritos") },

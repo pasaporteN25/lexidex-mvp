@@ -10,6 +10,7 @@ import com.lexidex.app.data.userdb.UserDatabaseProvider
 import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.HistoryEntryEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
+import com.lexidex.app.domain.CatalogFilter
 import com.lexidex.app.domain.HistoryItem
 import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermOrigin
@@ -26,6 +27,7 @@ import kotlinx.coroutines.CancellationException
 private const val DEFAULT_SEARCH_LIMIT = 50
 private const val DEFAULT_HISTORY_LIMIT = 50
 private const val DEFAULT_PERSONAL_LIST_LIMIT = 500
+private const val DEFAULT_CATALOG_PAGE = 100
 
 /** Days from the proleptic-Gregorian epoch (year 1) to the Unix epoch - `date(1970,1,1).toordinal()` in Python. */
 private const val PYTHON_ORDINAL_EPOCH_OFFSET = 719_163L
@@ -185,6 +187,50 @@ class CorpusRepository(
         corpusResult {
             userTermDao().listAll(limit, offset).map { it.toSummary() }
         }
+
+    /**
+     * Una pagina del catalogo segun [filter]. Paginado de verdad porque el paquete son miles de
+     * terminos y la pantalla los recorre; el equivalente de `?origin=` de la API.
+     *
+     * Con [CatalogFilter.ALL] los personales van primero y el paquete despues, en vez de
+     * intercalarse: mezclar dos consultas ordenadas exigiria pedir todo de ambas para ordenar
+     * bien, que es justo lo que la paginacion evita.
+     */
+    suspend fun listCatalog(
+        filter: CatalogFilter,
+        limit: Int = DEFAULT_CATALOG_PAGE,
+        offset: Int = 0,
+    ): Result<List<TermSummary>> = corpusResult {
+        when (filter) {
+            CatalogFilter.PERSONAL -> userTermDao().listAll(limit, offset).map { it.toSummary() }
+            CatalogFilter.PACKAGE -> termDao().listAll(limit, offset).map { it.toSummary() }
+            CatalogFilter.ALL -> {
+                val personalTotal = userTermDao().countTerms()
+                val personal = if (offset < personalTotal) {
+                    userTermDao().listAll(limit, offset).map { it.toSummary() }
+                } else {
+                    emptyList()
+                }
+                if (personal.size >= limit) {
+                    personal
+                } else {
+                    val packageOffset = (offset - personalTotal + personal.size).coerceAtLeast(0L)
+                    val packageRows = termDao()
+                        .listAll(limit - personal.size, packageOffset.toInt())
+                        .map { it.toSummary() }
+                    personal + packageRows
+                }
+            }
+        }
+    }
+
+    suspend fun countCatalog(filter: CatalogFilter): Result<Long> = corpusResult {
+        when (filter) {
+            CatalogFilter.PERSONAL -> userTermDao().countTerms()
+            CatalogFilter.PACKAGE -> termDao().countTerms()
+            CatalogFilter.ALL -> userTermDao().countTerms() + termDao().countTerms()
+        }
+    }
 
     // endregion
 

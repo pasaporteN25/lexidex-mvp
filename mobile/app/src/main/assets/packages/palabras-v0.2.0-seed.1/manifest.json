@@ -1,0 +1,65 @@
+{
+  "artifacts": {
+    "database": {
+      "bytes": 4816896,
+      "file": "lexidex.sqlite",
+      "sha256": "25af4e0ecaffdc505ed8fad05372a44d96d49b85c1e0bbfd5027da52d749dab4"
+    },
+    "import_report": {
+      "bytes": 3420,
+      "file": "import-report.json",
+      "sha256": "378244626ba75618bbd2ad26bd698712aeaf62c98a7e3f5523bfcec305522542"
+    },
+    "seed_catalog": {
+      "bytes": 1980676,
+      "file": "seeds.jsonl",
+      "sha256": "bbe3907a4af51c2fda6950c7eaff12e4ec84bb634fb09b09f4674e4971ed8e4f"
+    }
+  },
+  "capabilities": {
+    "offline_search": true,
+    "provenance": true,
+    "rag_ready_terms": 0,
+    "training_ready_terms": 0
+  },
+  "corpus_schema_version": 2,
+  "counts": {
+    "annotated_lines": 4,
+    "blank_lines": 0,
+    "canonical_duplicate_groups": 170,
+    "duplicate_occurrences": 183,
+    "exact_duplicate_groups": 165,
+    "external_url_occurrences": 69,
+    "free_text_occurrences": 5,
+    "groups": 5,
+    "invalid_urls": 0,
+    "multi_url_lines": 2,
+    "occurrences": 4726,
+    "relation_hints": 2,
+    "separators": 4,
+    "unique_sources": 4539,
+    "unique_terms": 4543,
+    "url_occurrences": 4721,
+    "urls_with_fragment": 9,
+    "urls_with_query": 8,
+    "wikipedia_occurrences": 4652
+  },
+  "created_at": "2026-08-19T22:15:17Z",
+  "limitations": [
+    "This is a seed catalog; article bodies and summaries were not fetched.",
+    "Block membership is preserved but does not create semantic relations.",
+    "Generic web URLs and free-text seeds require later language and license review.",
+    "Cross-language concept identity requires enrichment through authoritative IDs."
+  ],
+  "package_id": "lexidex.palabras",
+  "package_version": "0.2.0-seed.1",
+  "parser_version": "1.0.0",
+  "schema_version": 1,
+  "source": {
+    "bytes": 240200,
+    "encoding": "utf-8",
+    "file": "palabras.txt",
+    "lines": 4728,
+    "sha256": "c019bb00a98b00f30e29fc1d258f7bbb720023c1fd588a7cd572bd3e0d79296f"
+  }
+}

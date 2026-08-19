@@ -18,6 +18,6 @@ object FavoritesRoute
 @Serializable
 object HistoryRoute
 
-/** El catalogo personal completo; [FavoritesRoute] es solo un subconjunto marcado a mano. */
+/** El catalogo completo -paquete y personales-, con filtro por origen. */
 @Serializable
-object MyTermsRoute
+object CatalogRoute

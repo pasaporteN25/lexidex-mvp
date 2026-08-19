@@ -72,10 +72,17 @@ imposicion:
 
 ---
 
-## 1. Ver todos los terminos guardados ✅
+## 1. Ver todos los terminos ✅
 
 **Completada el 2026-08-19** (solo Android; backend y web ya lo tenian via
 `?origin=personal`).
+
+Ampliada el mismo dia: la pantalla arranco listando solo los terminos
+personales, pero lo que hacia falta era recorrer **todo** el catalogo,
+incluidos los miles importados del txt -los mismos de los que sale el termino
+aleatorio-. Quedo entonces una sola pantalla `ui/catalog/` con filtro
+Todos / Paquete / Personal, en vez de dos pantallas casi iguales. Carga por
+paginas de 100 con scroll infinito, porque son ~4.500 filas.
 
 - [x] **1.1** ✅ `UserTermDao.listAll(limit, offset)`, ordenado por titulo con
       `COLLATE NOCASE` igual que el backend.
@@ -310,21 +317,35 @@ instalado, ni donde vive lo que uno guarda.
 Candidato natural para sumar despues: un boton de exportar el catalogo
 personal desde esa misma pantalla (copia de seguridad). No esta pedido todavia.
 
-## 7. Actualizar el paquete base con un `palabras.txt` nuevo ⬜
+## 7. Actualizar el paquete base con un `palabras.txt` nuevo ✅ (primera vuelta)
 
-No es una funcionalidad sino un **procedimiento** que ya esta construido y
-nunca se ejecuto de punta a punta con datos nuevos. Cuando llegue el txt
-actualizado:
+Ejecutado el 2026-08-19 con el txt actualizado: **v0.1.0-seed.1 -> v0.2.0-seed.1**,
+de 4.490 a 4.543 terminos (58 URLs nuevas, 9 quitadas, 0 invalidas). Primer uso
+real del mecanismo de migracion, que reemplazo el paquete solo al abrir la app
+sin perder terminos personales.
 
-- [ ] **7.1** _(Sonnet 5)_ Correr `tools/build_corpus.py` con el txt nuevo y un
-      `package_version` nuevo, generando `data/packages/palabras-vX/`.
-- [ ] **7.2** _(Sonnet 5)_ Revisar el reporte de importacion (duplicados, URLs
-      invalidas, idiomas) antes de adoptarlo.
-- [ ] **7.3** _(Haiku 4.5)_ Copiar el paquete nuevo a los assets de Android y
-      apuntar `PACKAGE_DIR` a el.
-- [ ] **7.4** _(Sonnet 5)_ Verificar en el emulador que la migracion automatica
-      lo reemplaza y que favoritos, terminos personales e historial sobreviven.
-      El mecanismo ya existe y esta probado; esto seria su primer uso real.
+- [x] **7.1** ✅ `tools/build_corpus.py` con `--package-version 0.2.0-seed.1`.
+- [x] **7.2** ✅ Reporte revisado antes de adoptarlo.
+- [x] **7.3** ✅ Copiado a assets, `PACKAGE_DIR` y `DEFAULT_PACKAGE_DB` del
+      backend apuntando al nuevo; el v0.1.0 se saco de los assets para no
+      duplicar 4,8 MB en el APK.
+- [x] **7.4** ✅ Verificado en el emulador: el marcador quedo en
+      `0.2.0-seed.1` y los terminos personales sobrevivieron.
+
+**Sigue pendiente, y es lo que convendria decidir:** el paquete es un catalogo
+*semilla*, o sea titulo + procedencia, sin resumen ni contenido. Por eso al
+recorrer "Ver todos los terminos" la mayoria aparece solo con el titulo.
+Enriquecerlos con el extracto de Wikipedia es posible -el fetcher ya existe-
+pero son ~4.500 pedidos a un servicio ajeno, mas peso de paquete y la
+atribucion CC BY-SA. Ver la epica 4.
+
+### Mas adelante: cargar un txt o json desde la aplicacion
+
+Pedido del 2026-08-19, explicitamente para despues. Hoy generar un paquete
+exige correr `tools/build_corpus.py` a mano. Que cualquiera pueda cargar su
+propio archivo implica decidir donde corre esa importacion (¿en el telefono?
+¿en el backend?) y que pasa con la verificacion por checksum, que hoy asume
+paquetes construidos por la herramienta.
 
 ---
 

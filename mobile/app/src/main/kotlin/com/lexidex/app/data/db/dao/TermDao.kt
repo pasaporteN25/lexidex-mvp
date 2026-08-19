@@ -39,6 +39,10 @@ interface TermDao {
     @Query("SELECT COUNT(*) FROM terms")
     suspend fun countTerms(): Long
 
+    /** Todo el paquete, por pagina: es el listado que alimenta la pantalla de catalogo. */
+    @Query("SELECT * FROM terms ORDER BY title COLLATE NOCASE LIMIT :limit OFFSET :offset")
+    suspend fun listAll(limit: Int, offset: Int): List<TermEntity>
+
     /** Mirrors find_existing_term's canonical-package half in backend/lexidex_api.py. */
     @Query("SELECT slug FROM terms WHERE normalized_title = :normalizedTitle AND language = :language LIMIT 1")
     suspend fun findByNormalizedTitle(normalizedTitle: String, language: String): String?
