@@ -41,6 +41,10 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests.all { it.useJUnit() }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -75,4 +79,6 @@ dependencies {
     ksp(libs.androidx.room3.compiler)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    testImplementation(libs.junit)
 }

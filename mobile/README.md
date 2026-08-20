@@ -118,6 +118,24 @@ descubrir plugins; hace falta que el JDK confie en el certificado del
 interceptor (ver el almacen de certificados de Windows) para que Gradle
 resuelva paquetes.
 
+## Tests
+
+Los tests unitarios corren en la JVM, sin emulador ni dispositivo:
+
+```
+cd mobile
+./gradlew :app:testDebugUnitTest
+```
+
+Viven en `mobile/app/src/test/kotlin/`, con JUnit 4 y la misma estructura de
+paquetes que `main`. El informe legible queda en
+`mobile/app/build/reports/tests/testDebugUnitTest/index.html`.
+
+Lo que se prueba aca es logica pura de Kotlin: armado de la consulta FTS,
+slugs de terminos personales, y la logica del minijuego. Todo lo que necesite
+`Context`, Room o la interfaz se sigue verificando en el emulador, y por eso
+no hay `src/androidTest`.
+
 Referencias oficiales:
 
 - https://developer.android.com/reference/androidx/room3/Fts5

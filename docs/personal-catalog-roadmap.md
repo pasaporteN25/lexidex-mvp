@@ -487,11 +487,14 @@ sigue conteniendo algo demasiado parecido al titulo (8.2).
 Complejidad: **S** mecanico · **M** cruza capas o necesita emulador · **L**
 diseno sin patron previo para calcar.
 
-- [ ] **8.1** _(Sonnet 5 · M)_ Infraestructura de tests JVM en el modulo
-      Android. **Hoy no existe ninguna**: no hay `src/test` ni `src/androidTest`.
-      La logica del juego es Kotlin puro y es la primera candidata natural, asi
-      que conviene montarla aca y no seguir verificando todo a mano en el
-      emulador.
+- [x] **8.1** ✅ JUnit 4 en `app/src/test/kotlin/`, que corre con
+      `./gradlew :app:testDebugUnitTest` sin emulador ni dispositivo. Se
+      estreno con quince tests sobre logica pura que ya existia y no tenia
+      ninguno: `buildFtsMatchQuery` (incluidos los casos Unicode que ya
+      causaron un error real en el telefono) y los slugs de terminos
+      personales, los dos espejo de `backend/lexidex_api.py`. No se agrego
+      `src/androidTest`: los tests instrumentados necesitan el emulador, que
+      es justo lo que esta infraestructura viene a evitar.
 - [ ] **8.2** _(Opus 5 · L)_ `ClueBuilder` en `ui/games/util/` (o
       `domain/games/`): parte el extracto en oraciones, tapa el titulo y sus
       variantes, suma la segunda oracion si lo que queda es muy corto, y
