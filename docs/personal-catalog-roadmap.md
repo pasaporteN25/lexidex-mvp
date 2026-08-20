@@ -60,15 +60,22 @@ saber esto porque cambia el tamano real de la tarea:
 Como project leader dejo esto priorizado, pero es una sugerencia, no una
 imposicion:
 
-Al 2026-08-20 estan cerradas las epicas 1, 3, 5, 6 y 7, mas la tarea 2.0. Lo
-que queda:
+Al 2026-08-20 estan cerradas las epicas 1, 3, 5, 6 y 7, mas la tarea 2.0.
+
+**Lo proximo es el minijuego "Cinco" (epica 8).** Es la funcionalidad de la
+proxima version mayor, decidida el 2026-08-20, y va antes que todo lo demas.
+
+Despues, en este orden:
 
 1. **Etiquetas navegables** (epica 2, tareas 2.1 a 2.5) - ya desbloqueada: el
    paquete trae 1.882 categorias sobre 2.570 terminos. Falta poder filtrar y
-   navegar por ellas.
-2. **Articulo completo** (resto de la epica 4) - el mas grande de los que
+   navegar por ellas. Comparte terreno con el juego, que tambien usa
+   categorias para elegir senuelos.
+2. **Respaldo de los datos personales** (epica 9) - los datos persisten, pero
+   no hay forma de sacarlos del telefono.
+3. **Articulo completo** (resto de la epica 4) - el mas grande de los que
    quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
-3. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
+4. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
    al final de la epica 7.
 
 ---
@@ -416,6 +423,137 @@ propio archivo implica decidir donde corre esa importacion (¿en el telefono?
 paquetes construidos por la herramienta.
 
 ---
+
+## 8. Minijuego "Cinco" — proxima version mayor 🎯
+
+Decidido el 2026-08-20. Es **la** funcionalidad de la proxima subida mayor; todo
+lo demas que quedaba pendiente pasa a ir despues de esto.
+
+La pantalla principal hoy solo ofrece el termino del dia. La idea es un juego de
+cinco preguntas: se muestra la primera oracion del extracto con la respuesta
+tapada, y hay que adivinar de que termino se trata.
+
+### Por que es viable: medido antes de planificar
+
+Sobre el paquete v0.4.0, de los 4.425 terminos con contenido:
+
+- **82%** tienen la respuesta dentro de la primera oracion, o sea que tapar es
+  el caso normal y no la excepcion.
+- **88%** tienen una segunda oracion, que es el plan B cuando tapar deja la
+  primera demasiado corta. Eso pasa en 200 casos.
+
+**Correccion sobre el umbral de categorias.** El pedido fue exigir categorias de
+al menos 200 terminos para que el juego no se estanque. Eso es imposible: la
+categoria mas grande del paquete tiene **15** terminos, y ninguna llega a 50.
+Pero el numero se estaba aplicando a la cosa equivocada. Lo que no debe quedar
+chico es el **total de preguntas jugables**, no cada categoria. El minimo
+tecnico por categoria es 4 (tres senuelos mas la respuesta), y con ese umbral
+quedan **199 categorias y 779 terminos jugables**: 155 partidas sin repetir una
+pregunta, muy por encima del 200 que preocupaba.
+
+### Reglas acordadas
+
+- Reloj **por pregunta**. Las opciones aparecen faltando unos segundos, como
+  ayuda, no desde el principio.
+- Se puede **escribir la respuesta**, y acertar escribiendo vale mas que
+  acertar eligiendo.
+- Los senuelos salen **al azar del catalogo**, con un modo opcional de
+  **potenciar con categorias** que solo usa categorias de 4 o mas miembros.
+- Entran **los terminos del paquete y tambien los propios**.
+
+### Una tension a resolver en el diseno, no en el codigo
+
+El pedido original decia que el puntaje fuera "unicamente cuantas hizo bien",
+pero tambien que escribir valga mas que elegir. Las dos cosas juntas no cierran:
+si escribir vale distinto, ya no alcanza un solo numero.
+
+Propuesta: el titular sigue siendo **"4 de 5"**, y debajo, mas chico, **"2
+escritas"**. Se lee de un vistazo como pediste y no pierde el merito de haber
+escrito. Confirmar antes de construir la pantalla de resultados (8.7).
+
+### Caso borde encontrado en los datos
+
+Tapar el titulo no siempre alcanza: `Belsnickel` empieza con "_____ (also known
+as Belschnickel, Belznickle, Pelznickel...)". Los alias regalan la respuesta.
+Hay que tapar tambien las variantes cercanas, o descartar la oracion cuando
+sigue conteniendo algo demasiado parecido al titulo (8.2).
+
+### Tareas
+
+Complejidad: **S** mecanico · **M** cruza capas o necesita emulador · **L**
+diseno sin patron previo para calcar.
+
+- [ ] **8.1** _(Sonnet 5 · M)_ Infraestructura de tests JVM en el modulo
+      Android. **Hoy no existe ninguna**: no hay `src/test` ni `src/androidTest`.
+      La logica del juego es Kotlin puro y es la primera candidata natural, asi
+      que conviene montarla aca y no seguir verificando todo a mano en el
+      emulador.
+- [ ] **8.2** _(Opus 5 · L)_ `ClueBuilder` en `ui/games/util/` (o
+      `domain/games/`): parte el extracto en oraciones, tapa el titulo y sus
+      variantes, suma la segunda oracion si lo que queda es muy corto, y
+      descarta el termino si aun asi no sirve. Es el corazon del juego y esta
+      lleno de casos borde (acentos, alias, parentesis de desambiguacion,
+      titulos que no aparecen). Con tests de 8.1, incluido el caso Belsnickel.
+- [ ] **8.3** _(Sonnet 5 · M)_ `DistractorPicker`: tres senuelos al azar del
+      catalogo, **siempre del mismo idioma** (con una oracion en espanol y tres
+      titulos en ingles se acierta sin leer), y modo por categoria con umbral
+      de 4 miembros y regreso al modo idioma cuando el termino no tiene
+      categoria util.
+- [ ] **8.4** _(Sonnet 5 · M)_ Repositorio: consulta de terminos elegibles
+      (con contenido, de los dos origenes) y del subconjunto con categoria
+      utilizable. Devolver una tanda de cinco ya armada, no de a una, para no
+      ir a la base entre pregunta y pregunta.
+- [ ] **8.5** _(Sonnet 5 · M)_ `CincoViewModel`: cinco preguntas, reloj por
+      pregunta, aparicion de las opciones, verificacion del texto escrito
+      (sin acentos, sin mayusculas, aceptando el titulo con o sin el parentesis
+      de desambiguacion) y puntaje.
+- [ ] **8.6** _(Sonnet 5 · M)_ Pantalla del juego: la pista, el campo de texto,
+      el reloj, y el 2x2 que aparece sobre el final.
+- [ ] **8.7** _(Sonnet 5 · S)_ Pantalla de resultados con el formato que se
+      confirme arriba, y volver a jugar.
+- [ ] **8.8** _(Sonnet 5 · S)_ Banner en la pantalla principal, debajo del
+      termino del dia, que lleve al juego. Nota: la app es Compose de una sola
+      actividad, asi que es una ruta mas del `NavHost`, no un fragment ni una
+      activity nueva.
+- [ ] **8.9** _(Sonnet 5 · M)_ Verificar en el emulador: jugar una partida
+      entera, comprobar que el reloj corre, que las opciones aparecen cuando
+      corresponde, que escribir bien puntua distinto que elegir bien, y que no
+      se repiten preguntas dentro de una partida.
+
+### Sobre las "clases utils" para futuros minijuegos
+
+`ClueBuilder` y `DistractorPicker` son genuinamente reutilizables: cualquier
+juego de "adivinar a partir de un texto" los va a querer. Convienen desde el
+dia uno.
+
+Lo que **no** conviene todavia es inventar un framework de minijuegos (una
+interfaz `MiniGame`, un motor de partidas generico) antes de que exista el
+segundo juego: no hay con que contrastar si la abstraccion es la correcta, y
+lo mas probable es que haya que rehacerla. Cuando llegue el juego dos, ahi se
+ve que se repite de verdad y se extrae.
+
+## 9. Respaldo de los datos personales ⬜
+
+Surgido del 2026-08-20 al preguntar si los datos persisten.
+
+**Persisten, y no hace falta sesion ni cuenta.** `lexidex-user.sqlite` vive en
+el almacenamiento privado de la aplicacion y sobrevivio, verificado en el
+emulador, a una decena de reinstalaciones, a tres migraciones de paquete
+(v0.2 -> v0.3 -> v0.4) y a la migracion de esquema de Room 1 -> 2. Es
+justamente lo que compra la separacion del ADR 0002.
+
+Lo que **no** existe es un respaldo que controle el usuario. Si desinstala o
+cambia de telefono, se pierde. `allowBackup="true"` esta puesto, asi que el
+respaldo automatico de Android podria cubrirlo, pero depende de que lo tenga
+activado y no es algo que se pueda ver ni verificar.
+
+- [ ] **9.1** _(Sonnet 5 · M)_ Exportar el catalogo personal a un archivo
+      (JSON o el `.sqlite` entero) desde la pantalla de opciones, que ya es
+      donde se explica donde vive cada cosa.
+- [ ] **9.2** _(Opus 5 · L)_ Importar ese archivo. Es bastante mas dificil que
+      exportar: hay que decidir que pasa con lo que ya existe (¿se fusiona,
+      se reemplaza, se duplica?) y validar un archivo que puede venir de
+      cualquier lado, lo que lo convierte en entrada no confiable.
 
 ## Preguntas abiertas (para decidir antes de picar codigo, no para un modelo chico)
 
