@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
 DEFAULT_PACKAGE_DB = (
-    ROOT / "data" / "packages" / "palabras-v0.3.0-enriched.1" / "lexidex.sqlite"
+    ROOT / "data" / "packages" / "palabras-v0.4.0-enriched.1" / "lexidex.sqlite"
 )
 DEFAULT_DB = DEFAULT_PACKAGE_DB if DEFAULT_PACKAGE_DB.exists() else ROOT / "lexidex.sqlite"
 DEFAULT_USER_DB = ROOT / "data" / "user" / "lexidex-user.sqlite"

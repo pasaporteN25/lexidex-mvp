@@ -1,9 +1,9 @@
 {
   "artifacts": {
     "database": {
-      "bytes": 10502144,
+      "bytes": 10752000,
       "file": "lexidex.sqlite",
-      "sha256": "d0c7d36581f6a0078f99ca87cc9b07f57482d66bbd4b57e34fe9201e809bdcb1"
+      "sha256": "0398077a602f54ee4826534a4d9328e504bfb0f4df59604c31b0b318748c97d0"
     },
     "import_report": {
       "bytes": 3420,
@@ -61,10 +61,12 @@
     "Los extractos provienen de Wikipedia (CC BY-SA); cada termino conserva su URL de origen como atribucion. Se guarda solo la introduccion, recortada en limite de oracion.",
     "Los extractos provienen de Wikipedia (CC BY-SA); cada termino conserva su URL de origen como atribucion. Se guarda solo la introduccion, recortada en limite de oracion.",
     "Los extractos provienen de Wikipedia (CC BY-SA); cada termino conserva su URL de origen como atribucion. Se guarda solo la introduccion, recortada en limite de oracion.",
+    "Los extractos provienen de Wikipedia (CC BY-SA); cada termino conserva su URL de origen como atribucion. Se guarda solo la introduccion, recortada en limite de oracion.",
+    "Los extractos provienen de Wikipedia (CC BY-SA); cada termino conserva su URL de origen como atribucion. Se guarda solo la introduccion, recortada en limite de oracion.",
     "Los extractos provienen de Wikipedia (CC BY-SA); cada termino conserva su URL de origen como atribucion. Se guarda solo la introduccion, recortada en limite de oracion."
   ],
   "package_id": "lexidex.palabras",
-  "package_version": "0.3.0-enriched.1",
+  "package_version": "0.4.0-enriched.1",
   "parser_version": "1.0.0",
   "schema_version": 1,
   "source": {

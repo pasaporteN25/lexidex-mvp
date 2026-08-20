@@ -134,8 +134,16 @@ CATEGORY_NOISE = re.compile(
 # validas en Wikipedia pero no sirven para navegar un catalogo personal: casi siempre agrupan
 # un solo termino nuestro.
 CATEGORY_CHRONOLOGICAL = re.compile(
-    r"(^\d{3,4}s?\b|\b(nacidos|fallecidos|muertes|births|deaths)\s+en\b|\b(births|deaths)$"
-    r"|\b(anos|años|years|siglo|century)\b.*\d|\b\d{4}\b.*(establishments|disestablishments))",
+    r"(^\d{3,4}s?\b|^\d{1,2}(st|nd|rd|th)[-\s]century|\b(nacidos|fallecidos|muertes|births|deaths)\s+en\b"
+    r"|\b(births|deaths)$|\b(anos|años|years|siglo|century)\b.*\d"
+    r"|\b\d{4}\b.*(establishments|disestablishments)|descrit[ao]s?\s+en\s+\d{4}|described\s+in\s+\d{4})",
+    re.IGNORECASE,
+)
+# Categorias demograficas: son las mas numerosas de Wikipedia y las mas inutiles para navegar
+# un catalogo personal. Agrupar 355 terminos bajo "Hombres" no ayuda a encontrar nada.
+CATEGORY_DEMOGRAPHIC = re.compile(
+    r"^(hombres|mujeres|varones|men|women|male|female|living people|personas vivas"
+    r"|human names?|nombres? de persona)$",
     re.IGNORECASE,
 )
 
@@ -149,9 +157,33 @@ def clean_category(title):
             break
     else:
         return None
-    if not name or CATEGORY_NOISE.search(name) or CATEGORY_CHRONOLOGICAL.search(name):
-        return None
-    return name
+    return name if is_usable_category(name) else None
+
+
+def is_usable_category(name):
+    return bool(name) and not (
+        CATEGORY_NOISE.search(name)
+        or CATEGORY_CHRONOLOGICAL.search(name)
+        or CATEGORY_DEMOGRAPHIC.match(name)
+    )
+
+
+def clean_stored_categories(conn):
+    """
+    Vuelve a aplicar el filtro sobre lo ya guardado, sin salir a la red.
+
+    Sirve cuando el filtro mejora despues de una pasada: los nombres estan en la base, asi que
+    afinarlo no deberia costar otra tanda de pedidos a Wikipedia.
+    """
+    removed = 0
+    for row in conn.execute("SELECT id, name FROM categories").fetchall():
+        if not is_usable_category(row[1]):
+            conn.execute("DELETE FROM term_categories WHERE category_id = ?", (row[0],))
+            conn.execute("DELETE FROM categories WHERE id = ?", (row[0],))
+            removed += 1
+    conn.commit()
+    prune_lonely_categories(conn)
+    return removed
 
 
 def prune_lonely_categories(conn):
@@ -519,7 +551,25 @@ def main():
         action="store_true",
         help="pasada de categorias en vez de extractos (se puede correr despues)",
     )
+    parser.add_argument(
+        "--clean-categories",
+        action="store_true",
+        help="reaplica el filtro a las categorias ya guardadas, sin salir a la red",
+    )
     args = parser.parse_args()
+
+    if args.clean_categories:
+        conn = sqlite3.connect(args.database)
+        try:
+            removed = clean_stored_categories(conn)
+            remaining = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
+            links = conn.execute("SELECT COUNT(*) FROM term_categories").fetchone()[0]
+        finally:
+            conn.close()
+        stats = {"categorias_eliminadas": removed, "categorias_finales": remaining, "vinculos": links}
+        stats["paquete"] = finalize_package(args.database, args.package_version)
+        print(json.dumps(stats, indent=2, ensure_ascii=False))
+        return
 
     if args.categories:
         stats = enrich_categories(
