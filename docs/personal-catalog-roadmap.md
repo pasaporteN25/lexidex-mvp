@@ -461,15 +461,19 @@ pregunta, muy por encima del 200 que preocupaba.
   **potenciar con categorias** que solo usa categorias de 4 o mas miembros.
 - Entran **los terminos del paquete y tambien los propios**.
 
-### Una tension a resolver en el diseno, no en el codigo
+### Puntaje: resuelto el 2026-08-20
 
-El pedido original decia que el puntaje fuera "unicamente cuantas hizo bien",
-pero tambien que escribir valga mas que elegir. Las dos cosas juntas no cierran:
-si escribir vale distinto, ya no alcanza un solo numero.
+El pedido original pedia dos cosas que no cerraban juntas: que el puntaje fuera
+"unicamente cuantas hizo bien" y que escribir valiera mas que elegir. Se
+resolvio pasando a un puntaje **sobre 10**:
 
-Propuesta: el titular sigue siendo **"4 de 5"**, y debajo, mas chico, **"2
-escritas"**. Se lee de un vistazo como pediste y no pierde el merito de haber
-escrito. Confirmar antes de construir la pantalla de resultados (8.7).
+- Acertar **escribiendo**: 2 puntos.
+- Acertar **eligiendo** una de las cuatro opciones: 1 punto.
+- Maximo 10 (cinco preguntas por dos puntos). Acertar las cinco eligiendo da
+  **5 de 10**, que es de donde sale el "eleccion 5" del pedido.
+
+Se sigue leyendo de un vistazo ("7 de 10") y premia escribir sin necesitar dos
+numeros separados.
 
 ### Caso borde encontrado en los datos
 
@@ -506,11 +510,11 @@ diseno sin patron previo para calcar.
 - [ ] **8.5** _(Sonnet 5 · M)_ `CincoViewModel`: cinco preguntas, reloj por
       pregunta, aparicion de las opciones, verificacion del texto escrito
       (sin acentos, sin mayusculas, aceptando el titulo con o sin el parentesis
-      de desambiguacion) y puntaje.
+      de desambiguacion) y el puntaje sobre 10 descrito arriba.
 - [ ] **8.6** _(Sonnet 5 · M)_ Pantalla del juego: la pista, el campo de texto,
       el reloj, y el 2x2 que aparece sobre el final.
-- [ ] **8.7** _(Sonnet 5 · S)_ Pantalla de resultados con el formato que se
-      confirme arriba, y volver a jugar.
+- [ ] **8.7** _(Sonnet 5 · S)_ Pantalla de resultados sobre 10, con el desglose
+      de cuantas se acertaron escribiendo, y volver a jugar.
 - [ ] **8.8** _(Sonnet 5 · S)_ Banner en la pantalla principal, debajo del
       termino del dia, que lleve al juego. Nota: la app es Compose de una sola
       actividad, asi que es una ruta mas del `NavHost`, no un fragment ni una
