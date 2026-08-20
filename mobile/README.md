@@ -87,6 +87,7 @@ mobile/app/src/main/kotlin/com/lexidex/app/
     userdb/        # Entidades y DAO Room de lexidex-user.sqlite (terminos, favoritos, historial)
     repository/    # CorpusRepository: fusiona ambas bases; la API que consume la UI
   domain/         # Modelos de dominio (TermSummary, TermDetail, HistoryItem, ...)
+    games/       # Minijuego "Cinco": ClueBuilder arma la pista tapando la respuesta
   ui/
     theme/         # Material 3 desde los tokens de DESIGN.md
     search/        # Busqueda combinada + termino del dia + aleatorio

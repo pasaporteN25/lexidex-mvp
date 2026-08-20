@@ -495,12 +495,24 @@ diseno sin patron previo para calcar.
       personales, los dos espejo de `backend/lexidex_api.py`. No se agrego
       `src/androidTest`: los tests instrumentados necesitan el emulador, que
       es justo lo que esta infraestructura viene a evitar.
-- [ ] **8.2** _(Opus 5 · L)_ `ClueBuilder` en `ui/games/util/` (o
-      `domain/games/`): parte el extracto en oraciones, tapa el titulo y sus
-      variantes, suma la segunda oracion si lo que queda es muy corto, y
-      descarta el termino si aun asi no sirve. Es el corazon del juego y esta
-      lleno de casos borde (acentos, alias, parentesis de desambiguacion,
-      titulos que no aparecen). Con tests de 8.1, incluido el caso Belsnickel.
+- [x] **8.2** ✅ `ClueBuilder` en `domain/games/`, con veinte tests. Parte el
+      extracto en oraciones, tapa el titulo y sus variantes, suma la segunda
+      oracion cuando lo que queda baja de 60 caracteres visibles, y descarta
+      el termino si aun asi no alcanza. Medido sobre los 4.425 extractos del
+      paquete v0.4.0: 4.417 dan pista (248 de ellas con dos oraciones) y solo
+      8 se descartan; 4.400 realmente tapan algo.
+      El caso Belsnickel se resuelve con dos reglas que se complementan: se
+      tapan tambien las variantes cercanas del titulo (distancia
+      Damerau-Levenshtein de hasta un cuarto de la palabra, y solo desde seis
+      letras, para no tapar "rosa" en un termino llamado "Roma"), y un
+      parentesis que termina conteniendo una tapadura **es** una lista de
+      alias, asi que se borra entero en vez de quedar como una fila de
+      blancos. La segunda regla es la que alcanza sola con "Bell Sniggle",
+      que no se parece en nada al titulo.
+      El parentesis de desambiguacion del titulo no se tapa palabra por
+      palabra ("Spectre (vulnerabilidad)" no borra "vulnerabilidad" de la
+      oracion) porque 8.5 acepta la respuesta con o sin el, asi que taparlo
+      costaria una palabra util de la pista sin esconder nada.
 - [ ] **8.3** _(Sonnet 5 · M)_ `DistractorPicker`: tres senuelos al azar del
       catalogo, **siempre del mismo idioma** (con una oracion en espanol y tres
       titulos en ingles se acierta sin leer), y modo por categoria con umbral
