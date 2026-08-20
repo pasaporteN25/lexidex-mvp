@@ -25,7 +25,15 @@ def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-class CanonicalApiTest(unittest.TestCase):
+class PackageFixture:
+    """
+    Paquete recien construido mas una base de usuario vacia.
+
+    Es un mixin y no un TestCase para que heredarlo no vuelva a ejecutar los tests de quien lo
+    use: unittest recoge cualquier subclase de TestCase, incluidas las que solo buscaban el
+    fixture.
+    """
+
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.temp = Path(self.temp_dir.name)
@@ -45,6 +53,8 @@ class CanonicalApiTest(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+
+class CanonicalApiTest(PackageFixture, unittest.TestCase):
     def test_opens_canonical_package_without_writing(self):
         before = sha256(self.database)
         self.assertTrue(api.is_canonical_database(self.database))
@@ -237,6 +247,120 @@ class CanonicalApiTest(unittest.TestCase):
         standalone = self.temp / "standalone.sqlite"
         standalone.write_bytes(b"sin manifiesto al lado")
         api.verify_package_checksum(standalone)
+
+
+class CollectionsTest(PackageFixture, unittest.TestCase):
+    """Las colecciones agrupan terminos de los dos catalogos sin tocar el paquete."""
+
+    def collections_conn(self):
+        return api.connect_user(self.user_database)
+
+    def test_creates_lists_renames_and_deletes(self):
+        conn = self.collections_conn()
+        try:
+            created = api.create_collection(conn, {"name": "Guerra fria"})
+            self.assertTrue(created["uid"].startswith("col_"))
+            self.assertEqual(created["term_count"], 0)
+
+            self.assertEqual(len(api.list_collections(conn)["items"]), 1)
+
+            with self.assertRaises(api.ApiError) as caught:
+                api.create_collection(conn, {"name": "  guerra   FRIA "})
+            self.assertEqual(caught.exception.status, 409)
+
+            renamed = api.rename_collection(conn, created["uid"], {"name": "Espionaje"})
+            self.assertEqual(renamed["name"], "Espionaje")
+
+            api.delete_collection(conn, created["uid"])
+            self.assertEqual(api.list_collections(conn)["items"], [])
+            with self.assertRaises(api.ApiError):
+                api.find_collection(conn, created["uid"])
+        finally:
+            conn.close()
+
+    def test_groups_package_and_personal_terms_together(self):
+        package_conn = api.connect(self.database, readonly=True)
+        user_conn = self.collections_conn()
+        try:
+            personal = api.create_personal_term(
+                package_conn, user_conn, {"title": "Nota propia", "language": "es"}
+            )
+            package_term = api.list_terms(package_conn, {}, True)["items"][0]
+            collection = api.create_collection(user_conn, {"name": "Mezcla"})
+
+            api.add_term_to_collection(
+                package_conn, user_conn, collection["uid"],
+                {"slug": package_term["slug"], "origin": "package"}, True,
+            )
+            detail = api.add_term_to_collection(
+                package_conn, user_conn, collection["uid"],
+                {"slug": personal["slug"], "origin": "personal"}, True,
+            )
+
+            self.assertEqual(detail["term_count"], 2)
+            self.assertEqual(
+                {item["origin"] for item in detail["items"]}, {"package", "personal"}
+            )
+
+            # Agregar dos veces el mismo termino no lo duplica.
+            again = api.add_term_to_collection(
+                package_conn, user_conn, collection["uid"],
+                {"slug": personal["slug"], "origin": "personal"}, True,
+            )
+            self.assertEqual(again["term_count"], 2)
+
+            after = api.remove_term_from_collection(
+                package_conn, user_conn, collection["uid"], personal["slug"], "personal", True
+            )
+            self.assertEqual(after["term_count"], 1)
+        finally:
+            package_conn.close()
+            user_conn.close()
+
+    def test_deleting_a_member_term_does_not_break_the_collection(self):
+        package_conn = api.connect(self.database, readonly=True)
+        user_conn = self.collections_conn()
+        try:
+            personal = api.create_personal_term(
+                package_conn, user_conn, {"title": "Se va a borrar", "language": "es"}
+            )
+            package_term = api.list_terms(package_conn, {}, True)["items"][0]
+            collection = api.create_collection(user_conn, {"name": "Sobrevive"})
+            for slug, origin in ((package_term["slug"], "package"), (personal["slug"], "personal")):
+                api.add_term_to_collection(
+                    package_conn, user_conn, collection["uid"], {"slug": slug, "origin": origin}, True
+                )
+
+            api.delete_personal_term(user_conn, personal["slug"])
+
+            detail = api.collection_detail(package_conn, user_conn, collection["uid"], True)
+            self.assertEqual(detail["term_count"], 1)
+            self.assertEqual(detail["items"][0]["origin"], "package")
+        finally:
+            package_conn.close()
+            user_conn.close()
+
+    def test_rejects_unknown_term_and_bad_origin(self):
+        package_conn = api.connect(self.database, readonly=True)
+        user_conn = self.collections_conn()
+        try:
+            collection = api.create_collection(user_conn, {"name": "Vacia"})
+            with self.assertRaises(api.ApiError) as caught:
+                api.add_term_to_collection(
+                    package_conn, user_conn, collection["uid"],
+                    {"slug": "no-existe", "origin": "package"}, True,
+                )
+            self.assertEqual(caught.exception.status, 404)
+
+            with self.assertRaises(api.ApiError) as caught:
+                api.add_term_to_collection(
+                    package_conn, user_conn, collection["uid"],
+                    {"slug": "x", "origin": "inventado"}, True,
+                )
+            self.assertEqual(caught.exception.status, 400)
+        finally:
+            package_conn.close()
+            user_conn.close()
 
 
 class ExternalKnowledgeSourceTest(unittest.TestCase):

@@ -104,6 +104,30 @@ CREATE TABLE IF NOT EXISTS term_relations (
 USER_SCHEMA = """
 PRAGMA foreign_keys = ON;
 
+-- Colecciones tematicas. Viven con el resto de los datos personales y no en el paquete, por lo
+-- mismo que favoritos e historial: el paquete se reemplaza entero al actualizar (ADR 0002).
+-- Un miembro se identifica por slug + origen y no por clave foranea, porque puede apuntar tanto
+-- a un termino del paquete como a uno propio, que estan en bases distintas.
+CREATE TABLE IF NOT EXISTS collections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uid TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  normalized_name TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS collection_terms (
+  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  term_slug TEXT NOT NULL,
+  term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+  added_at TEXT NOT NULL,
+  PRIMARY KEY (collection_id, term_slug, term_origin)
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_terms_term
+  ON collection_terms(term_slug, term_origin);
+
 CREATE TABLE IF NOT EXISTS user_terms (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   uid TEXT NOT NULL UNIQUE,
@@ -1127,6 +1151,150 @@ class CatalogStore:
         )
 
 
+MAX_COLLECTION_NAME = 80
+ALLOWED_ORIGINS = {"package", "personal"}
+
+
+def utc_now():
+    """Mismo formato que usan los terminos personales, para no tener dos estilos de fecha."""
+    return (
+        dt.datetime.now(dt.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def collection_from_row(row, count=0):
+    return {
+        "uid": row["uid"],
+        "name": row["name"],
+        "term_count": count,
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def list_collections(user_conn):
+    rows = user_conn.execute(
+        """
+        SELECT c.*, (SELECT COUNT(*) FROM collection_terms ct WHERE ct.collection_id = c.id) AS n
+        FROM collections c
+        ORDER BY c.name COLLATE NOCASE
+        """
+    ).fetchall()
+    return {"items": [collection_from_row(row, row["n"]) for row in rows]}
+
+
+def find_collection(user_conn, uid):
+    row = user_conn.execute("SELECT * FROM collections WHERE uid = ?", (uid,)).fetchone()
+    if row is None:
+        raise ApiError(404, "not_found", "La coleccion no existe.")
+    return row
+
+
+def validate_collection_name(payload, user_conn, exclude_uid=None):
+    name = validate_string(payload, "name", MAX_COLLECTION_NAME, required=True)
+    normalized = normalized_key(name)
+    clash = user_conn.execute(
+        "SELECT uid FROM collections WHERE normalized_name = ? AND (? IS NULL OR uid != ?)",
+        (normalized, exclude_uid, exclude_uid),
+    ).fetchone()
+    if clash:
+        raise ApiError(409, "duplicate_collection", "Ya existe una coleccion con ese nombre.")
+    return name, normalized
+
+
+def create_collection(user_conn, payload):
+    name, normalized = validate_collection_name(payload, user_conn)
+    now = utc_now()
+    uid = f"col_{uuid.uuid4().hex}"
+    user_conn.execute(
+        """
+        INSERT INTO collections(uid, name, normalized_name, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (uid, name, normalized, now, now),
+    )
+    user_conn.commit()
+    return collection_from_row(find_collection(user_conn, uid))
+
+
+def rename_collection(user_conn, uid, payload):
+    find_collection(user_conn, uid)
+    name, normalized = validate_collection_name(payload, user_conn, exclude_uid=uid)
+    user_conn.execute(
+        "UPDATE collections SET name = ?, normalized_name = ?, updated_at = ? WHERE uid = ?",
+        (name, normalized, utc_now(), uid),
+    )
+    user_conn.commit()
+    row = find_collection(user_conn, uid)
+    count = user_conn.execute(
+        "SELECT COUNT(*) FROM collection_terms WHERE collection_id = ?", (row["id"],)
+    ).fetchone()[0]
+    return collection_from_row(row, count)
+
+
+def delete_collection(user_conn, uid):
+    row = find_collection(user_conn, uid)
+    user_conn.execute("DELETE FROM collection_terms WHERE collection_id = ?", (row["id"],))
+    user_conn.execute("DELETE FROM collections WHERE id = ?", (row["id"],))
+    user_conn.commit()
+
+
+def collection_detail(package_conn, user_conn, uid, canonical):
+    row = find_collection(user_conn, uid)
+    members = user_conn.execute(
+        """
+        SELECT term_slug, term_origin FROM collection_terms
+        WHERE collection_id = ? ORDER BY added_at DESC
+        """,
+        (row["id"],),
+    ).fetchall()
+    items = []
+    for member in members:
+        # Un miembro puede haber desaparecido: el termino personal se borro, o el paquete nuevo
+        # ya no lo trae. Se omite en vez de romper la coleccion entera.
+        term = get_catalog_term(package_conn, user_conn, member["term_slug"], canonical)
+        if term and term.get("origin") == member["term_origin"]:
+            items.append(term)
+    payload = collection_from_row(row, len(items))
+    payload["items"] = items
+    return payload
+
+
+def add_term_to_collection(package_conn, user_conn, uid, payload, canonical):
+    row = find_collection(user_conn, uid)
+    slug = validate_string(payload, "slug", 200, required=True)
+    origin = validate_string(payload, "origin", 24) or "package"
+    if origin not in ALLOWED_ORIGINS:
+        raise ApiError(400, "invalid_origin", "El origen del termino no es valido.")
+    term = get_catalog_term(package_conn, user_conn, slug, canonical)
+    if term is None or term.get("origin") != origin:
+        raise ApiError(404, "not_found", "El termino no existe en el catalogo.")
+    user_conn.execute(
+        """
+        INSERT OR IGNORE INTO collection_terms(collection_id, term_slug, term_origin, added_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (row["id"], slug, origin, utc_now()),
+    )
+    user_conn.execute("UPDATE collections SET updated_at = ? WHERE id = ?", (utc_now(), row["id"]))
+    user_conn.commit()
+    return collection_detail(package_conn, user_conn, uid, canonical)
+
+
+def remove_term_from_collection(package_conn, user_conn, uid, slug, origin, canonical):
+    row = find_collection(user_conn, uid)
+    user_conn.execute(
+        "DELETE FROM collection_terms WHERE collection_id = ? AND term_slug = ? AND term_origin = ?",
+        (row["id"], slug, origin),
+    )
+    user_conn.execute("UPDATE collections SET updated_at = ? WHERE id = ?", (utc_now(), row["id"]))
+    user_conn.commit()
+    return collection_detail(package_conn, user_conn, uid, canonical)
+
+
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Deja que los 3xx lleguen como HTTPError para revalidar el destino antes de seguirlo."""
 
@@ -1411,6 +1579,13 @@ class LexidexHandler(BaseHTTPRequestHandler):
                         package_conn, user_conn, query, self.store.canonical
                     ),
                 )
+            elif path == "/api/collections":
+                self.send_json(200, list_collections(user_conn))
+            elif path.startswith("/api/collections/"):
+                uid = unquote(path.removeprefix("/api/collections/").strip("/"))
+                self.send_json(
+                    200, collection_detail(package_conn, user_conn, uid, self.store.canonical)
+                )
             elif path == "/api/random":
                 self.send_json(
                     200,
@@ -1457,14 +1632,27 @@ class LexidexHandler(BaseHTTPRequestHandler):
             user_conn.close()
 
     def do_POST(self):
-        if urlparse(self.path).path.rstrip("/") != "/api/terms":
+        path = urlparse(self.path).path.rstrip("/")
+        if path not in ("/api/terms", "/api/collections") and not (
+            path.startswith("/api/collections/") and path.endswith("/terms")
+        ):
             self.send_json(404, {"error": "not_found"})
             return
         package_conn, user_conn = self.store.connections()
         try:
             self.enforce_write_origin()
-            term = create_personal_term(package_conn, user_conn, self.read_json())
-            self.send_json(201, term)
+            if path == "/api/terms":
+                self.send_json(201, create_personal_term(package_conn, user_conn, self.read_json()))
+            elif path == "/api/collections":
+                self.send_json(201, create_collection(user_conn, self.read_json()))
+            else:
+                uid = unquote(path.removeprefix("/api/collections/").removesuffix("/terms"))
+                self.send_json(
+                    200,
+                    add_term_to_collection(
+                        package_conn, user_conn, uid, self.read_json(), self.store.canonical
+                    ),
+                )
         except ApiError as error:
             self.send_api_error(error)
         finally:
@@ -1473,17 +1661,20 @@ class LexidexHandler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         path = urlparse(self.path).path.rstrip("/")
-        if not path.startswith("/api/terms/"):
+        if not path.startswith(("/api/terms/", "/api/collections/")):
             self.send_json(404, {"error": "not_found"})
             return
-        slug = unquote(path.removeprefix("/api/terms/"))
         package_conn, user_conn = self.store.connections()
         try:
             self.enforce_write_origin()
-            term = update_personal_term(
-                package_conn, user_conn, slug, self.read_json()
-            )
-            self.send_json(200, term)
+            if path.startswith("/api/terms/"):
+                slug = unquote(path.removeprefix("/api/terms/"))
+                self.send_json(
+                    200, update_personal_term(package_conn, user_conn, slug, self.read_json())
+                )
+            else:
+                uid = unquote(path.removeprefix("/api/collections/"))
+                self.send_json(200, rename_collection(user_conn, uid, self.read_json()))
         except ApiError as error:
             self.send_api_error(error)
         finally:
@@ -1491,16 +1682,38 @@ class LexidexHandler(BaseHTTPRequestHandler):
             user_conn.close()
 
     def do_DELETE(self):
-        path = urlparse(self.path).path.rstrip("/")
-        if not path.startswith("/api/terms/"):
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+        if not path.startswith(("/api/terms/", "/api/collections/")):
             self.send_json(404, {"error": "not_found"})
             return
-        slug = unquote(path.removeprefix("/api/terms/"))
         package_conn, user_conn = self.store.connections()
         try:
             self.enforce_write_origin()
-            delete_personal_term(user_conn, slug)
-            self.send_json(200, {"deleted": True, "slug": slug})
+            if path.startswith("/api/terms/"):
+                slug = unquote(path.removeprefix("/api/terms/"))
+                delete_personal_term(user_conn, slug)
+                self.send_json(200, {"deleted": True, "slug": slug})
+                return
+
+            rest = path.removeprefix("/api/collections/")
+            if "/terms/" in rest:
+                uid, slug = rest.split("/terms/", 1)
+                query = parse_qs(parsed.query)
+                self.send_json(
+                    200,
+                    remove_term_from_collection(
+                        package_conn,
+                        user_conn,
+                        unquote(uid),
+                        unquote(slug),
+                        query_value(query, "origin", "package"),
+                        self.store.canonical,
+                    ),
+                )
+            else:
+                delete_collection(user_conn, unquote(rest))
+                self.send_json(200, {"deleted": True, "uid": unquote(rest)})
         except ApiError as error:
             self.send_api_error(error)
         finally:
