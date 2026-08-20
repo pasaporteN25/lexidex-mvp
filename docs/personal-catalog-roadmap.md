@@ -59,16 +59,20 @@ saber esto porque cambia el tamano real de la tarea:
 Como project leader dejo esto priorizado, pero es una sugerencia, no una
 imposicion:
 
-1. ~~**Ver todos los terminos guardados**~~ ✅ hecho el 2026-08-19.
-2. **Etiquetas para encontrar mas rapido** - chico, independiente de todo.
-3. **Colecciones** - mediano, independiente de todo lo demas.
-4. ~~**Alta de terminos buscando en Wikipedia**~~ ✅ hecho el 2026-08-19.
-5. **Preview / contenido sin salir de la app** - parcialmente resuelto por la
-   epica 5: los terminos importados ya guardan el extracto y se leen sin
-   conexion. Queda solo la decision del articulo completo.
-6. **Pantalla de opciones (procedencia y almacenamiento)** - chico.
-7. **Actualizar el paquete base con un txt nuevo** - procedimiento, no
-   funcionalidad; se dispara cuando llegue el archivo.
+Al 2026-08-19, con las epicas 1, 5 y 7 cerradas y la 4 a medias, lo que queda
+es esto:
+
+1. **Pantalla de opciones** (epica 6) - la mas barata y ya util: hoy no hay
+   forma de ver desde el telefono que paquete esta instalado ni donde vive lo
+   que uno guarda.
+2. **Colecciones** (epica 3) - mediana, independiente. Su valor subio: agrupar
+   fichas con contenido rinde mas que agrupar titulos pelados.
+3. **Traer categorias al enriquecer** - requisito previo de la epica 2, ver
+   ahi. Chico: es un `prop=` mas en la consulta que el tool ya hace.
+4. **Etiquetas navegables** (epica 2) - sigue bloqueada hasta que exista algo
+   que navegar.
+5. **Articulo completo** (resto de la epica 4) - el mas grande de los que
+   quedan, y el unico que obliga a sanear HTML.
 
 ---
 
@@ -120,6 +124,20 @@ titulos distintos (por ejemplo el articulo y su redireccion) no se detecta.
 Aclaracion importante: el campo de etiquetas **ya existe** (se carga al crear
 un termino, se guarda, se muestra como chip). Esta epica es sobre *usarlas
 para navegar*, no sobre crearlas de nuevo.
+
+**Sigue bloqueada, y el enriquecimiento no la desbloqueo.** Se anticipo que
+traer los articulos poblaria categorias solas; no ocurrio, porque
+`tools/enrich_corpus.py` pide `extracts` y `description` y nada mas. Medido
+sobre el paquete v0.3.0: 4.425 terminos con contenido pero **0 etiquetas y 0
+categorias**. Construir navegacion por etiquetas hoy sigue siendo construir
+navegacion para un conjunto vacio, salvo por los terminos personales.
+
+- [ ] **2.0** _(Sonnet 5)_ Requisito previo: sumar `prop=categories` a la
+      consulta que el tool ya hace por lotes y volcar esas categorias en las
+      tablas `categories`/`term_categories`, que existen y estan vacias. Hay
+      que filtrar las categorias de mantenimiento de Wikipedia ("Wikipedia:",
+      "Articulos con datos por trasladar", etc.), que son ruido y son
+      mayoria. Recien despues tienen sentido 2.1-2.5.
 
 - [ ] **2.1** _(Sonnet 5)_ Backend: agregar filtro por etiqueta en
       `add_catalog_filters` (`backend/lexidex_api.py:511`) - un query param
