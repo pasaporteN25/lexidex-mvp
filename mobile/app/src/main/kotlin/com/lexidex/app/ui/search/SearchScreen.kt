@@ -17,10 +17,12 @@ import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,6 +63,7 @@ fun SearchScreen(
     onCatalogClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
+    onOptionsClick: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     OnResume(viewModel::refresh)
@@ -83,6 +86,7 @@ fun SearchScreen(
         onCatalogClick = onCatalogClick,
         onFavoritesClick = onFavoritesClick,
         onHistoryClick = onHistoryClick,
+        onOptionsClick = onOptionsClick,
     )
 }
 
@@ -97,6 +101,7 @@ private fun SearchContent(
     onCatalogClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
+    onOptionsClick: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -119,6 +124,7 @@ private fun SearchContent(
                         onCatalogClick = onCatalogClick,
                         onFavoritesClick = onFavoritesClick,
                         onHistoryClick = onHistoryClick,
+                        onOptionsClick = onOptionsClick,
                     )
                 },
             )
@@ -150,6 +156,7 @@ private fun ListsMenu(
     onCatalogClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
+    onOptionsClick: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     IconButton(onClick = { expanded = true }) {
@@ -170,6 +177,12 @@ private fun ListsMenu(
             text = { Text("Historial") },
             leadingIcon = { Icon(Icons.Default.History, contentDescription = null) },
             onClick = { expanded = false; onHistoryClick() },
+        )
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text("Opciones") },
+            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+            onClick = { expanded = false; onOptionsClick() },
         )
     }
 }

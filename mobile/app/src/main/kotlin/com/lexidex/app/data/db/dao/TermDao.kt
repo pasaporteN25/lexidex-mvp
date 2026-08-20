@@ -39,6 +39,9 @@ interface TermDao {
     @Query("SELECT COUNT(*) FROM terms")
     suspend fun countTerms(): Long
 
+    @Query("SELECT COUNT(*) FROM terms WHERE content <> ''")
+    suspend fun countEnrichedTerms(): Long
+
     /** Todo el paquete, por pagina: es el listado que alimenta la pantalla de catalogo. */
     @Query("SELECT * FROM terms ORDER BY title COLLATE NOCASE LIMIT :limit OFFSET :offset")
     suspend fun listAll(limit: Int, offset: Int): List<TermEntity>

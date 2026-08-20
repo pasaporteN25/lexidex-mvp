@@ -21,3 +21,7 @@ object HistoryRoute
 /** El catalogo completo -paquete y personales-, con filtro por origen. */
 @Serializable
 object CatalogRoute
+
+/** De donde sale y donde se guarda la informacion. */
+@Serializable
+object OptionsRoute

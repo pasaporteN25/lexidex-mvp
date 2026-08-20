@@ -12,6 +12,7 @@ import com.lexidex.app.data.userdb.entity.HistoryEntryEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 import com.lexidex.app.domain.CatalogFilter
 import com.lexidex.app.domain.HistoryItem
+import com.lexidex.app.domain.StorageInfo
 import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermOrigin
 import com.lexidex.app.domain.TermRelation
@@ -222,6 +223,26 @@ class CorpusRepository(
                 }
             }
         }
+    }
+
+    /** De donde sale y donde se guarda todo, para la pantalla de opciones. */
+    suspend fun getStorageInfo(knowledgeSources: List<String>): Result<StorageInfo> = corpusResult {
+        val installed = databaseProvider.installedPackage()
+        val userDatabase = userDatabaseProvider.get()
+        StorageInfo(
+            packageId = installed.marker?.packageId.orEmpty(),
+            packageVersion = installed.marker?.packageVersion.orEmpty(),
+            packageSha256 = installed.marker?.sha256.orEmpty(),
+            packagePath = installed.databasePath,
+            packageBytes = installed.databaseBytes,
+            packageTerms = termDao().countTerms(),
+            enrichedTerms = termDao().countEnrichedTerms(),
+            personalPath = userDatabaseProvider.databasePath(),
+            personalTerms = userDatabase.userTermDao().countTerms(),
+            favorites = userDatabase.favoriteDao().countAll(),
+            historyEntries = userDatabase.historyDao().countDistinctTerms(),
+            knowledgeSources = knowledgeSources,
+        )
     }
 
     suspend fun countCatalog(filter: CatalogFilter): Result<Long> = corpusResult {

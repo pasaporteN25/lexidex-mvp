@@ -32,4 +32,8 @@ interface HistoryDao {
 
     @Query("DELETE FROM history_entries WHERE term_slug = :slug AND term_origin = :origin")
     suspend fun deleteByTerm(slug: String, origin: TermOrigin)
+
+    /** Terminos distintos vistos, no visitas: es lo que la pantalla de historial muestra. */
+    @Query("SELECT COUNT(DISTINCT term_slug || '|' || term_origin) FROM history_entries")
+    suspend fun countDistinctTerms(): Long
 }

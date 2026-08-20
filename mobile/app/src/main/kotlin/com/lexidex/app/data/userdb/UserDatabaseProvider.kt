@@ -28,4 +28,7 @@ class UserDatabaseProvider(
     }
 
     suspend fun get(): LexidexUserDatabase = databaseDeferred.await()
+
+    /** Ruta real del archivo, para poder mostrarla en la pantalla de opciones. */
+    fun databasePath(): String = context.getDatabasePath(USER_DATABASE_FILE_NAME).absolutePath
 }

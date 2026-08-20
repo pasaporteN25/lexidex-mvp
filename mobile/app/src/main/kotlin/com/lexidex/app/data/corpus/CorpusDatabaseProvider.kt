@@ -28,10 +28,17 @@ private const val INSTALLED_MARKER_FILE_NAME = "$DATABASE_FILE_NAME.installed.js
  * del usuario ... viven fuera del paquete para permitir actualizaciones atomicas").
  */
 @Serializable
-private data class InstalledPackageMarker(
+data class InstalledPackageMarker(
     val packageId: String,
     val packageVersion: String,
     val sha256: String,
+)
+
+/** Lo que la pantalla de opciones necesita saber del paquete instalado, incluida su ruta real. */
+data class InstalledPackageInfo(
+    val marker: InstalledPackageMarker?,
+    val databasePath: String,
+    val databaseBytes: Long,
 )
 
 /**
@@ -64,6 +71,16 @@ class CorpusDatabaseProvider(
     }
 
     suspend fun get(): LexidexDatabase = databaseDeferred.await()
+
+    /** Se lee del disco, no de memoria, para que refleje lo que realmente quedo instalado. */
+    suspend fun installedPackage(): InstalledPackageInfo = withContext(Dispatchers.IO) {
+        val databaseFile = context.getDatabasePath(DATABASE_FILE_NAME)
+        InstalledPackageInfo(
+            marker = readMarker(File(databaseFile.parentFile, INSTALLED_MARKER_FILE_NAME)),
+            databasePath = databaseFile.absolutePath,
+            databaseBytes = if (databaseFile.exists()) databaseFile.length() else 0L,
+        )
+    }
 
     private suspend fun openDatabase(): LexidexDatabase {
         val manifest = PackageVerifier.verify(context, MANIFEST_ASSET_PATH, DATABASE_ASSET_PATH)

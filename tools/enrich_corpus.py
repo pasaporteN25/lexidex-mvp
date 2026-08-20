@@ -107,11 +107,12 @@ def fetch_batch(language, titles):
     return {title: by_final[resolve(title)] for title in titles if resolve(title) in by_final}
 
 
-def fetch_batch_with_backoff(language, titles, sleep_seconds):
+def fetch_batch_with_backoff(language, titles, sleep_seconds, fetch=None):
     """Reintenta solo ante 429, que es una peticion de esperar, no un fallo del articulo."""
+    fetch = fetch or fetch_batch
     for attempt in range(MAX_RATE_LIMIT_RETRIES):
         try:
-            return fetch_batch(language, titles)
+            return fetch(language, titles)
         except api.ApiError as error:
             if error.details.get("status") != 429:
                 raise
@@ -119,6 +120,189 @@ def fetch_batch_with_backoff(language, titles, sleep_seconds):
             print(f"  limite de tasa alcanzado, esperando {wait}s")
             time.sleep(wait)
     raise api.ApiError(502, "source_unavailable", "La fuente sigue limitando la tasa.")
+
+
+MAX_CATEGORIES_PER_TERM = 6
+CATEGORY_NAMESPACES = ("Categoría:", "Categoria:", "Category:", "Kategorie:", "Catégorie:", "Categoria:")
+# Aun con clshow=!hidden se cuelan categorias de mantenimiento; estas son las que aparecen.
+CATEGORY_NOISE = re.compile(
+    r"(wikipedia|wikiproyecto|articles?\s|artículos?\s|articulos?\s|páginas?\s|paginas?\s|pages?\s"
+    r"|control de autoridades|todos los|all\s|use \w+ (english|dates)|cs1|webarchive)",
+    re.IGNORECASE,
+)
+# Las cronologicas ("1996 conflicts", "Nacidos en 1889", "1930s in the United States") son
+# validas en Wikipedia pero no sirven para navegar un catalogo personal: casi siempre agrupan
+# un solo termino nuestro.
+CATEGORY_CHRONOLOGICAL = re.compile(
+    r"(^\d{3,4}s?\b|\b(nacidos|fallecidos|muertes|births|deaths)\s+en\b|\b(births|deaths)$"
+    r"|\b(anos|años|years|siglo|century)\b.*\d|\b\d{4}\b.*(establishments|disestablishments))",
+    re.IGNORECASE,
+)
+
+
+def clean_category(title):
+    """Saca el prefijo de espacio de nombres y descarta las de mantenimiento."""
+    name = (title or "").strip()
+    for prefix in CATEGORY_NAMESPACES:
+        if name.startswith(prefix):
+            name = name[len(prefix):].strip()
+            break
+    else:
+        return None
+    if not name or CATEGORY_NOISE.search(name) or CATEGORY_CHRONOLOGICAL.search(name):
+        return None
+    return name
+
+
+def prune_lonely_categories(conn):
+    """
+    Borra las categorias que quedaron con un solo termino: no sirven para navegar (tocarlas
+    lleva a la ficha de la que uno viene) y son la mayor parte del ruido y del peso.
+    """
+    conn.execute(
+        """
+        DELETE FROM term_categories WHERE category_id IN (
+            SELECT category_id FROM term_categories GROUP BY category_id HAVING COUNT(*) < 2
+        )
+        """
+    )
+    conn.execute("DELETE FROM categories WHERE id NOT IN (SELECT category_id FROM term_categories)")
+    conn.commit()
+
+
+def fetch_categories(language, titles):
+    """
+    Categorias visibles de hasta [BATCH_SIZE] titulos. `clshow=!hidden` deja fuera las ocultas,
+    que en Wikipedia son casi siempre de mantenimiento; el resto se filtra por nombre.
+    """
+    base = {
+        "action": "query",
+        "format": "json",
+        "formatversion": "2",
+        "prop": "categories",
+        "clshow": "!hidden",
+        "cllimit": "max",
+        "redirects": "1",
+        "titles": "|".join(titles),
+    }
+    rewrites = {}
+    by_final = defaultdict(list)
+    params = dict(base)
+
+    # `cllimit` cuenta sobre todas las paginas juntas, asi que un lote puede venir cortado y
+    # continuar en otra respuesta.
+    for _ in range(5):
+        payload = api.fetch_knowledge_json(
+            f"https://{language}.wikipedia.org/w/api.php?{urlencode(params)}"
+        )
+        section = payload.get("query") or {}
+        for step in ("normalized", "redirects"):
+            for item in section.get(step) or []:
+                rewrites[item.get("from")] = item.get("to")
+        for page in section.get("pages") or []:
+            for category in page.get("categories") or []:
+                name = clean_category(category.get("title"))
+                if name and name not in by_final[page.get("title")]:
+                    by_final[page.get("title")].append(name)
+        cont = payload.get("continue")
+        if not cont:
+            break
+        params = dict(base)
+        params.update(cont)
+
+    def resolve(title):
+        seen = set()
+        current = title
+        while current in rewrites and current not in seen:
+            seen.add(current)
+            current = rewrites[current]
+        return current
+
+    return {t: by_final[resolve(t)][:MAX_CATEGORIES_PER_TERM] for t in titles if by_final[resolve(t)]}
+
+
+def pending_categories(conn, limit):
+    sql = """
+        SELECT id, title, source_url
+        FROM terms
+        WHERE source_url LIKE '%wikipedia.org/wiki/%'
+          AND id NOT IN (SELECT term_id FROM term_categories)
+        ORDER BY id
+    """
+    if limit:
+        sql += f" LIMIT {int(limit)}"
+    return conn.execute(sql).fetchall()
+
+
+def link_categories(conn, term_id, names):
+    for name in names:
+        conn.execute("INSERT OR IGNORE INTO categories(name) VALUES (?)", (name,))
+        category_id = conn.execute("SELECT id FROM categories WHERE name = ?", (name,)).fetchone()[0]
+        conn.execute(
+            "INSERT OR IGNORE INTO term_categories(term_id, category_id) VALUES (?, ?)",
+            (term_id, category_id),
+        )
+
+
+def enrich_categories(database, limit=0, dry_run=False, sleep_seconds=DEFAULT_SLEEP_SECONDS):
+    conn = sqlite3.connect(database)
+    conn.row_factory = sqlite3.Row
+    stats = {"terminos_con_categoria": 0, "sin_categoria": 0, "fuera_de_alcance": 0, "error": 0}
+    seen_names = set()
+    try:
+        by_language = defaultdict(list)
+        for row in pending_categories(conn, limit):
+            target = wikipedia_target(row["source_url"])
+            if target is None:
+                stats["fuera_de_alcance"] += 1
+                continue
+            by_language[target[0]].append((target[1], row))
+
+        batches = [
+            (language, entries[start:start + BATCH_SIZE])
+            for language, entries in by_language.items()
+            for start in range(0, len(entries), BATCH_SIZE)
+        ]
+        print(f"categorias: {sum(len(v) for v in by_language.values())} terminos en {len(batches)} lotes")
+
+        for index, (language, entries) in enumerate(batches, start=1):
+            titles = [title for title, _ in entries]
+            try:
+                found = fetch_batch_with_backoff(language, titles, sleep_seconds, fetch=fetch_categories)
+            except api.ApiError as error:
+                stats["error"] += len(entries)
+                print(f"  [lote {index}/{len(batches)}] {language}: {error.code}")
+                time.sleep(sleep_seconds)
+                continue
+
+            for title, row in entries:
+                names = found.get(title) or []
+                if not names:
+                    stats["sin_categoria"] += 1
+                    continue
+                stats["terminos_con_categoria"] += 1
+                seen_names.update(names)
+                if not dry_run:
+                    link_categories(conn, row["id"], names)
+
+            if not dry_run:
+                conn.commit()
+            if index % 10 == 0 or index == len(batches):
+                print(f"  [lote {index}/{len(batches)}] con categoria: {stats['terminos_con_categoria']}")
+            time.sleep(sleep_seconds)
+
+        if not dry_run:
+            conn.commit()
+            antes = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
+            prune_lonely_categories(conn)
+            despues = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
+            stats["categorias_podadas"] = antes - despues
+            stats["categorias_finales"] = despues
+    finally:
+        conn.close()
+    stats["categorias_vistas"] = len(seen_names)
+    stats["ejemplos"] = sorted(seen_names)[:10]
+    return stats
 
 
 def pending_terms(conn, limit):
@@ -330,15 +514,26 @@ def main():
         default=None,
         help="version nueva a escribir en el manifiesto al terminar",
     )
+    parser.add_argument(
+        "--categories",
+        action="store_true",
+        help="pasada de categorias en vez de extractos (se puede correr despues)",
+    )
     args = parser.parse_args()
 
-    stats = enrich(
-        args.database,
-        limit=args.limit,
-        dry_run=args.dry_run,
-        sleep_seconds=args.sleep,
-        max_chars=args.max_chars,
-    )
+    if args.categories:
+        stats = enrich_categories(
+            args.database, limit=args.limit, dry_run=args.dry_run, sleep_seconds=args.sleep
+        )
+        stats["ok"] = stats["terminos_con_categoria"]
+    else:
+        stats = enrich(
+            args.database,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            sleep_seconds=args.sleep,
+            max_chars=args.max_chars,
+        )
     if args.dry_run:
         pass
     elif stats["ok"] == 0:

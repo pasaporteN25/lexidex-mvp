@@ -13,6 +13,9 @@ interface FavoriteDao {
     @Query("SELECT * FROM favorites ORDER BY created_at DESC")
     suspend fun listAll(): List<FavoriteEntity>
 
+    @Query("SELECT COUNT(*) FROM favorites")
+    suspend fun countAll(): Long
+
     @Query("INSERT OR REPLACE INTO favorites (term_slug, term_origin, created_at) VALUES (:slug, :origin, :createdAt)")
     suspend fun add(slug: String, origin: TermOrigin, createdAt: String)
 

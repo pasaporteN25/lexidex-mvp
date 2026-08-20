@@ -17,6 +17,8 @@ import com.lexidex.app.ui.favorites.FavoritesScreen
 import com.lexidex.app.ui.favorites.FavoritesViewModel
 import com.lexidex.app.ui.history.HistoryScreen
 import com.lexidex.app.ui.history.HistoryViewModel
+import com.lexidex.app.ui.options.OptionsScreen
+import com.lexidex.app.ui.options.OptionsViewModel
 import com.lexidex.app.ui.catalog.CatalogScreen
 import com.lexidex.app.ui.catalog.CatalogViewModel
 import com.lexidex.app.ui.search.SearchScreen
@@ -35,7 +37,14 @@ fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<Knowledg
                 onCatalogClick = { navController.navigate(CatalogRoute) },
                 onFavoritesClick = { navController.navigate(FavoritesRoute) },
                 onHistoryClick = { navController.navigate(HistoryRoute) },
+                onOptionsClick = { navController.navigate(OptionsRoute) },
             )
+        }
+        composable<OptionsRoute> {
+            val viewModel = viewModel<OptionsViewModel>(
+                factory = OptionsViewModel.factory(repository, knowledgeSources),
+            )
+            OptionsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
         composable<CatalogRoute> {
             val viewModel = viewModel<CatalogViewModel>(factory = CatalogViewModel.factory(repository))
