@@ -41,12 +41,13 @@ saber esto porque cambia el tamano real de la tarea:
   (`#originFilter` en `frontend/app.js`). Lo que falta es *solo* en Android.
 - **Categorias y etiquetas ya existen como dato**, en las tres plataformas:
   se cargan al crear/editar un termino y se muestran como chips en la ficha
-  (`TermDetail.categories` / `TermDetail.tags`, ADR 0002). Lo que no existe
-  en ningun lado todavia es *filtrar o navegar* por una etiqueta - hoy son
-  puramente decorativas.
-- **Colecciones ("globos de temas") no existen en ninguna plataforma.** Ni
-  ADR 0002 ni el backend las contemplan. Es lo unico de esta lista que
-  necesita una tabla nueva ademas de una pantalla nueva.
+  (`TermDetail.categories` / `TermDetail.tags`, ADR 0002). Desde el paquete
+  v0.4.0 los terminos del paquete tambien traen categorias reales (1.882
+  sobre 2.570 terminos). Lo que sigue sin existir es *filtrar o navegar* por
+  una etiqueta: hoy los chips son decorativos.
+- **Colecciones ("globos de temas")**: implementadas el 2026-08-20 en las tres
+  plataformas (epica 3). Fue lo unico de esta lista que necesito tablas
+  nuevas, y en Android una migracion de la base de usuario.
 - **Traer contenido externo (Wikipedia u otra fuente) no existe en ninguna
   plataforma**, pero **ya esta anticipado**: `docs/security-threat-model.md`
   (seccion "SSRF", lineas ~146-166) tiene un checklist de seguridad ya
@@ -59,20 +60,16 @@ saber esto porque cambia el tamano real de la tarea:
 Como project leader dejo esto priorizado, pero es una sugerencia, no una
 imposicion:
 
-Al 2026-08-19, con las epicas 1, 5 y 7 cerradas y la 4 a medias, lo que queda
-es esto:
+Al 2026-08-20 estan cerradas las epicas 1, 3, 5, 6 y 7, mas la tarea 2.0. Lo
+que queda:
 
-1. **Pantalla de opciones** (epica 6) - la mas barata y ya util: hoy no hay
-   forma de ver desde el telefono que paquete esta instalado ni donde vive lo
-   que uno guarda.
-2. **Colecciones** (epica 3) - mediana, independiente. Su valor subio: agrupar
-   fichas con contenido rinde mas que agrupar titulos pelados.
-3. **Traer categorias al enriquecer** - requisito previo de la epica 2, ver
-   ahi. Chico: es un `prop=` mas en la consulta que el tool ya hace.
-4. **Etiquetas navegables** (epica 2) - sigue bloqueada hasta que exista algo
-   que navegar.
-5. **Articulo completo** (resto de la epica 4) - el mas grande de los que
-   quedan, y el unico que obliga a sanear HTML.
+1. **Etiquetas navegables** (epica 2, tareas 2.1 a 2.5) - ya desbloqueada: el
+   paquete trae 1.882 categorias sobre 2.570 terminos. Falta poder filtrar y
+   navegar por ellas.
+2. **Articulo completo** (resto de la epica 4) - el mas grande de los que
+   quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
+3. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
+   al final de la epica 7.
 
 ---
 
@@ -125,19 +122,25 @@ Aclaracion importante: el campo de etiquetas **ya existe** (se carga al crear
 un termino, se guarda, se muestra como chip). Esta epica es sobre *usarlas
 para navegar*, no sobre crearlas de nuevo.
 
-**Sigue bloqueada, y el enriquecimiento no la desbloqueo.** Se anticipo que
-traer los articulos poblaria categorias solas; no ocurrio, porque
-`tools/enrich_corpus.py` pide `extracts` y `description` y nada mas. Medido
-sobre el paquete v0.3.0: 4.425 terminos con contenido pero **0 etiquetas y 0
-categorias**. Construir navegacion por etiquetas hoy sigue siendo construir
-navegacion para un conjunto vacio, salvo por los terminos personales.
+**Desbloqueada el 2026-08-20.** Estuvo trabada un tiempo por una razon que en
+su momento se diagnostico mal: se anticipo que traer los articulos poblaria
+categorias solas, y no ocurrio, porque el tool pedia `extracts` y
+`description` y nada mas. Ahora el paquete v0.4.0 trae **1.882 categorias
+sobre 2.570 terminos**, asi que ya hay algo que navegar.
 
-- [ ] **2.0** _(Sonnet 5)_ Requisito previo: sumar `prop=categories` a la
-      consulta que el tool ya hace por lotes y volcar esas categorias en las
-      tablas `categories`/`term_categories`, que existen y estan vacias. Hay
-      que filtrar las categorias de mantenimiento de Wikipedia ("Wikipedia:",
-      "Articulos con datos por trasladar", etc.), que son ruido y son
-      mayoria. Recien despues tienen sentido 2.1-2.5.
+- [x] **2.0** ✅ `tools/enrich_corpus.py --categories` trae las categorias por
+      lotes y las vuelca en `categories`/`term_categories`. El filtrado
+      resulto ser la parte importante: `clshow=!hidden` saca las ocultas, pero
+      quedaban las de mantenimiento, las cronologicas ("1941 disestablishments
+      in the United States", "20th-century...") y sobre todo las demograficas,
+      que eran las mas numerosas: "Hombres" agrupaba 355 terminos y "Living
+      people" 42. Agrupar por genero no ayuda a encontrar nada. Con esas
+      fuera, las mas frecuentes pasan a ser tematicas: Terminos medicos,
+      Plantas medicinales, Enfermedades eponimas, Dinosaurios de America del
+      Sur. Ademas se podan las categorias que quedan con un solo termino, que
+      no sirven para navegar y eran la mayor parte del peso. Costo total:
+      0,23 MB. `--clean-categories` reaplica el filtro a lo ya guardado sin
+      volver a la red, que es como se afino sin gastar otra tanda de pedidos.
 
 - [ ] **2.1** _(Sonnet 5)_ Backend: agregar filtro por etiqueta en
       `add_catalog_filters` (`backend/lexidex_api.py:511`) - un query param
@@ -160,41 +163,43 @@ navegacion para un conjunto vacio, salvo por los terminos personales.
 Independiente de la epica 1; se pueden hacer en paralelo o en cualquier orden
 relativo.
 
-## 3. Colecciones ("globos de temas") ⬜
+## 3. Colecciones ("globos de temas") ✅
 
-Agrupar terminos (personales y del paquete, igual que ya hacen favoritos) bajo
-un nombre elegido por el usuario. Es la unica epica de esta lista que necesita
-una tabla nueva.
+**Completada el 2026-08-20** en backend, Android y web. Las colecciones agrupan
+terminos de los dos catalogos bajo un nombre elegido por el usuario, viven en
+la base personal (ADR 0002) y registran a sus miembros por slug + origen y no
+por clave foranea, porque un miembro puede estar en cualquiera de las dos
+bases. Un miembro que desaparece se omite al leer en vez de romper la
+coleccion entera.
 
-- [ ] **3.1** _(Opus 5, o mejor Lucas directamente)_ Decision chica de alcance
-      (2-3 lineas alcanzan, no hace falta un ADR completo): ¿una coleccion es
-      solo local al dispositivo, igual que favoritos hoy, o se piensa
-      sincronizable a futuro? Para esta primera version: local, mismo criterio
-      que favoritos/historial. Es una decision de producto, no de codigo; si
-      se le pide a un modelo que proponga algo antes de que Lucas confirme,
-      Opus por no haber un patron existente para calcar. Dejar esa decision
-      escrita ya sea en este archivo o en un ADR corto antes de 3.2.
-- [ ] **3.2** _(Sonnet 5)_ Backend: tabla `collections` (id, nombre, fecha) +
-      tabla puente `collection_terms` (collection_id, term_slug, term_origin)
-      - mismo patron sin FK cruzada que ya usa `favorites`. Endpoints CRUD de
-      colecciones y de agregar/quitar un termino.
-- [ ] **3.3** _(Sonnet 5)_ Web: UI para crear/nombrar una coleccion y agregar/
-      quitar terminos desde la ficha.
-- [ ] **3.4** _(Sonnet 5)_ Android: entidades Room + DAO +
-      `CollectionRepository` (o extension de `CorpusRepository`) espejando
-      3.2. Sigue el patron de favoritos/historial pero es la primera tabla
-      puente de verdad nueva, no una copia exacta.
-- [ ] **3.5** _(Sonnet 5)_ Android: pantallas - lista de colecciones, detalle
-      de una coleccion (lista de terminos, reusa `TermRow`), y accion
-      "agregar a coleccion" desde la ficha (`TermDetailScreen`).
-- [ ] **3.6** _(Sonnet 5)_ Verificar en ambas plataformas: crear una
-      coleccion, agregar un termino del paquete y uno personal a la misma
-      coleccion, confirmar que ambos aparecen y que borrar el termino
-      personal no rompe la coleccion (mismo cuidado que ya se aplico con
-      favoritos/historial huerfanos).
+En Android la base de usuario paso a version 2 con una **migracion escrita a
+mano**: una destructiva habria borrado terminos, favoritos e historial, que es
+lo unico que el usuario no puede recuperar.
 
-Depende solo de 3.1. El resto de subtareas son chicas y en su mayoria
-secuenciales dentro de cada plataforma.
+El selector vive en la ficha del termino, no en la lista de colecciones,
+porque es ahi donde uno decide que algo pertenece a un tema. Aplica a
+cualquier termino, no solo a los propios: el sentido es juntar lo del paquete
+con lo tuyo bajo un mismo tema.
+
+### Subtareas
+
+- [x] **3.1** ✅ Local al dispositivo, mismo criterio que favoritos e
+      historial. Registrado arriba y en el comentario del esquema.
+- [x] **3.2** ✅ Backend: tablas `collections` y `collection_terms` en el
+      esquema de usuario, mas endpoints de listar/crear/renombrar/eliminar y
+      de agregar/quitar un termino. Cuatro tests.
+- [x] **3.3** ✅ Web: boton "Colecciones" en el menu lateral con su contador, y
+      accion "Colecciones" en la ficha de cualquier termino. El mismo dialogo
+      administra y asigna: abierto desde el menu cada fila navega, abierto
+      desde una ficha cada fila trae una casilla.
+- [x] **3.4** ✅ Android: entidades Room, `CollectionDao` y metodos en
+      `CorpusRepository`, con migracion 1->2 escrita a mano.
+- [x] **3.5** ✅ Android: lista, detalle y selector desde la ficha.
+- [x] **3.6** ✅ Verificado en ambas: en Android se creo una coleccion y se
+      agrego un termino del paquete desde su ficha, viendo el conteo y el
+      detalle actualizarse; en la web se creo, se asigno un termino del
+      paquete, se abrio la coleccion desde el menu y se limpio despues. Un
+      test cubre que borrar un termino miembro deja el resto intacto.
 
 ## 4. Preview o contenido completo sin salir de la app 🔶
 

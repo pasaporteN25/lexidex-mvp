@@ -48,6 +48,15 @@ const elements = {
   lookupButton: document.querySelector("#lookupButton"),
   lookupStatus: document.querySelector("#lookupStatus"),
   lookupResults: document.querySelector("#lookupResults"),
+  collectionsButton: document.querySelector("#collectionsButton"),
+  collectionsCount: document.querySelector("#collectionsCount"),
+  collectionsDialog: document.querySelector("#collectionsDialog"),
+  collectionsHint: document.querySelector("#collectionsHint"),
+  collectionsList: document.querySelector("#collectionsList"),
+  collectionsError: document.querySelector("#collectionsError"),
+  newCollectionName: document.querySelector("#newCollectionName"),
+  createCollectionButton: document.querySelector("#createCollectionButton"),
+  closeCollectionsButton: document.querySelector("#closeCollectionsButton"),
   deleteDialog: document.querySelector("#deleteDialog"),
   deleteForm: document.querySelector("#deleteForm"),
   deleteMessage: document.querySelector("#deleteMessage"),
@@ -364,12 +373,16 @@ function renderDetail(term, related) {
   const notes = (term.notes || []).length
     ? `<section><h3>Notas privadas</h3><div class="note-block">${term.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div></section>`
     : "";
-  const actions = term.editable
-    ? `<div class="record-actions">
-         <button data-action="edit" type="button">Editar</button>
-         <button data-action="delete" class="danger-text" type="button">Eliminar</button>
-       </div>`
+  // Agrupar en colecciones aplica a cualquier termino, no solo a los propios: el sentido es
+  // juntar lo del paquete con lo tuyo bajo un mismo tema.
+  const editActions = term.editable
+    ? `<button data-action="edit" type="button">Editar</button>
+       <button data-action="delete" class="danger-text" type="button">Eliminar</button>`
     : "";
+  const actions = `<div class="record-actions">
+       <button data-action="collections" type="button">Colecciones</button>
+       ${editActions}
+     </div>`;
 
   elements.detail.innerHTML = `
     <article class="record">
@@ -443,6 +456,173 @@ function formField(name) {
 
 function setFormValue(name, value) {
   formField(name).value = value ?? "";
+}
+
+// --- Colecciones ---
+// El mismo dialogo sirve para administrarlas y para asignar un termino: cuando se abre desde una
+// ficha, cada fila trae una casilla; cuando se abre del menu lateral, cada fila navega.
+const collectionsState = { target: null, items: [], memberOf: new Set() };
+
+async function refreshCollectionsCount() {
+  try {
+    const payload = await api("/api/collections");
+    collectionsState.items = payload.items || [];
+    elements.collectionsCount.textContent = formatNumber(collectionsState.items.length);
+  } catch (_error) {
+    elements.collectionsCount.textContent = "0";
+  }
+}
+
+async function openCollections(target = null) {
+  collectionsState.target = target;
+  elements.collectionsError.textContent = "";
+  elements.newCollectionName.value = "";
+  elements.collectionsHint.textContent = target
+    ? `Marca las colecciones que agrupan "${target.title}".`
+    : "Abri una para ver los terminos que agrupa.";
+  await loadCollections();
+  elements.collectionsDialog.showModal();
+}
+
+async function loadCollections() {
+  try {
+    const payload = await api("/api/collections");
+    collectionsState.items = payload.items || [];
+    elements.collectionsCount.textContent = formatNumber(collectionsState.items.length);
+
+    if (collectionsState.target) {
+      const term = collectionsState.target;
+      const memberships = await Promise.all(
+        collectionsState.items.map(async (collection) => {
+          const detail = await api(`/api/collections/${encodeURIComponent(collection.uid)}`);
+          const has = (detail.items || []).some(
+            (item) => item.slug === term.slug && item.origin === term.origin
+          );
+          return has ? collection.uid : null;
+        })
+      );
+      collectionsState.memberOf = new Set(memberships.filter(Boolean));
+    }
+    renderCollections();
+  } catch (error) {
+    elements.collectionsError.textContent = error.message;
+  }
+}
+
+function renderCollections() {
+  if (!collectionsState.items.length) {
+    elements.collectionsList.replaceChildren();
+    return;
+  }
+  const nodes = collectionsState.items.map((collection) => {
+    const entry = document.createElement("li");
+    entry.className = "collection-row";
+
+    if (collectionsState.target) {
+      const label = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = collectionsState.memberOf.has(collection.uid);
+      box.addEventListener("change", () => toggleMembership(collection.uid, box.checked));
+      label.append(box, document.createTextNode(` ${collection.name}`));
+      entry.append(label);
+    } else {
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "collection-open";
+      open.textContent = collection.name;
+      open.addEventListener("click", () => showCollection(collection));
+      entry.append(open);
+    }
+
+    const count = document.createElement("span");
+    count.className = "collection-count";
+    count.textContent = formatNumber(collection.term_count);
+    entry.append(count);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger-text";
+    remove.textContent = "Eliminar";
+    remove.addEventListener("click", () => deleteCollection(collection));
+    entry.append(remove);
+
+    return entry;
+  });
+  elements.collectionsList.replaceChildren(...nodes);
+}
+
+async function toggleMembership(uid, member) {
+  const term = collectionsState.target;
+  if (!term) return;
+  try {
+    if (member) {
+      await api(`/api/collections/${encodeURIComponent(uid)}/terms`, {
+        method: "POST",
+        body: JSON.stringify({ slug: term.slug, origin: term.origin }),
+      });
+    } else {
+      await api(
+        `/api/collections/${encodeURIComponent(uid)}/terms/${encodeURIComponent(term.slug)}` +
+          `?origin=${encodeURIComponent(term.origin)}`,
+        { method: "DELETE" }
+      );
+    }
+    await loadCollections();
+  } catch (error) {
+    elements.collectionsError.textContent = error.message;
+  }
+}
+
+async function createCollection() {
+  const name = elements.newCollectionName.value.trim();
+  if (!name) {
+    elements.collectionsError.textContent = "Escribi un nombre.";
+    return;
+  }
+  try {
+    const created = await api("/api/collections", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    elements.newCollectionName.value = "";
+    elements.collectionsError.textContent = "";
+    // Crear desde una ficha ademas agrega el termino: es lo que uno quiso al escribir el nombre.
+    if (collectionsState.target) {
+      await toggleMembership(created.uid, true);
+    } else {
+      await loadCollections();
+    }
+  } catch (error) {
+    elements.collectionsError.textContent = error.message;
+  }
+}
+
+async function deleteCollection(collection) {
+  try {
+    await api(`/api/collections/${encodeURIComponent(collection.uid)}`, { method: "DELETE" });
+    await loadCollections();
+  } catch (error) {
+    elements.collectionsError.textContent = error.message;
+  }
+}
+
+/** Muestra los terminos de una coleccion en la lista principal, como si fueran un resultado. */
+async function showCollection(collection) {
+  try {
+    const detail = await api(`/api/collections/${encodeURIComponent(collection.uid)}`);
+    elements.collectionsDialog.close();
+    state.terms = detail.items || [];
+    state.total = state.terms.length;
+    state.offset = 0;
+    renderTermList();
+    elements.pageStatus.textContent = `Coleccion "${collection.name}": ${formatNumber(state.terms.length)}`;
+    if (state.terms.length) {
+      await selectTerm(state.terms[0].slug);
+    }
+  } catch (error) {
+    elements.collectionsError.textContent = error.message;
+  }
 }
 
 function resetLookup(query = "") {
@@ -687,6 +867,18 @@ elements.detail.addEventListener("click", (event) => {
     openTermDialog(state.activeTerm);
   } else if (action === "delete") {
     openDeleteDialog();
+  } else if (action === "collections" && state.activeTerm) {
+    openCollections(state.activeTerm).catch(showFatalError);
+  }
+});
+
+elements.collectionsButton.addEventListener("click", () => openCollections().catch(showFatalError));
+elements.closeCollectionsButton.addEventListener("click", () => elements.collectionsDialog.close());
+elements.createCollectionButton.addEventListener("click", () => createCollection().catch(showFatalError));
+elements.newCollectionName.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    createCollection().catch(showFatalError);
   }
 });
 
@@ -757,6 +949,7 @@ async function init() {
   try {
     await refreshMetadata();
     await loadCatalog();
+    await refreshCollectionsCount();
   } catch (error) {
     showFatalError(error);
   }

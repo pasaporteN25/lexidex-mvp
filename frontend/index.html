@@ -44,6 +44,10 @@
           <button id="randomButton" class="rail-button" type="button">
             <span>Registro al azar</span>
           </button>
+          <button id="collectionsButton" class="rail-button" type="button">
+            <span>Colecciones</span>
+            <span id="collectionsCount" class="rail-count">0</span>
+          </button>
         </nav>
 
         <dl class="rail-stats" id="stats" aria-label="Resumen del corpus"></dl>
@@ -237,6 +241,27 @@
           <button class="danger-action" type="submit">Eliminar</button>
         </footer>
       </form>
+    </dialog>
+
+    <dialog id="collectionsDialog" class="confirm-dialog" aria-labelledby="collectionsDialogTitle">
+      <h2 id="collectionsDialogTitle">Colecciones</h2>
+      <p id="collectionsHint" class="quiet"></p>
+      <ul id="collectionsList" class="collection-list"></ul>
+      <div class="lookup-row">
+        <input
+          id="newCollectionName"
+          type="text"
+          maxlength="80"
+          autocomplete="off"
+          placeholder="Nombre de una coleccion nueva"
+          aria-label="Nombre de una coleccion nueva"
+        />
+        <button id="createCollectionButton" class="secondary-action" type="button">Crear</button>
+      </div>
+      <p id="collectionsError" class="form-error" role="alert"></p>
+      <footer class="dialog-actions">
+        <button id="closeCollectionsButton" class="secondary-action" type="button">Listo</button>
+      </footer>
     </dialog>
 
     <datalist id="languageOptions">
