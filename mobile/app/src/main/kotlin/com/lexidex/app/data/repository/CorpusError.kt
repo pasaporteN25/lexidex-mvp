@@ -18,5 +18,9 @@ sealed class CorpusError(message: String, cause: Throwable? = null) : Exception(
     /** The personal term being edited/deleted no longer exists. */
     class PersonalTermNotFound(slug: String) : CorpusError("El termino personal '$slug' no existe.")
 
+    class DuplicateCollection(name: String) : CorpusError("Ya existe una coleccion llamada '$name'.")
+
+    class CollectionNotFound(uid: String) : CorpusError("La coleccion ya no existe.")
+
     class Unexpected(cause: Throwable) : CorpusError("Unexpected corpus error", cause)
 }

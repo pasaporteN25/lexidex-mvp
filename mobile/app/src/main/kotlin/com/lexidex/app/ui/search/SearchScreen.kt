@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.History
@@ -61,6 +62,7 @@ fun SearchScreen(
     onTermClick: (String) -> Unit,
     onCreateClick: () -> Unit,
     onCatalogClick: () -> Unit,
+    onCollectionsClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onOptionsClick: () -> Unit,
@@ -84,6 +86,7 @@ fun SearchScreen(
         onTermClick = onTermClick,
         onCreateClick = onCreateClick,
         onCatalogClick = onCatalogClick,
+        onCollectionsClick = onCollectionsClick,
         onFavoritesClick = onFavoritesClick,
         onHistoryClick = onHistoryClick,
         onOptionsClick = onOptionsClick,
@@ -99,6 +102,7 @@ private fun SearchContent(
     onTermClick: (String) -> Unit,
     onCreateClick: () -> Unit,
     onCatalogClick: () -> Unit,
+    onCollectionsClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onOptionsClick: () -> Unit,
@@ -122,6 +126,7 @@ private fun SearchContent(
                     // en la barra y ninguna se leia.
                     ListsMenu(
                         onCatalogClick = onCatalogClick,
+                        onCollectionsClick = onCollectionsClick,
                         onFavoritesClick = onFavoritesClick,
                         onHistoryClick = onHistoryClick,
                         onOptionsClick = onOptionsClick,
@@ -154,6 +159,7 @@ private fun SearchContent(
 @Composable
 private fun ListsMenu(
     onCatalogClick: () -> Unit,
+    onCollectionsClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onOptionsClick: () -> Unit,
@@ -167,6 +173,11 @@ private fun ListsMenu(
             text = { Text("Ver todos los terminos") },
             leadingIcon = { Icon(Icons.Default.CollectionsBookmark, contentDescription = null) },
             onClick = { expanded = false; onCatalogClick() },
+        )
+        DropdownMenuItem(
+            text = { Text("Colecciones") },
+            leadingIcon = { Icon(Icons.Default.Category, contentDescription = null) },
+            onClick = { expanded = false; onCollectionsClick() },
         )
         DropdownMenuItem(
             text = { Text("Favoritos") },

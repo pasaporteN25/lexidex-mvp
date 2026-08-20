@@ -21,6 +21,10 @@ import com.lexidex.app.ui.options.OptionsScreen
 import com.lexidex.app.ui.options.OptionsViewModel
 import com.lexidex.app.ui.catalog.CatalogScreen
 import com.lexidex.app.ui.catalog.CatalogViewModel
+import com.lexidex.app.ui.collections.CollectionDetailScreen
+import com.lexidex.app.ui.collections.CollectionDetailViewModel
+import com.lexidex.app.ui.collections.CollectionsScreen
+import com.lexidex.app.ui.collections.CollectionsViewModel
 import com.lexidex.app.ui.search.SearchScreen
 import com.lexidex.app.ui.search.SearchViewModel
 
@@ -35,9 +39,31 @@ fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<Knowledg
                 onTermClick = { slug -> navController.navigate(TermDetailRoute(slug)) },
                 onCreateClick = { navController.navigate(PersonalTermEditorRoute()) },
                 onCatalogClick = { navController.navigate(CatalogRoute) },
+                onCollectionsClick = { navController.navigate(CollectionsRoute) },
                 onFavoritesClick = { navController.navigate(FavoritesRoute) },
                 onHistoryClick = { navController.navigate(HistoryRoute) },
                 onOptionsClick = { navController.navigate(OptionsRoute) },
+            )
+        }
+        composable<CollectionsRoute> {
+            val viewModel = viewModel<CollectionsViewModel>(
+                factory = CollectionsViewModel.factory(repository),
+            )
+            CollectionsScreen(
+                viewModel = viewModel,
+                onCollectionClick = { uid -> navController.navigate(CollectionDetailRoute(uid)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable<CollectionDetailRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<CollectionDetailRoute>()
+            val viewModel = viewModel<CollectionDetailViewModel>(
+                factory = CollectionDetailViewModel.factory(repository, route.uid),
+            )
+            CollectionDetailScreen(
+                viewModel = viewModel,
+                onTermClick = { slug -> navController.navigate(TermDetailRoute(slug)) },
+                onBack = { navController.popBackStack() },
             )
         }
         composable<OptionsRoute> {

@@ -11,15 +11,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -28,6 +34,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -61,6 +69,84 @@ fun TermDetailScreen(
         onRelationClick = onRelationClick,
         onEditClick = onEditClick,
         onToggleFavorite = viewModel::onToggleFavorite,
+        onOpenCollections = viewModel::onOpenCollectionPicker,
+    )
+
+    if (uiState.isCollectionPickerOpen) {
+        CollectionPickerDialog(
+            uiState = uiState,
+            onToggle = viewModel::onToggleCollection,
+            onNameChange = viewModel::onNewCollectionNameChange,
+            onCreate = viewModel::onCreateCollectionWithTerm,
+            onDismiss = viewModel::onDismissCollectionPicker,
+        )
+    }
+}
+
+@Composable
+private fun CollectionPickerDialog(
+    uiState: TermDetailUiState,
+    onToggle: (String, Boolean) -> Unit,
+    onNameChange: (String) -> Unit,
+    onCreate: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Colecciones") },
+        text = {
+            Column {
+                if (uiState.collections.isEmpty()) {
+                    Text(
+                        "Todavia no hay colecciones. Crea una abajo.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 240.dp)) {
+                        items(uiState.collections, key = { it.uid }) { collection ->
+                            val member = collection.uid in uiState.memberOf
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onToggle(collection.uid, !member) }
+                                    .padding(vertical = LexidexSpacing.micro),
+                            ) {
+                                Checkbox(
+                                    checked = member,
+                                    onCheckedChange = { onToggle(collection.uid, it) },
+                                )
+                                Text(collection.name, modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+                TextField(
+                    value = uiState.newCollectionName,
+                    onValueChange = onNameChange,
+                    label = { Text("Nueva coleccion") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = LexidexSpacing.tight),
+                )
+                if (uiState.collectionError != null) {
+                    Text(
+                        uiState.collectionError,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = LexidexSpacing.micro),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onCreate, enabled = uiState.newCollectionName.isNotBlank()) {
+                Text("Crear y agregar")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Listo") } },
     )
 }
 
@@ -72,6 +158,7 @@ private fun TermDetailContent(
     onRelationClick: (String) -> Unit,
     onEditClick: (String) -> Unit,
     onToggleFavorite: () -> Unit,
+    onOpenCollections: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -90,6 +177,12 @@ private fun TermDetailContent(
                                 if (uiState.isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
                                 contentDescription = if (uiState.isFavorite) "Quitar de favoritos" else "Marcar como favorito",
                                 tint = if (uiState.isFavorite) MaterialTheme.extendedColors.amber else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        IconButton(onClick = onOpenCollections) {
+                            Icon(
+                                Icons.Default.LibraryAdd,
+                                contentDescription = "Agregar a una coleccion",
                             )
                         }
                         if (term.editable) {

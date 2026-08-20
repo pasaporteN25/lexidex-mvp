@@ -3,9 +3,12 @@ package com.lexidex.app.data.userdb
 import androidx.room3.ColumnTypeConverters
 import androidx.room3.Database
 import androidx.room3.RoomDatabase
+import com.lexidex.app.data.userdb.dao.CollectionDao
 import com.lexidex.app.data.userdb.dao.FavoriteDao
 import com.lexidex.app.data.userdb.dao.HistoryDao
 import com.lexidex.app.data.userdb.dao.UserTermDao
+import com.lexidex.app.data.userdb.entity.CollectionEntity
+import com.lexidex.app.data.userdb.entity.CollectionTermEntity
 import com.lexidex.app.data.userdb.entity.FavoriteEntity
 import com.lexidex.app.data.userdb.entity.HistoryEntryEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
@@ -22,8 +25,10 @@ import com.lexidex.app.data.userdb.entity.UserTermFtsEntity
         UserTermFtsEntity::class,
         FavoriteEntity::class,
         HistoryEntryEntity::class,
+        CollectionEntity::class,
+        CollectionTermEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 @ColumnTypeConverters(StringListConverter::class, TermOriginConverter::class)
@@ -31,4 +36,5 @@ abstract class LexidexUserDatabase : RoomDatabase() {
     abstract fun userTermDao(): UserTermDao
     abstract fun favoriteDao(): FavoriteDao
     abstract fun historyDao(): HistoryDao
+    abstract fun collectionDao(): CollectionDao
 }

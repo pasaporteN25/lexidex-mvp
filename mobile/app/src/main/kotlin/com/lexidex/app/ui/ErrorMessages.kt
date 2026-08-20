@@ -14,6 +14,8 @@ fun Throwable.toUserMessage(): String = when (this) {
     is CorpusError.InvalidField,
     is CorpusError.DuplicateTitle,
     is CorpusError.PersonalTermNotFound,
+    is CorpusError.DuplicateCollection,
+    is CorpusError.CollectionNotFound,
     -> message ?: GENERIC
 
     is KnowledgeSourceError.Offline ->

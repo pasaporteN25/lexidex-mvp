@@ -8,11 +8,14 @@ import com.lexidex.app.data.db.entity.SourceEntity
 import com.lexidex.app.data.db.entity.TermEntity
 import com.lexidex.app.data.userdb.UserDatabaseProvider
 import com.lexidex.app.data.userdb.dao.UserTermDao
+import com.lexidex.app.data.userdb.entity.CollectionEntity
 import com.lexidex.app.data.userdb.entity.HistoryEntryEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 import com.lexidex.app.domain.CatalogFilter
 import com.lexidex.app.domain.HistoryItem
 import com.lexidex.app.domain.StorageInfo
+import com.lexidex.app.domain.TermCollection
+import com.lexidex.app.domain.TermCollectionDetail
 import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermOrigin
 import com.lexidex.app.domain.TermRelation
@@ -20,6 +23,7 @@ import com.lexidex.app.domain.TermSource
 import com.lexidex.app.domain.TermSummary
 import java.net.URI
 import java.time.Instant
+import java.util.UUID
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlin.random.Random
@@ -29,6 +33,7 @@ private const val DEFAULT_SEARCH_LIMIT = 50
 private const val DEFAULT_HISTORY_LIMIT = 50
 private const val DEFAULT_PERSONAL_LIST_LIMIT = 500
 private const val DEFAULT_CATALOG_PAGE = 100
+private const val MAX_COLLECTION_NAME = 80
 
 /** Days from the proleptic-Gregorian epoch (year 1) to the Unix epoch - `date(1970,1,1).toordinal()` in Python. */
 private const val PYTHON_ORDINAL_EPOCH_OFFSET = 719_163L
@@ -170,6 +175,7 @@ class CorpusRepository(
         }
         favoriteDao().remove(slug, TermOrigin.PERSONAL)
         historyDao().deleteByTerm(slug, TermOrigin.PERSONAL)
+        collectionDao().removeTermEverywhere(slug, TermOrigin.PERSONAL)
     }
 
     private suspend fun requireNoDuplicate(normalizedTitle: String, language: String, excludeUid: String?) {
@@ -279,6 +285,86 @@ class CorpusRepository(
 
     // endregion
 
+    // region Colecciones
+
+    suspend fun listCollections(): Result<List<TermCollection>> = corpusResult {
+        collectionDao().listAll().map { TermCollection(it.uid, it.name, it.termCount) }
+    }
+
+    suspend fun createCollection(name: String): Result<TermCollection> = corpusResult {
+        val clean = normalizeText(name)
+        if (clean.isBlank()) {
+            throw CorpusError.InvalidField("name", "El nombre de la coleccion es obligatorio.")
+        }
+        if (clean.length > MAX_COLLECTION_NAME) {
+            throw CorpusError.InvalidField("name", "El nombre supera los $MAX_COLLECTION_NAME caracteres.")
+        }
+        val normalized = normalizedKey(clean)
+        if (collectionDao().findDuplicateName(normalized, null) != null) {
+            throw CorpusError.DuplicateCollection(clean)
+        }
+        val now = nowIso()
+        val uid = "col_${UUID.randomUUID().toString().replace("-", "")}"
+        collectionDao().insert(
+            CollectionEntity(
+                uid = uid,
+                name = clean,
+                normalizedName = normalized,
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
+        TermCollection(uid, clean, 0)
+    }
+
+    suspend fun renameCollection(uid: String, name: String): Result<Unit> = corpusResult {
+        val clean = normalizeText(name)
+        if (clean.isBlank()) {
+            throw CorpusError.InvalidField("name", "El nombre de la coleccion es obligatorio.")
+        }
+        val normalized = normalizedKey(clean)
+        if (collectionDao().findDuplicateName(normalized, uid) != null) {
+            throw CorpusError.DuplicateCollection(clean)
+        }
+        collectionDao().rename(uid, clean, normalized, nowIso())
+    }
+
+    suspend fun deleteCollection(uid: String): Result<Unit> = corpusResult {
+        val dao = collectionDao()
+        val collection = dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
+        collection.id?.let { dao.deleteMembers(it) }
+        dao.deleteByUid(uid)
+    }
+
+    /**
+     * Los miembros que ya no se pueden resolver se omiten en vez de romper la coleccion: un
+     * termino personal pudo borrarse, o un paquete nuevo puede no traer mas uno del paquete.
+     */
+    suspend fun getCollection(uid: String): Result<TermCollectionDetail> = corpusResult {
+        val dao = collectionDao()
+        val collection = dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
+        val terms = dao.members(collection.id ?: 0L)
+            .mapNotNull { resolveSummary(it.termSlug, it.termOrigin) }
+        TermCollectionDetail(collection.uid, collection.name, terms)
+    }
+
+    suspend fun collectionsContaining(slug: String, origin: TermOrigin): Result<Set<String>> =
+        corpusResult { collectionDao().uidsContaining(slug, origin).toSet() }
+
+    suspend fun setCollectionMembership(
+        uid: String,
+        slug: String,
+        origin: TermOrigin,
+        member: Boolean,
+    ): Result<Unit> = corpusResult {
+        val dao = collectionDao()
+        val collection = dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
+        val id = collection.id ?: throw CorpusError.CollectionNotFound(uid)
+        if (member) dao.addMember(id, slug, origin, nowIso()) else dao.removeMember(id, slug, origin)
+    }
+
+    // endregion
+
     // region History
 
     suspend fun recordHistoryView(slug: String, origin: TermOrigin): Result<Unit> = corpusResult {
@@ -302,6 +388,7 @@ class CorpusRepository(
     private suspend fun userTermDao(): UserTermDao = userDatabaseProvider.get().userTermDao()
     private suspend fun favoriteDao() = userDatabaseProvider.get().favoriteDao()
     private suspend fun historyDao() = userDatabaseProvider.get().historyDao()
+    private suspend fun collectionDao() = userDatabaseProvider.get().collectionDao()
 
     private suspend fun buildDetail(dao: TermDao, term: TermEntity): TermDetail {
         // id is nullable only because Room requires that type for an INTEGER PRIMARY KEY rowid

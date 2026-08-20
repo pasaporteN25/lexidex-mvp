@@ -25,3 +25,9 @@ object CatalogRoute
 /** De donde sale y donde se guarda la informacion. */
 @Serializable
 object OptionsRoute
+
+@Serializable
+object CollectionsRoute
+
+@Serializable
+data class CollectionDetailRoute(val uid: String)
