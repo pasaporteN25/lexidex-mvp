@@ -64,6 +64,10 @@ Al 2026-08-20 estan cerradas las epicas 1, 3, 5, 6 y 7, mas la tarea 2.0.
 
 **Lo proximo es el minijuego "Cinco" (epica 8).** Es la funcionalidad de la
 proxima version mayor, decidida el 2026-08-20, y va antes que todo lo demas.
+Estan hechas 8.1 (tests JVM en Android, que antes no existian), 8.2
+(`ClueBuilder`) y 8.3 (`DistractorPicker`), las tres con tests que corren sin
+emulador: 49 en total. **Sigue 8.4**, la consulta de terminos elegibles en
+`CorpusRepository`, que es lo que le da a esas dos clases con que trabajar.
 
 Despues, en este orden:
 
@@ -424,7 +428,7 @@ paquetes construidos por la herramienta.
 
 ---
 
-## 8. Minijuego "Cinco" — proxima version mayor 🎯
+## 8. Minijuego "Cinco" — proxima version mayor 🔶
 
 Decidido el 2026-08-20. Es **la** funcionalidad de la proxima subida mayor; todo
 lo demas que quedaba pendiente pasa a ir despues de esto.
