@@ -1,7 +1,5 @@
 package com.lexidex.app.domain.games
 
-import java.text.Normalizer
-
 /** A term's extract turned into something guessable: the answer taken out, everything else kept. */
 data class Clue(
     /** The clue as shown, with every occurrence of the answer replaced by [ClueBuilder.MASK]. */
@@ -119,7 +117,7 @@ object ClueBuilder {
             if (next != null && !next.isWhitespace()) continue
 
             val previousWord = WORD.findAll(paragraph.substring(start, match.range.first))
-                .lastOrNull()?.value.orEmpty().let(::fold)
+                .lastOrNull()?.value.orEmpty().let(::foldedKey)
             if (previousWord in ABBREVIATIONS) continue
             if (previousWord.length == 1 && previousWord[0].isLetter()) continue
 
@@ -185,7 +183,7 @@ object ClueBuilder {
         for (first in words.indices) {
             val limit = minOf(words.size, first + longestPhraseWords)
             for (last in limit downTo first + 1) {
-                val window = fold(
+                val window = foldedKey(
                     sentence.substring(words[first].range.first, words[last - 1].range.last + 1),
                 )
                 if (window.isNotEmpty() && window in phrases) {
@@ -198,7 +196,7 @@ object ClueBuilder {
 
     private fun maskTokens(words: List<MatchResult>, masked: BooleanArray, tokens: List<String>) {
         for (index in words.indices) {
-            val word = fold(words[index].value)
+            val word = foldedKey(words[index].value)
             if (word.length < MIN_DISTINCTIVE_LENGTH) continue
             if (tokens.any { isVariant(word, it) }) masked[index] = true
         }
@@ -241,7 +239,7 @@ object ClueBuilder {
 
     /** The whole title, plus the title without its disambiguation parenthetical. */
     private fun titlePhrases(title: String): Set<String> =
-        setOf(fold(title), fold(baseTitle(title))).filterTo(mutableSetOf(), String::isNotEmpty)
+        setOf(foldedKey(title), foldedKey(baseTitle(title))).filterTo(mutableSetOf(), String::isNotEmpty)
 
     /**
      * Only words of the base title: the disambiguation parenthetical is not part of the answer
@@ -250,7 +248,7 @@ object ClueBuilder {
      */
     private fun distinctiveTitleTokens(title: String): List<String> =
         WORD.findAll(baseTitle(title))
-            .map { fold(it.value) }
+            .map { foldedKey(it.value) }
             .filter { it.length >= MIN_DISTINCTIVE_LENGTH }
             .toList()
 
@@ -299,18 +297,6 @@ object ClueBuilder {
             current = spare
         }
         return previous[b.length]
-    }
-
-    /**
-     * Diacritics and case removed, everything that is not a letter or a digit dropped, script
-     * kept - a Cyrillic or Greek title has to keep folding to something, or nothing would ever
-     * match and the clue would print the answer in full.
-     */
-    private fun fold(value: String): String = buildString {
-        for (character in Normalizer.normalize(value, Normalizer.Form.NFKD)) {
-            if (Character.getType(character) == Character.NON_SPACING_MARK.toInt()) continue
-            if (character.isLetterOrDigit()) append(character.lowercaseChar())
-        }
     }
 
     // endregion

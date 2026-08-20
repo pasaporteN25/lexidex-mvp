@@ -513,11 +513,22 @@ diseno sin patron previo para calcar.
       palabra ("Spectre (vulnerabilidad)" no borra "vulnerabilidad" de la
       oracion) porque 8.5 acepta la respuesta con o sin el, asi que taparlo
       costaria una palabra util de la pista sin esconder nada.
-- [ ] **8.3** _(Sonnet 5 · M)_ `DistractorPicker`: tres senuelos al azar del
-      catalogo, **siempre del mismo idioma** (con una oracion en espanol y tres
-      titulos en ingles se acierta sin leer), y modo por categoria con umbral
-      de 4 miembros y regreso al modo idioma cuando el termino no tiene
-      categoria util.
+- [x] **8.3** ✅ `DistractorPicker` en `domain/games/`, con catorce tests, mas
+      `GameTerm`: el termino reducido a lo que el juego necesita (slug, titulo,
+      idioma, categorias), que sirve igual para la respuesta y para el pozo.
+      Tres senuelos al azar, siempre del idioma de la respuesta.
+      El modo por categoria usa solo categorias de 4 miembros o mas (tres
+      senuelos mas la respuesta) y vuelve al modo idioma cuando el termino no
+      tiene ninguna que llegue, que es el caso normal: 199 categorias de 1.882
+      pasan el umbral y cubren 779 terminos. El umbral cuenta solo los
+      miembros del mismo idioma, porque los de otro no son elegibles igual;
+      medido sobre el paquete real eso cuesta exactamente un termino, 778 en
+      vez de 779.
+      Ademas nunca ofrece como senuelo al mismo titulo bajo otro slug: un
+      termino personal y uno del paquete pueden llamarse igual (ADR 0002), y
+      ofrecer los dos haria que dos de las cuatro opciones fueran correctas.
+      Si el pozo no da para tres senuelos devuelve null y el termino se saltea,
+      en vez de armar una pregunta con menos opciones.
 - [ ] **8.4** _(Sonnet 5 · M)_ Repositorio: consulta de terminos elegibles
       (con contenido, de los dos origenes) y del subconjunto con categoria
       utilizable. Devolver una tanda de cinco ya armada, no de a una, para no
