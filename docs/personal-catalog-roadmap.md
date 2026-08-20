@@ -189,6 +189,10 @@ tambien para el paquete: `tools/enrich_corpus.py` completa el extracto de
 entrada de los ~4.500 terminos importados del txt, que hasta entonces eran
 solo un titulo y un link.
 
+Resultado de la corrida completa: **4.425 terminos enriquecidos** de 4.472
+candidatos (8 sin extracto, 36 fuera de alcance por ser espacios de nombres,
+0 errores). El paquete quedo en 10,02 MB y el APK paso de 24,84 a 29,17 MB.
+
 ### Como se resolvio el tamano
 
 El pedido explicito fue que ocupe lo menos posible. Lo que se hizo, en orden
@@ -204,12 +208,24 @@ de cuanto aporto cada cosa:
    final de oracion anterior al tope, nunca parte una frase al medio.
 3. **`VACUUM` al cerrar el paquete**, que devuelve las paginas liberadas por
    las actualizaciones.
+4. **El APK ya comprime el asset solo**: 10,5 MB de base quedan en 4,54 MB
+   dentro del paquete (57%). Se evaluo preempaquetarlo comprimido a mano, pero
+   `gzip -9` solo baja a 3,97 MB y obligaria a repensar donde se verifica el
+   checksum: no compensa.
 
-Queda **sin aplicar** una opcion mas: `detail=none` en la tabla FTS5 achicaria
-el indice, y la busqueda no usa frases ni NEAR (son tokens sueltos con
-prefijo, ver `fts_match_query` y `FtsQueryBuilder.kt`), pero degradaria el
-ranking `bm25()` que si se usa. No se toco porque el indice no resulto ser la
-parte grande; reconsiderarlo si el paquete vuelve a crecer.
+Se midieron y se **descartaron** dos opciones mas, ambas con numeros:
+
+- `detail=none` en la tabla FTS5. La busqueda no usa frases ni NEAR (son
+  tokens sueltos con prefijo, ver `fts_match_query` y `FtsQueryBuilder.kt`),
+  asi que seria viable, pero degradaria el ranking `bm25()` que si se usa. Y
+  el indice completo pesa 2,16 MB sobre 10,02, o sea 22% del total: aun
+  borrandolo entero el ahorro seria chico. Reconsiderar solo si el paquete
+  vuelve a crecer mucho.
+- Preempaquetar comprimido, por lo dicho en el punto 4.
+
+Lo que **si** conviene recordar: el tamano en el telefono despues de instalar
+es el de la base descomprimida (10,02 MB), porque SQLite necesita leerla tal
+cual. El 4,54 MB es solo el costo de descarga.
 
 ### Pedidos a Wikipedia: de a lotes, no de a uno
 

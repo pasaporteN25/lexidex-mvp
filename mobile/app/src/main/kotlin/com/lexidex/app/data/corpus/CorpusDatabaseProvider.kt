@@ -14,7 +14,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 
-private const val PACKAGE_DIR = "packages/palabras-v0.2.0-seed.1"
+private const val PACKAGE_DIR = "packages/palabras-v0.3.0-enriched.1"
 private const val DATABASE_FILE_NAME = "lexidex.sqlite"
 internal const val MANIFEST_ASSET_PATH = "$PACKAGE_DIR/manifest.json"
 internal const val DATABASE_ASSET_PATH = "$PACKAGE_DIR/$DATABASE_FILE_NAME"

@@ -133,9 +133,29 @@ def pending_terms(conn, limit):
     return conn.execute(sql).fetchall()
 
 
+EMPTY_PARENS = re.compile(r"\s*\(\s*[;,]?\s*\)")
+INLINE_SPACES = re.compile(r"[ \t]{2,}")
+SPACE_BEFORE_PUNCTUATION = re.compile(r" +([,.;:])")
+EXTRA_BLANK_LINES = re.compile(r"\n{3,}")
+
+
+def clean_extract(text):
+    """
+    Saca los restos que deja `explaintext` al quitar el marcado.
+
+    Cuando el articulo abre con el nombre en otro alfabeto o una pronunciacion, al quitarlos queda
+    un parentesis vacio ("Brahmagupta () fue...") y espacios de mas. Son un 1% y un 12% de los
+    extractos respectivamente: cosmetico, pero se ve en la ficha.
+    """
+    text = EMPTY_PARENS.sub("", text or "")
+    text = INLINE_SPACES.sub(" ", text)
+    text = SPACE_BEFORE_PUNCTUATION.sub(r"\1", text)
+    return EXTRA_BLANK_LINES.sub("\n\n", text).strip()
+
+
 def truncate_extract(text, max_chars):
     """Corta en el limite de oracion mas cercano por debajo del tope, para no partir al medio."""
-    text = (text or "").strip()
+    text = clean_extract(text)
     if not max_chars or len(text) <= max_chars:
         return text
     window = text[:max_chars]
