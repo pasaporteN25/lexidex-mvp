@@ -339,7 +339,14 @@ def main():
         sleep_seconds=args.sleep,
         max_chars=args.max_chars,
     )
-    if not args.dry_run:
+    if args.dry_run:
+        pass
+    elif stats["ok"] == 0:
+        # Sin nada nuevo que guardar no hay que reescribir el paquete: `VACUUM` no produce los
+        # mismos bytes dos veces, asi que cerrar de nuevo cambiaria el checksum de una version ya
+        # publicada y dejaria dos artefactos distintos diciendo ser la misma (ADR 0001).
+        stats["paquete"] = "sin cambios, no se reescribe"
+    else:
         stats["paquete"] = finalize_package(args.database, args.package_version)
     print(json.dumps(stats, indent=2, ensure_ascii=False))
 
