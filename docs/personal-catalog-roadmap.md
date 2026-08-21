@@ -512,8 +512,9 @@ diseno sin patron previo para calcar.
       8 se descartan; 4.400 realmente tapan algo.
       El caso Belsnickel se resuelve con dos reglas que se complementan: se
       tapan tambien las variantes cercanas del titulo (distancia
-      Damerau-Levenshtein de hasta un cuarto de la palabra, y solo desde seis
-      letras, para no tapar "rosa" en un termino llamado "Roma"), y un
+      Damerau-Levenshtein de hasta un cuarto de la palabra mas larga, y solo
+      desde ocho letras: con seis se tapaba "region" en un termino llamado
+      "Legion Islamica", encontrado jugando en el emulador), y un
       parentesis que termina conteniendo una tapadura **es** una lista de
       alias, asi que se borra entero en vez de quedar como una fila de
       blancos. La segunda regla es la que alcanza sola con "Bell Sniggle",

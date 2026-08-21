@@ -19,8 +19,8 @@ data class Clue(
  * sentence opens "Belsnickel (also known as Belschnickel, Belznickle, Pelznickel...)", so the
  * aliases hand over the answer that the title's own mask just hid. Two rules handle it - near
  * variants of a title word are masked too (a Damerau-Levenshtein budget of a quarter of the
- * word), and a parenthetical that ends up containing a mask is an alias list, so it is dropped
- * whole rather than left as a row of blanks.
+ * longer word, and only from eight letters up), and a parenthetical that ends up containing a
+ * mask is an alias list, so it is dropped whole rather than left as a row of blanks.
  *
  * Measured over the 4425 extracts of package v0.4.0: 4417 produce a clue, 248 of them needing
  * the second sentence, and 8 terms are discarded as too short even then. 4400 really do hide an
@@ -42,10 +42,13 @@ object ClueBuilder {
     private const val MIN_DISTINCTIVE_LENGTH = 4
 
     /**
-     * Below this length the near-variant search stops and only exact matches count. One edit out
-     * of four characters is most of a short word: it would hide "rosa" for a term called "Roma".
+     * Below this length - counted on the longer of the two words - the near-variant search stops
+     * and only exact matches count. One edit in eight characters is a spelling variant; one edit
+     * in six is usually a different word, which playing the game made obvious: "region" is one
+     * edit from "legion", and a clue for "Legion Islamica" was blanking it out of its own
+     * sentence. Shorter still and it is hopeless: "rosa" would go for a term called "Roma".
      */
-    private const val MIN_VARIANT_LENGTH = 6
+    private const val MIN_VARIANT_LENGTH = 8
 
     /** One in four characters may differ before two words stop being variants of each other. */
     private const val VARIANT_TOLERANCE = 4
@@ -257,9 +260,7 @@ object ClueBuilder {
     /** True for the same word, and for the spelling variants that alias lists are made of. */
     private fun isVariant(word: String, titleToken: String): Boolean {
         if (word == titleToken) return true
-        if (word.length < MIN_VARIANT_LENGTH || titleToken.length < MIN_VARIANT_LENGTH) {
-            return false
-        }
+        if (maxOf(word.length, titleToken.length) < MIN_VARIANT_LENGTH) return false
         val budget = maxOf(word.length, titleToken.length) / VARIANT_TOLERANCE
         if (budget < 1) return false
         if (kotlin.math.abs(word.length - titleToken.length) > budget) return false

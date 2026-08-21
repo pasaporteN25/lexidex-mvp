@@ -76,6 +76,24 @@ class ClueBuilderTest {
         assertFalse(clue.answerRedacted)
     }
 
+    @Test
+    fun `a word one edit from a short title word is not a variant of it`() {
+        val clue = ClueBuilder.build(
+            "Legión Islámica",
+            "La Legión Islámica fue una unidad militar de voluntarios extranjeros creada en " +
+                "1972 en Libia, formada por jóvenes tuaregs que huían de las sequías que " +
+                "azotaban la región desde 1968.",
+        )
+
+        // Found by playing: "region" is one edit from "legion", and the clue was blanking it out.
+        assertEquals(
+            "La ${ClueBuilder.MASK} fue una unidad militar de voluntarios extranjeros creada en " +
+                "1972 en Libia, formada por jóvenes tuaregs que huían de las sequías que " +
+                "azotaban la región desde 1968.",
+            clue?.text,
+        )
+    }
+
     // endregion
 
     // region Masking the title itself
