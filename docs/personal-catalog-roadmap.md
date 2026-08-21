@@ -411,12 +411,11 @@ sin perder terminos personales.
 - [x] **7.4** ✅ Verificado en el emulador: el marcador quedo en
       `0.2.0-seed.1` y los terminos personales sobrevivieron.
 
-**Sigue pendiente, y es lo que convendria decidir:** el paquete es un catalogo
-*semilla*, o sea titulo + procedencia, sin resumen ni contenido. Por eso al
-recorrer "Ver todos los terminos" la mayoria aparece solo con el titulo.
-Enriquecerlos con el extracto de Wikipedia es posible -el fetcher ya existe-
-pero son ~4.500 pedidos a un servicio ajeno, mas peso de paquete y la
-atribucion CC BY-SA. Ver la epica 4.
+**Lo que quedaba pendiente aca ya se resolvio en la epica 4.** El paquete era
+un catalogo *semilla* -titulo y procedencia, sin resumen- y por eso al recorrer
+"Ver todos los terminos" la mayoria aparecia solo con el titulo. La corrida de
+`tools/enrich_corpus.py` del 2026-08-19 le puso extracto a 4.425 terminos
+(v0.4.0), que es tambien lo que hizo posible el minijuego de la epica 8.
 
 ### Mas adelante: cargar un txt o json desde la aplicacion
 
