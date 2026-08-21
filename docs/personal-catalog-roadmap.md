@@ -60,21 +60,12 @@ saber esto porque cambia el tamano real de la tarea:
 Como project leader dejo esto priorizado, pero es una sugerencia, no una
 imposicion:
 
-Al 2026-08-20 estan cerradas las epicas 1, 3, 5, 6 y 7, mas la tarea 2.0.
+Al 2026-08-20 estan cerradas las epicas 1, 3, 5, 7 y 8, mas la tarea 2.0 y la
+epica 6 salvo su parte web (6.4).
 
-**Lo proximo es el minijuego "Cinco" (epica 8).** Es la funcionalidad de la
-proxima version mayor, decidida el 2026-08-20, y va antes que todo lo demas.
-Estan hechas 8.1 (tests JVM en Android, que antes no existian), 8.2
-(`ClueBuilder`), 8.3 (`DistractorPicker`) y 8.4 (la tanda de cinco preguntas
-en `CorpusRepository`), con 55 tests que corren sin emulador. Con 8.5 y 8.6 estan
-tambien la partida entera (reloj, puntaje, verificacion de lo escrito; 76
-tests) y su pantalla. Con 8.8 el juego se abre desde la
-pantalla principal y con 8.7 termina en su pantalla de resultados; las dos se
-vieron andando en el emulador, incluida una partida entera. Queda **8.9**: la
-verificacion a mano completa, que es donde entran los terminos personales, que
-elegir puntue distinto que escribir, y que no se repitan preguntas.
-
-Despues, en este orden:
+**El minijuego "Cinco" (epica 8) esta terminado y verificado a mano.** Era la
+funcionalidad de esta version mayor, y quedo cerrada el mismo dia en que se
+decidio.
 
 1. **Etiquetas navegables** (epica 2, tareas 2.1 a 2.5) - ya desbloqueada: el
    paquete trae 1.882 categorias sobre 2.570 terminos. Falta poder filtrar y
@@ -378,25 +369,29 @@ mueven enteras al backend y Android/web pasan a ser solo consumidores)
       `LexidexApplication` ya expone una **lista** de fuentes, no una sola.
       Falta el espejo en Python cuando se haga 5.2.
 
-## 6. Pantalla de opciones: de donde sale y donde se guarda la informacion ⬜
+## 6. Pantalla de opciones: de donde sale y donde se guarda la informacion 🔶
 
 Pedido del 2026-08-19. Hoy la respuesta existe pero solo en documentos, no en
 la aplicacion: no hay forma de ver desde el telefono que paquete esta
 instalado, ni donde vive lo que uno guarda.
 
-- [ ] **6.1** _(Sonnet 5)_ Android: pantalla "Opciones"/"Acerca de" que muestre
+- [x] **6.1** ✅ Android: pantalla "Opciones"/"Acerca de" que muestre
       el paquete instalado (`package_id`, `package_version`, sha256 abreviado y
       fecha) leyendo el marcador `lexidex.sqlite.installed.json` que ya escribe
       `CorpusDatabaseProvider`, mas el conteo de terminos del paquete y del
       catalogo personal.
-- [ ] **6.2** _(Sonnet 5)_ Explicar las dos bases en lenguaje llano: el paquete
+- [x] **6.2** ✅ Explicar las dos bases en lenguaje llano: el paquete
       es de solo lectura y se reemplaza entero al actualizar; lo personal vive
       aparte y sobrevive. Incluir la ruta real de ambos archivos.
-- [ ] **6.3** _(Haiku 4.5)_ Mostrar tambien que fuentes externas estan
+- [x] **6.3** ✅ Mostrar tambien que fuentes externas estan
       habilitadas (hoy solo Wikipedia) y aclarar que solo se consultan cuando
       uno busca explicitamente.
 - [ ] **6.4** _(Sonnet 5)_ Equivalente en la web, reusando `/api/stats`, que ya
-      devuelve los conteos.
+      devuelve los conteos. **Es lo unico que falta de esta epica**: 6.1 a 6.3
+      viajaron en `ui/options/OptionsScreen.kt` el 2026-08-20 y los casilleros
+      habian quedado sin marcar. El panel de la web muestra hoy los conteos de
+      `renderStats`, pero no el paquete instalado, ni la separacion entre las
+      dos bases, ni que fuentes externas estan habilitadas.
 
 Candidato natural para sumar despues: un boton de exportar el catalogo
 personal desde esa misma pantalla (copia de seguridad). No esta pedido todavia.
@@ -433,14 +428,23 @@ paquetes construidos por la herramienta.
 
 ---
 
-## 8. Minijuego "Cinco" — proxima version mayor 🔶
+## 8. Minijuego "Cinco" ✅
 
-Decidido el 2026-08-20. Es **la** funcionalidad de la proxima subida mayor; todo
-lo demas que quedaba pendiente pasa a ir despues de esto.
+**Completada el 2026-08-20**, de punta a punta: decidida, planificada y
+construida el mismo dia. Las nueve tareas estan cerradas y el juego se abre
+desde la pantalla principal.
 
-La pantalla principal hoy solo ofrece el termino del dia. La idea es un juego de
-cinco preguntas: se muestra la primera oracion del extracto con la respuesta
-tapada, y hay que adivinar de que termino se trata.
+Lo que dejo ademas de la funcionalidad: el modulo Android tiene por fin
+infraestructura de tests (77 al cerrar la epica, donde antes no habia ninguno),
+y dos clases reutilizables por cualquier juego futuro de "adivinar a partir de
+un texto", `ClueBuilder` y `DistractorPicker`.
+
+Se decidio el 2026-08-20 como **la** funcionalidad de esta subida mayor, y todo
+lo demas que quedaba pendiente se corrio para despues.
+
+La pantalla principal ofrecia solo el termino del dia; ahora lleva debajo el
+banner del juego. Son cinco preguntas: se muestra la primera oracion del
+extracto con la respuesta tapada, y hay que adivinar de que termino se trata.
 
 ### Por que es viable: medido antes de planificar
 
@@ -630,10 +634,12 @@ diseno sin patron previo para calcar.
       "Se acabo el tiempo. Era ...". Lo que falta probar a mano es la partida
       entera (8.9): que escribir puntue distinto que elegir y que no se repitan
       preguntas.
-- [ ] **8.9** _(Sonnet 5 · M)_ Verificar en el emulador: jugar una partida
-      entera, comprobar que el reloj corre, que las opciones aparecen cuando
-      corresponde, que escribir bien puntua distinto que elegir bien, y que no
-      se repiten preguntas dentro de una partida.
+- [x] **8.9** ✅ Verificado a mano por Lucas el 2026-08-20, sobre la partida
+      entera. Se suma a lo que quedo probado al cerrar 8.7 y 8.8: banner y
+      ruta, reloj corriendo, opciones apareciendo sobre el final, escribir sin
+      acentos ni espacios acertando (+2), una respuesta escrita equivocada que
+      no termina la pregunta, reloj vencido marcando la respuesta en teal, y el
+      resultado sobre 10 con su desglose.
 
 ### Sobre las "clases utils" para futuros minijuegos
 
