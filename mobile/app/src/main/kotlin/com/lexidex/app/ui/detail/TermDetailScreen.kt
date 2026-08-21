@@ -49,6 +49,7 @@ import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
 import com.lexidex.app.ui.components.ChipRole
+import com.lexidex.app.domain.TermLabelKind
 import com.lexidex.app.ui.components.TermChip
 import com.lexidex.app.ui.components.chipRole
 import com.lexidex.app.ui.components.label
@@ -61,6 +62,7 @@ fun TermDetailScreen(
     onBack: () -> Unit,
     onRelationClick: (String) -> Unit,
     onEditClick: (String) -> Unit,
+    onLabelClick: (TermLabelKind, String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     TermDetailContent(
@@ -68,6 +70,7 @@ fun TermDetailScreen(
         onBack = onBack,
         onRelationClick = onRelationClick,
         onEditClick = onEditClick,
+        onLabelClick = onLabelClick,
         onToggleFavorite = viewModel::onToggleFavorite,
         onOpenCollections = viewModel::onOpenCollectionPicker,
     )
@@ -157,6 +160,7 @@ private fun TermDetailContent(
     onBack: () -> Unit,
     onRelationClick: (String) -> Unit,
     onEditClick: (String) -> Unit,
+    onLabelClick: (TermLabelKind, String) -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenCollections: () -> Unit,
 ) {
@@ -200,7 +204,8 @@ private fun TermDetailContent(
                 uiState.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-                uiState.term != null -> TermDetailBody(uiState.term, onRelationClick)
+                uiState.term != null ->
+                    TermDetailBody(uiState.term, onRelationClick, onLabelClick)
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         uiState.errorMessage ?: "No se encontro ese termino.",
@@ -213,7 +218,11 @@ private fun TermDetailContent(
 }
 
 @Composable
-private fun TermDetailBody(term: TermDetail, onRelationClick: (String) -> Unit) {
+private fun TermDetailBody(
+    term: TermDetail,
+    onRelationClick: (String) -> Unit,
+    onLabelClick: (TermLabelKind, String) -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -227,8 +236,18 @@ private fun TermDetailBody(term: TermDetail, onRelationClick: (String) -> Unit) 
                 modifier = Modifier.padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.compact),
             )
         }
-        ChipSection(title = "CATEGORIAS", values = term.categories, role = ChipRole.Category)
-        ChipSection(title = "ETIQUETAS", values = term.tags, role = ChipRole.Tag)
+        ChipSection(
+            title = "CATEGORIAS",
+            values = term.categories,
+            role = ChipRole.Category,
+            onValueClick = { name -> onLabelClick(TermLabelKind.CATEGORY, name) },
+        )
+        ChipSection(
+            title = "ETIQUETAS",
+            values = term.tags,
+            role = ChipRole.Tag,
+            onValueClick = { name -> onLabelClick(TermLabelKind.TAG, name) },
+        )
         if (term.sources.isNotEmpty()) {
             SectionLabel("PROCEDENCIA")
             term.sources.forEach { source -> SourceRow(source) }
@@ -279,14 +298,23 @@ private fun statusChipRole(status: String): ChipRole = when (status) {
 }
 
 @Composable
-private fun ChipSection(title: String, values: List<String>, role: ChipRole) {
+private fun ChipSection(
+    title: String,
+    values: List<String>,
+    role: ChipRole,
+    onValueClick: ((String) -> Unit)? = null,
+) {
     if (values.isEmpty()) return
     SectionLabel(title)
-    FlowRowChips(values, role)
+    FlowRowChips(values, role, onValueClick)
 }
 
 @Composable
-private fun FlowRowChips(values: List<String>, role: ChipRole) {
+private fun FlowRowChips(
+    values: List<String>,
+    role: ChipRole,
+    onValueClick: ((String) -> Unit)? = null,
+) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(LexidexSpacing.micro),
         verticalArrangement = Arrangement.spacedBy(LexidexSpacing.micro),
@@ -294,7 +322,13 @@ private fun FlowRowChips(values: List<String>, role: ChipRole) {
             .fillMaxWidth()
             .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.micro),
     ) {
-        values.forEach { value -> TermChip(text = value, role = role) }
+        values.forEach { value ->
+            TermChip(
+                text = value,
+                role = role,
+                onClick = onValueClick?.let { click -> { click(value) } },
+            )
+        }
     }
 }
 

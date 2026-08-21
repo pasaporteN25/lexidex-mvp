@@ -72,6 +72,39 @@ interface TermDao {
     @Query("SELECT * FROM terms ORDER BY RANDOM() LIMIT 1")
     suspend fun getRandomTerm(): TermEntity?
 
+    // region Etiquetas navegables
+
+    /**
+     * Los terminos de una categoria. `COLLATE NOCASE` porque el nombre puede venir escrito a mano
+     * en un termino personal, y ahi nadie respeta las mayusculas del paquete.
+     */
+    @Query(
+        """
+        SELECT terms.* FROM terms
+        JOIN term_categories ON term_categories.term_id = terms.id
+        JOIN categories ON categories.id = term_categories.category_id
+        WHERE categories.name = :name COLLATE NOCASE
+        ORDER BY terms.title COLLATE NOCASE
+        LIMIT :limit
+        """,
+    )
+    suspend fun listByCategory(name: String, limit: Int): List<TermEntity>
+
+    /** El paquete v0.4.0 no trae ninguna, pero un paquete futuro puede: la consulta ya existe. */
+    @Query(
+        """
+        SELECT terms.* FROM terms
+        JOIN term_tags ON term_tags.term_id = terms.id
+        JOIN tags ON tags.id = term_tags.tag_id
+        WHERE tags.name = :name COLLATE NOCASE
+        ORDER BY terms.title COLLATE NOCASE
+        LIMIT :limit
+        """,
+    )
+    suspend fun listByTag(name: String, limit: Int): List<TermEntity>
+
+    // endregion
+
     // region Minijuego "Cinco"
 
     /**

@@ -60,22 +60,18 @@ saber esto porque cambia el tamano real de la tarea:
 Como project leader dejo esto priorizado, pero es una sugerencia, no una
 imposicion:
 
-Al 2026-08-20 estan cerradas las epicas 1, 3, 5, 7 y 8, mas la tarea 2.0 y la
-epica 6 salvo su parte web (6.4).
+Al 2026-08-20 estan cerradas las epicas 1, 2, 3, 5, 7 y 8, mas la epica 6 salvo
+su parte web (6.4).
 
 **El minijuego "Cinco" (epica 8) esta terminado y verificado a mano.** Era la
 funcionalidad de esta version mayor, y quedo cerrada el mismo dia en que se
 decidio.
 
-1. **Etiquetas navegables** (epica 2, tareas 2.1 a 2.5) - ya desbloqueada: el
-   paquete trae 1.882 categorias sobre 2.570 terminos. Falta poder filtrar y
-   navegar por ellas. Comparte terreno con el juego, que tambien usa
-   categorias para elegir senuelos.
-2. **Respaldo de los datos personales** (epica 9) - los datos persisten, pero
+1. **Respaldo de los datos personales** (epica 9) - los datos persisten, pero
    no hay forma de sacarlos del telefono.
-3. **Articulo completo** (resto de la epica 4) - el mas grande de los que
+2. **Articulo completo** (resto de la epica 4) - el mas grande de los que
    quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
-4. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
+3. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
    al final de la epica 7.
 
 ---
@@ -123,7 +119,7 @@ Limitacion conocida, por si en algun momento molesta: la comparacion es por
 titulo, no por `source_url`. Importar el mismo articulo de Wikipedia bajo dos
 titulos distintos (por ejemplo el articulo y su redireccion) no se detecta.
 
-## 2. Etiquetas para encontrar terminos mas rapido ⬜
+## 2. Etiquetas para encontrar terminos mas rapido ✅
 
 Aclaracion importante: el campo de etiquetas **ya existe** (se carga al crear
 un termino, se guarda, se muestra como chip). Esta epica es sobre *usarlas
@@ -173,16 +169,33 @@ sobre 2.570 terminos**, asi que ya hay algo que navegar.
       Verificado contra el backend real: tocar "Plantas medicinales" en la
       ficha de *Cynara scolymus* deja el indice en 12 registros, y quitar el
       filtro lo devuelve a 4.543.
-- [ ] **2.3** _(Haiku 4.5)_ Android: hacer que `TermChip` acepte un `onClick`
-      opcional (`ui/components/TermChip.kt`) - agregar un parametro a un
-      composable chico.
-- [ ] **2.4** _(Sonnet 5)_ Android: agregar la query de soporte (`searchByTag`
-      o similar) en `TermDao` y `UserTermDao` para que 2.3/3 navegue a algo.
-      Nueva query FTS/LIKE contra JSON en dos DAOs distintos, con los mismos
-      matices de FTS5 que ya aparecieron esta sesion.
-- [ ] **2.5** _(Sonnet 5)_ Verificar en las tres superficies: crear un termino
-      con una etiqueta compartida por otro termino existente, confirmar que
-      tocar la etiqueta muestra ambos.
+- [x] **2.3** ✅ `TermChip` acepta un `onClick` opcional. Sin el sigue siendo
+      lo que era -un dato mas de la ficha, sin efecto de pulsacion que prometa
+      algo- y con el se vuelve tocable. En la ficha lo reciben las categorias y
+      las etiquetas; el idioma, el estado y el origen no, porque no llevan a
+      ningun lado.
+- [x] **2.4** ✅ `listByCategory`/`listByTag` en los dos DAOs y
+      `CorpusRepository.listTermsByLabel`, que junta y ordena los dos catalogos
+      por titulo, mas la pantalla `ui/labels/TermsByLabelScreen` y sus dos
+      rutas (`CategoryTermsRoute`, `TagTermsRoute`).
+      Contra el paquete la consulta es un join comun; contra los terminos
+      propios la etiqueta es una lista JSON en la fila, asi que se abre con
+      `json_each` en vez de un `LIKE`: con `LIKE`, una etiqueta que contiene a
+      otra daria falsos positivos. Room verifica esa consulta en tiempo de
+      compilacion y la acepta.
+      Son dos rutas y no una con parametro de tipo porque las dos llevan a la
+      misma pantalla, y asi cada destino se lee por lo que es.
+- [x] **2.5** ✅ Verificado en las tres superficies, con el caso pedido: una
+      categoria compartida entre un termino propio y varios del paquete.
+      **Backend**: un test cubre las dos formas de guardar la etiqueta a la vez.
+      **Web**: tocar "Plantas medicinales" en la ficha de *Cynara scolymus*
+      deja el indice en 12 registros y quitar el filtro lo devuelve a 4.543.
+      **Android**: se creo un termino personal con la categoria escrita en
+      minuscula ("plantas medicinales"), y tocar el chip mostro
+      "Categoria - 13 terminos" con el termino propio ordenado entre los 12 del
+      paquete. O sea que la comparacion sin mayusculas es la que hace que
+      compartir una etiqueta funcione de verdad entre los dos catalogos. El
+      termino de prueba se borro despues.
 
 Independiente de la epica 1; se pueden hacer en paralelo o en cualquier orden
 relativo.

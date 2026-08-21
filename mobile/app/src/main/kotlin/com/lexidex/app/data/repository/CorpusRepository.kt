@@ -17,6 +17,7 @@ import com.lexidex.app.domain.StorageInfo
 import com.lexidex.app.domain.TermCollection
 import com.lexidex.app.domain.TermCollectionDetail
 import com.lexidex.app.domain.TermDetail
+import com.lexidex.app.domain.TermLabelKind
 import com.lexidex.app.domain.TermOrigin
 import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
@@ -38,6 +39,9 @@ private const val DEFAULT_SEARCH_LIMIT = 50
 private const val DEFAULT_HISTORY_LIMIT = 50
 private const val DEFAULT_PERSONAL_LIST_LIMIT = 500
 private const val DEFAULT_CATALOG_PAGE = 100
+
+/** Sin paginado: la categoria mas grande del paquete tiene 15 miembros. */
+private const val DEFAULT_LABEL_LIMIT = 200
 private const val MAX_COLLECTION_NAME = 80
 
 /** Three times what a round needs: candidates that cannot become a question are walked past. */
@@ -247,6 +251,30 @@ class CorpusRepository(
     }
 
     // endregion
+
+    /**
+     * Todos los terminos que llevan [name], de los dos catalogos y ordenados juntos por titulo.
+     * Es lo que se ve al tocar un chip: una categoria del paquete y una etiqueta propia se
+     * recorren igual aunque esten guardadas de formas distintas.
+     */
+    suspend fun listTermsByLabel(
+        kind: TermLabelKind,
+        name: String,
+        limit: Int = DEFAULT_LABEL_LIMIT,
+    ): Result<List<TermSummary>> = corpusResult {
+        val packageDao = termDao()
+        val personalDao = userTermDao()
+        val fromPackage = when (kind) {
+            TermLabelKind.CATEGORY -> packageDao.listByCategory(name, limit)
+            TermLabelKind.TAG -> packageDao.listByTag(name, limit)
+        }
+        val fromPersonal = when (kind) {
+            TermLabelKind.CATEGORY -> personalDao.listByCategory(name, limit)
+            TermLabelKind.TAG -> personalDao.listByTag(name, limit)
+        }
+        (fromPackage.map { it.toSummary() } + fromPersonal.map { it.toSummary() })
+            .sortedBy { it.title.lowercase() }
+    }
 
     // region Personal term CRUD
 

@@ -1,5 +1,6 @@
 package com.lexidex.app.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -31,8 +32,17 @@ fun TermOrigin.label(): String = when (this) {
  */
 enum class ChipRole { Category, Tag, Seed, Neutral, Package, Personal }
 
+/**
+ * Un chip. Con [onClick] pasa a ser tocable -es lo que vuelve navegable una etiqueta- y sin el
+ * sigue siendo lo que era: un dato mas de la ficha, sin efecto de pulsacion que prometa algo.
+ */
 @Composable
-fun TermChip(text: String, role: ChipRole, modifier: Modifier = Modifier) {
+fun TermChip(
+    text: String,
+    role: ChipRole,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
     val container: Color
     val content: Color
     when (role) {
@@ -57,7 +67,8 @@ fun TermChip(text: String, role: ChipRole, modifier: Modifier = Modifier) {
             content = MaterialTheme.colorScheme.onSurfaceVariant
         }
     }
-    Surface(modifier = modifier, shape = PillShape, color = container, contentColor = content) {
+    val clickable = if (onClick == null) modifier else modifier.clickable(onClick = onClick)
+    Surface(modifier = clickable, shape = PillShape, color = container, contentColor = content) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall.copy(

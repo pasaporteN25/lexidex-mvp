@@ -29,6 +29,17 @@ object OptionsRoute
 @Serializable
 object CollectionsRoute
 
+/**
+ * Los terminos de una categoria del paquete, y los de una etiqueta propia. Son dos rutas y no una
+ * con un parametro de tipo porque las dos llevan a la misma pantalla y asi cada destino se lee
+ * por lo que es.
+ */
+@Serializable
+data class CategoryTermsRoute(val name: String)
+
+@Serializable
+data class TagTermsRoute(val name: String)
+
 /** El minijuego "Cinco". Una ruta mas, no otra actividad: la app es de una sola. */
 @Serializable
 object CincoRoute

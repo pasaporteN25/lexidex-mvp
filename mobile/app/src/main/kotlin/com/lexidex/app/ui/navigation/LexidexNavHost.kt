@@ -9,6 +9,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.lexidex.app.data.knowledge.KnowledgeSource
 import com.lexidex.app.data.repository.CorpusRepository
+import com.lexidex.app.domain.TermLabelKind
 import com.lexidex.app.ui.games.CincoScreen
 import com.lexidex.app.ui.games.CincoViewModel
 import com.lexidex.app.ui.detail.TermDetailScreen
@@ -19,6 +20,8 @@ import com.lexidex.app.ui.favorites.FavoritesScreen
 import com.lexidex.app.ui.favorites.FavoritesViewModel
 import com.lexidex.app.ui.history.HistoryScreen
 import com.lexidex.app.ui.history.HistoryViewModel
+import com.lexidex.app.ui.labels.TermsByLabelScreen
+import com.lexidex.app.ui.labels.TermsByLabelViewModel
 import com.lexidex.app.ui.options.OptionsScreen
 import com.lexidex.app.ui.options.OptionsViewModel
 import com.lexidex.app.ui.catalog.CatalogScreen
@@ -46,6 +49,24 @@ fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<Knowledg
                 onFavoritesClick = { navController.navigate(FavoritesRoute) },
                 onHistoryClick = { navController.navigate(HistoryRoute) },
                 onOptionsClick = { navController.navigate(OptionsRoute) },
+            )
+        }
+        composable<CategoryTermsRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<CategoryTermsRoute>()
+            LabelDestination(
+                repository = repository,
+                kind = TermLabelKind.CATEGORY,
+                name = route.name,
+                navController = navController,
+            )
+        }
+        composable<TagTermsRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<TagTermsRoute>()
+            LabelDestination(
+                repository = repository,
+                kind = TermLabelKind.TAG,
+                name = route.name,
+                navController = navController,
             )
         }
         composable<CincoRoute> {
@@ -98,6 +119,12 @@ fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<Knowledg
                 onBack = { navController.popBackStack() },
                 onRelationClick = { slug -> navController.navigate(TermDetailRoute(slug)) },
                 onEditClick = { slug -> navController.navigate(PersonalTermEditorRoute(slug)) },
+                onLabelClick = { kind, name ->
+                    when (kind) {
+                        TermLabelKind.CATEGORY -> navController.navigate(CategoryTermsRoute(name))
+                        TermLabelKind.TAG -> navController.navigate(TagTermsRoute(name))
+                    }
+                },
             )
         }
         composable<PersonalTermEditorRoute> { backStackEntry ->
@@ -143,4 +170,23 @@ private fun NavController.returnToSearchThenOpen(destination: Any?) {
     } else {
         popBackStack(SearchRoute, inclusive = false)
     }
+}
+
+@Composable
+private fun LabelDestination(
+    repository: CorpusRepository,
+    kind: TermLabelKind,
+    name: String,
+    navController: NavController,
+) {
+    val viewModel = viewModel<TermsByLabelViewModel>(
+        // La clave separa las instancias: dos etiquetas distintas son dos pantallas distintas.
+        key = "$kind:$name",
+        factory = TermsByLabelViewModel.factory(repository, kind, name),
+    )
+    TermsByLabelScreen(
+        viewModel = viewModel,
+        onTermClick = { slug -> navController.navigate(TermDetailRoute(slug)) },
+        onBack = { navController.popBackStack() },
+    )
 }

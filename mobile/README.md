@@ -96,6 +96,7 @@ mobile/app/src/main/kotlin/com/lexidex/app/
     favorites/     # Lista de favoritos
     history/       # Lista de vistos recientemente
     games/         # Minijuego "Cinco": ViewModel de la partida y su pantalla
+    labels/        # Los terminos de una categoria o etiqueta, de los dos catalogos
     navigation/    # NavHost de 5 destinos (Search, TermDetail, PersonalTermEditor, Favorites, History)
 ```
 

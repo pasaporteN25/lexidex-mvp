@@ -49,6 +49,37 @@ interface UserTermDao {
     suspend fun findDuplicate(normalizedTitle: String, language: String, excludeUid: String?): String?
 
     /**
+     * Los terminos propios que llevan una categoria. Aca la etiqueta no es una tabla sino una
+     * lista JSON en la misma fila, asi que `json_each` la abre para poder compararla entera: un
+     * `LIKE` daria falsos positivos con cualquier etiqueta que contenga a otra.
+     */
+    @Query(
+        """
+        SELECT * FROM user_terms
+        WHERE EXISTS (
+            SELECT 1 FROM json_each(user_terms.categories_json)
+            WHERE json_each.value = :name COLLATE NOCASE
+        )
+        ORDER BY title COLLATE NOCASE
+        LIMIT :limit
+        """,
+    )
+    suspend fun listByCategory(name: String, limit: Int): List<UserTermEntity>
+
+    @Query(
+        """
+        SELECT * FROM user_terms
+        WHERE EXISTS (
+            SELECT 1 FROM json_each(user_terms.tags_json)
+            WHERE json_each.value = :name COLLATE NOCASE
+        )
+        ORDER BY title COLLATE NOCASE
+        LIMIT :limit
+        """,
+    )
+    suspend fun listByTag(name: String, limit: Int): List<UserTermEntity>
+
+    /**
      * Los terminos personales que el minijuego puede usar, con sus categorias ya adentro (viajan
      * como JSON en la fila). El catalogo personal se lee entero porque es chico: son los terminos
      * que cargo el usuario, no los miles del paquete.
