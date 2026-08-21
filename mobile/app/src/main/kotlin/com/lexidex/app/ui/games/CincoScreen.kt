@@ -70,7 +70,7 @@ fun CincoScreen(viewModel: CincoViewModel, onBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    if (uiState.phase != CincoPhase.LOADING && uiState.phase != CincoPhase.ERROR) {
+                    if (uiState.phase == CincoPhase.PLAYING || uiState.phase == CincoPhase.RESOLVED) {
                         Text(
                             "${uiState.score.points} de ${CincoScore.MAX_POINTS}",
                             style = MaterialTheme.typography.titleMedium,
@@ -98,7 +98,7 @@ fun CincoScreen(viewModel: CincoViewModel, onBack: () -> Unit) {
                     }
                 }
 
-                CincoPhase.FINISHED -> FinishedPanel(
+                CincoPhase.FINISHED -> CincoResults(
                     score = uiState.score,
                     onPlayAgain = viewModel::onPlayAgain,
                     onBack = onBack,
@@ -350,37 +350,6 @@ private fun Resolution(
         )
         Button(onClick = onNextQuestion, modifier = Modifier.fillMaxWidth()) {
             Text(if (isLastQuestion) "Ver el resultado" else "Siguiente pregunta")
-        }
-    }
-}
-
-/** Placeholder until 8.7 builds the real results screen; enough to finish a game and start another. */
-@Composable
-private fun FinishedPanel(score: CincoScore, onPlayAgain: () -> Unit, onBack: () -> Unit) {
-    Centered {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(LexidexSpacing.compact),
-            modifier = Modifier.padding(LexidexSpacing.section),
-        ) {
-            Text(
-                "${score.points} de ${CincoScore.MAX_POINTS}",
-                style = MaterialTheme.typography.displayLarge,
-            )
-            Text(
-                "${score.typedCorrect} escritas · ${score.pickedCorrect} elegidas · " +
-                    "${score.missed} sin acertar",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            Button(
-                onClick = onPlayAgain,
-                modifier = Modifier.padding(top = LexidexSpacing.compact),
-            ) {
-                Text("Jugar de nuevo")
-            }
-            TextButton(onClick = onBack) { Text("Volver") }
         }
     }
 }

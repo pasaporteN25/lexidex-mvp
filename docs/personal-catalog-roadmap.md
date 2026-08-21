@@ -69,9 +69,10 @@ Estan hechas 8.1 (tests JVM en Android, que antes no existian), 8.2
 en `CorpusRepository`), con 55 tests que corren sin emulador. Con 8.5 y 8.6 estan
 tambien la partida entera (reloj, puntaje, verificacion de lo escrito; 76
 tests) y su pantalla. Con 8.8 el juego se abre desde la
-pantalla principal y ya se vio andando en el emulador. Quedan **8.7** (la
-pantalla de resultados, hoy un panel provisorio) y **8.9** (jugar una partida
-entera a mano).
+pantalla principal y con 8.7 termina en su pantalla de resultados; las dos se
+vieron andando en el emulador, incluida una partida entera. Queda **8.9**: la
+verificacion a mano completa, que es donde entran los terminos personales, que
+elegir puntue distinto que escribir, y que no se repitan preguntas.
 
 Despues, en este orden:
 
@@ -599,8 +600,24 @@ diseno sin patron previo para calcar.
       proposito minimo: 8.7 lo reemplaza por la pantalla de resultados.
       Compila y pasa los 76 tests, pero **todavia no se puede abrir**: la ruta
       del `NavHost` es 8.8 y la verificacion en el emulador es 8.9.
-- [ ] **8.7** _(Sonnet 5 · S)_ Pantalla de resultados sobre 10, con el desglose
-      de cuantas se acertaron escribiendo, y volver a jugar.
+- [x] **8.7** ✅ `CincoResults`, en lugar del panel provisorio de 8.6: el
+      puntaje sobre 10 en grande, sobre una tarjeta con la misma regla teal
+      arriba que el termino del dia, y debajo el desglose en tres filas
+      -escribiendo, eligiendo, sin acertar- con lo que aporto cada una
+      ("2 acertadas escribiendo ... +4"). El desglose es lo que justifica el
+      10: "4 de 10" se lee de un vistazo pero no dice si fueron dos escritas
+      o cuatro elegidas, y esa diferencia es el sentido del puntaje.
+      Cuando se acerto mas eligiendo que escribiendo aparece una linea que
+      recuerda cuanto vale cada cosa; es la unica forma de enterarse de la
+      regla sin leer el codigo.
+      **Verificado en el emulador** jugando una partida entera: dos respuestas
+      escritas dieron +4 y el resultado mostro "4 de 10" con
+      "2 acertadas escribiendo" y "3 sin acertar". De paso quedo probado que
+      escribir sin acentos, sin espacios y sin el parentesis de
+      desambiguacion acierta igual ("unidad8200" para "Unidad 8200"), que una
+      respuesta equivocada no termina la pregunta ("Esa no es. Proba otra vez,
+      o espera las opciones.") y que el reloj vencido deja la respuesta
+      marcada en teal.
 - [x] **8.8** ✅ `CincoRoute` en el `NavHost` -una ruta mas, como decia la
       nota- y el banner en la pantalla principal, debajo del termino del dia y
       no arriba: el termino del dia es para lo que esta la pantalla, y el juego
