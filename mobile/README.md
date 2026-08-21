@@ -95,6 +95,7 @@ mobile/app/src/main/kotlin/com/lexidex/app/
     editor/        # Crear/editar/eliminar un termino personal
     favorites/     # Lista de favoritos
     history/       # Lista de vistos recientemente
+    games/         # Minijuego "Cinco": ViewModel de la partida y su pantalla
     navigation/    # NavHost de 5 destinos (Search, TermDetail, PersonalTermEditor, Favorites, History)
 ```
 

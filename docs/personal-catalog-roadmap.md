@@ -66,9 +66,12 @@ Al 2026-08-20 estan cerradas las epicas 1, 3, 5, 6 y 7, mas la tarea 2.0.
 proxima version mayor, decidida el 2026-08-20, y va antes que todo lo demas.
 Estan hechas 8.1 (tests JVM en Android, que antes no existian), 8.2
 (`ClueBuilder`), 8.3 (`DistractorPicker`) y 8.4 (la tanda de cinco preguntas
-en `CorpusRepository`), con 55 tests que corren sin emulador. Es decir: el
-juego ya se arma entero, y con 8.5 tambien se juega entero (reloj, puntaje y
-verificacion de lo escrito, con 76 tests). **Sigue 8.6**, la pantalla.
+en `CorpusRepository`), con 55 tests que corren sin emulador. Con 8.5 y 8.6 estan
+tambien la partida entera (reloj, puntaje, verificacion de lo escrito; 76
+tests) y su pantalla. Falta lo que lo vuelve alcanzable y verificable:
+**8.8** (ruta del `NavHost` y banner en la pantalla principal) y **8.7** (la
+pantalla de resultados, hoy un panel provisorio), y despues **8.9** en el
+emulador.
 
 Despues, en este orden:
 
@@ -583,8 +586,19 @@ diseno sin patron previo para calcar.
       para poder probar reloj, puntaje y verificacion sin Room; el modo por
       categoria es un parametro del constructor, todavia sin pantalla que lo
       prenda.
-- [ ] **8.6** _(Sonnet 5 · M)_ Pantalla del juego: la pista, el campo de texto,
-      el reloj, y el 2x2 que aparece sobre el final.
+- [x] **8.6** ✅ `CincoScreen` en `ui/games/`: el reloj arriba (barra y
+      segundos, en vermellon los ultimos cinco), la pista en su panel, el campo
+      de texto con boton de responder y accion "listo" del teclado, y el 2x2
+      que entra con `AnimatedVisibility` cuando quedan 10 segundos.
+      Al resolverse, la opcion correcta queda en teal y la equivocada que se
+      eligio en vermellon -Regla del Acento Funcional de DESIGN.md, donde teal
+      es seleccion y vermellon es el rol de error-, con una linea de que paso y
+      el boton para seguir. Las cuatro opciones quedan legibles aunque ya no se
+      puedan tocar: dejaron de ser controles y pasaron a ser la respuesta.
+      El panel del final (puntaje sobre 10 y "jugar de nuevo") esta a
+      proposito minimo: 8.7 lo reemplaza por la pantalla de resultados.
+      Compila y pasa los 76 tests, pero **todavia no se puede abrir**: la ruta
+      del `NavHost` es 8.8 y la verificacion en el emulador es 8.9.
 - [ ] **8.7** _(Sonnet 5 · S)_ Pantalla de resultados sobre 10, con el desglose
       de cuantas se acertaron escribiendo, y volver a jugar.
 - [ ] **8.8** _(Sonnet 5 · S)_ Banner en la pantalla principal, debajo del
