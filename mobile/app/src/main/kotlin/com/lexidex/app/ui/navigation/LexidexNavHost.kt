@@ -9,6 +9,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.lexidex.app.data.knowledge.KnowledgeSource
 import com.lexidex.app.data.repository.CorpusRepository
+import com.lexidex.app.ui.games.CincoScreen
+import com.lexidex.app.ui.games.CincoViewModel
 import com.lexidex.app.ui.detail.TermDetailScreen
 import com.lexidex.app.ui.detail.TermDetailViewModel
 import com.lexidex.app.ui.editor.PersonalTermEditorScreen
@@ -38,12 +40,17 @@ fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<Knowledg
                 viewModel = viewModel,
                 onTermClick = { slug -> navController.navigate(TermDetailRoute(slug)) },
                 onCreateClick = { navController.navigate(PersonalTermEditorRoute()) },
+                onPlayCincoClick = { navController.navigate(CincoRoute) },
                 onCatalogClick = { navController.navigate(CatalogRoute) },
                 onCollectionsClick = { navController.navigate(CollectionsRoute) },
                 onFavoritesClick = { navController.navigate(FavoritesRoute) },
                 onHistoryClick = { navController.navigate(HistoryRoute) },
                 onOptionsClick = { navController.navigate(OptionsRoute) },
             )
+        }
+        composable<CincoRoute> {
+            val viewModel = viewModel<CincoViewModel>(factory = CincoViewModel.factory(repository))
+            CincoScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
         composable<CollectionsRoute> {
             val viewModel = viewModel<CollectionsViewModel>(

@@ -29,5 +29,9 @@ object OptionsRoute
 @Serializable
 object CollectionsRoute
 
+/** El minijuego "Cinco". Una ruta mas, no otra actividad: la app es de una sola. */
+@Serializable
+object CincoRoute
+
 @Serializable
 data class CollectionDetailRoute(val uid: String)

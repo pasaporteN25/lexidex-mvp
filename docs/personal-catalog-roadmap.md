@@ -68,10 +68,10 @@ Estan hechas 8.1 (tests JVM en Android, que antes no existian), 8.2
 (`ClueBuilder`), 8.3 (`DistractorPicker`) y 8.4 (la tanda de cinco preguntas
 en `CorpusRepository`), con 55 tests que corren sin emulador. Con 8.5 y 8.6 estan
 tambien la partida entera (reloj, puntaje, verificacion de lo escrito; 76
-tests) y su pantalla. Falta lo que lo vuelve alcanzable y verificable:
-**8.8** (ruta del `NavHost` y banner en la pantalla principal) y **8.7** (la
-pantalla de resultados, hoy un panel provisorio), y despues **8.9** en el
-emulador.
+tests) y su pantalla. Con 8.8 el juego se abre desde la
+pantalla principal y ya se vio andando en el emulador. Quedan **8.7** (la
+pantalla de resultados, hoy un panel provisorio) y **8.9** (jugar una partida
+entera a mano).
 
 Despues, en este orden:
 
@@ -601,10 +601,17 @@ diseno sin patron previo para calcar.
       del `NavHost` es 8.8 y la verificacion en el emulador es 8.9.
 - [ ] **8.7** _(Sonnet 5 · S)_ Pantalla de resultados sobre 10, con el desglose
       de cuantas se acertaron escribiendo, y volver a jugar.
-- [ ] **8.8** _(Sonnet 5 · S)_ Banner en la pantalla principal, debajo del
-      termino del dia, que lleve al juego. Nota: la app es Compose de una sola
-      actividad, asi que es una ruta mas del `NavHost`, no un fragment ni una
-      activity nueva.
+- [x] **8.8** ✅ `CincoRoute` en el `NavHost` -una ruta mas, como decia la
+      nota- y el banner en la pantalla principal, debajo del termino del dia y
+      no arriba: el termino del dia es para lo que esta la pantalla, y el juego
+      es la invitacion a quedarse. El banner aparece igual si el termino del
+      dia no cargo.
+      **Verificado en el emulador**: se toca el banner, abre el juego, se ve la
+      pregunta 1 de 5 con el reloj corriendo, aparecen las cuatro opciones al
+      final del reloj y al vencerse queda la correcta en teal con
+      "Se acabo el tiempo. Era ...". Lo que falta probar a mano es la partida
+      entera (8.9): que escribir puntue distinto que elegir y que no se repitan
+      preguntas.
 - [ ] **8.9** _(Sonnet 5 · M)_ Verificar en el emulador: jugar una partida
       entera, comprobar que el reloj corre, que las opciones aparecen cuando
       corresponde, que escribir bien puntua distinto que elegir bien, y que no

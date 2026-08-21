@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
@@ -61,6 +63,7 @@ fun SearchScreen(
     viewModel: SearchViewModel,
     onTermClick: (String) -> Unit,
     onCreateClick: () -> Unit,
+    onPlayCincoClick: () -> Unit,
     onCatalogClick: () -> Unit,
     onCollectionsClick: () -> Unit,
     onFavoritesClick: () -> Unit,
@@ -85,6 +88,7 @@ fun SearchScreen(
         onRandomClick = viewModel::onRandomClick,
         onTermClick = onTermClick,
         onCreateClick = onCreateClick,
+        onPlayCincoClick = onPlayCincoClick,
         onCatalogClick = onCatalogClick,
         onCollectionsClick = onCollectionsClick,
         onFavoritesClick = onFavoritesClick,
@@ -101,6 +105,7 @@ private fun SearchContent(
     onRandomClick: () -> Unit,
     onTermClick: (String) -> Unit,
     onCreateClick: () -> Unit,
+    onPlayCincoClick: () -> Unit,
     onCatalogClick: () -> Unit,
     onCollectionsClick: () -> Unit,
     onFavoritesClick: () -> Unit,
@@ -150,7 +155,7 @@ private fun SearchContent(
             if (uiState.showResults) {
                 SearchResults(uiState, onTermClick)
             } else {
-                DailyTermSection(uiState, onTermClick)
+                DailyTermSection(uiState, onTermClick, onPlayCincoClick)
             }
         }
     }
@@ -245,7 +250,11 @@ private fun SearchResults(uiState: SearchUiState, onTermClick: (String) -> Unit)
 }
 
 @Composable
-private fun DailyTermSection(uiState: SearchUiState, onTermClick: (String) -> Unit) {
+private fun DailyTermSection(
+    uiState: SearchUiState,
+    onTermClick: (String) -> Unit,
+    onPlayCincoClick: () -> Unit,
+) {
     Column(modifier = Modifier.padding(horizontal = LexidexSpacing.panel)) {
         Text(
             text = "TERMINO DEL DIA",
@@ -260,6 +269,36 @@ private fun DailyTermSection(uiState: SearchUiState, onTermClick: (String) -> Un
                 DailyTermCard(daily, onClick = { onTermClick(daily.slug) })
             }
             uiState.errorMessage != null -> MessageBox(uiState.errorMessage)
+        }
+        // Under the term of the day, not above it: the daily term is what the screen is for, and
+        // the game is the invitation to stay. It shows even when the daily term failed to load.
+        CincoBanner(onClick = onPlayCincoClick)
+    }
+}
+
+@Composable
+private fun CincoBanner(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = LexidexSpacing.compact),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(LexidexSpacing.panel),
+        ) {
+            Icon(Icons.Default.Quiz, contentDescription = null)
+            Column(modifier = Modifier.padding(start = LexidexSpacing.control)) {
+                Text("Jugar a Cinco", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Cinco terminos con la respuesta tapada.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
