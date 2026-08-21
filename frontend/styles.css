@@ -845,6 +845,25 @@ button {
   color: var(--vermilion);
 }
 
+/* Un chip que filtra sigue siendo un chip: solo se le nota que es tocable. */
+.chip-action {
+  border: 0;
+  font-family: inherit;
+  font-size: var(--text-tight);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chip-action:hover,
+.chip-action:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.label-filter {
+  display: block;
+}
+
 .record-meta {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

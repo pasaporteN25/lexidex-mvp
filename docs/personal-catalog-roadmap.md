@@ -162,8 +162,17 @@ sobre 2.570 terminos**, asi que ya hay algo que navegar.
       nunca coincide en mayusculas con la del paquete.
       Un test cubre las dos formas a la vez: una categoria compartida entre un
       termino del paquete y uno personal devuelve los dos.
-- [ ] **2.2** _(Haiku 4.5)_ Web: exponer el filtro nuevo en la UI, mismo
-      estilo que el selector de idioma/origen que ya esta en `frontend/app.js`.
+- [x] **2.2** ✅ Web: los chips de la ficha dejaron de ser decorativos y ahora
+      filtran el indice. No se hizo como un selector mas al lado de idioma y
+      origen: son 1.882 categorias, y un `<select>` con esa cantidad no se
+      puede usar. Tocar el chip es ademas el mismo gesto que en Android, asi
+      que las dos superficies se explican igual.
+      El filtro activo se muestra como un boton "Categoria: X - quitar" dentro
+      del panel de filtros, cuenta en el contador de filtros activos y se
+      limpia con "Limpiar filtros".
+      Verificado contra el backend real: tocar "Plantas medicinales" en la
+      ficha de *Cynara scolymus* deja el indice en 12 registros, y quitar el
+      filtro lo devuelve a 4.543.
 - [ ] **2.3** _(Haiku 4.5)_ Android: hacer que `TermChip` acepte un `onClick`
       opcional (`ui/components/TermChip.kt`) - agregar un parametro a un
       composable chico.

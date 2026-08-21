@@ -9,7 +9,9 @@ const state = {
   editingSlug: null,
   requestId: 0,
   stats: null,
-  snackbarTimer: null
+  snackbarTimer: null,
+  // { kind: "category" | "tag", value: string } - el filtro que se aplica tocando un chip.
+  label: null
 };
 
 const elements = {
@@ -32,6 +34,7 @@ const elements = {
   filterPanel: document.querySelector("#filterPanel"),
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   activeFilterCount: document.querySelector("#activeFilterCount"),
+  labelFilterButton: document.querySelector("#labelFilterButton"),
   resultStatus: document.querySelector("#resultStatus"),
   termList: document.querySelector("#termList"),
   detail: document.querySelector("#detail"),
@@ -198,11 +201,36 @@ function activeFilterValues() {
     elements.originFilter.value,
     elements.kindFilter.value,
     elements.statusFilter.value,
-    elements.sourceFilter.value
+    elements.sourceFilter.value,
+    state.label?.value
   ].filter(Boolean);
 }
 
+const LABEL_NAMES = { category: "Categoria", tag: "Etiqueta" };
+
+function renderLabelFilter() {
+  const active = state.label;
+  elements.labelFilterButton.hidden = !active;
+  if (active) {
+    elements.labelFilterButton.textContent =
+      `${LABEL_NAMES[active.kind]}: ${active.value} - quitar`;
+  }
+}
+
+function filterByLabel(kind, value) {
+  state.label = { kind, value };
+  state.offset = 0;
+  loadCatalog().catch(showFatalError);
+}
+
+function clearLabelFilter() {
+  state.label = null;
+  state.offset = 0;
+  loadCatalog().catch(showFatalError);
+}
+
 function renderFilterCount() {
+  renderLabelFilter();
   const count = activeFilterValues().length;
   elements.activeFilterCount.textContent = count
     ? `${count} ${count === 1 ? "filtro" : "filtros"}`
@@ -223,6 +251,9 @@ function buildCatalogQuery() {
     status: elements.statusFilter.value,
     source: elements.sourceFilter.value
   };
+  if (state.label) {
+    values[state.label.kind] = state.label.value;
+  }
   Object.entries(values).forEach(([key, value]) => {
     if (value) {
       query.set(key, value);
@@ -319,10 +350,17 @@ function renderEmptyDetail() {
   `;
 }
 
-function chipList(items, className = "") {
-  return (items || []).map(
-    (item) => `<span class="chip ${className}">${escapeHtml(item)}</span>`
-  ).join("");
+// Con `kind` los chips dejan de ser decorativos: cada uno filtra el indice por esa etiqueta.
+function chipList(items, className = "", kind = "") {
+  return (items || []).map((item) => {
+    if (!kind) {
+      return `<span class="chip ${className}">${escapeHtml(item)}</span>`;
+    }
+    const label = escapeHtml(item);
+    return `<button type="button" class="chip chip-action ${className}"
+      data-label-kind="${kind}" data-label="${label}"
+      title="Ver todo lo que lleva esta etiqueta">${label}</button>`;
+  }).join("");
 }
 
 function renderSources(term) {
@@ -397,7 +435,7 @@ function renderDetail(term, related) {
           <span class="status-mark ${escapeHtml(term.status || "seed")}">${escapeHtml(labelFor("statuses", term.status || "seed"))}</span>
           <span class="origin-mark ${escapeHtml(term.origin)}">${escapeHtml(labelFor("origins", term.origin))}</span>
         </div>
-        <div class="chip-row">${chipList(term.categories, "category")}${chipList(term.tags)}</div>
+        <div class="chip-row">${chipList(term.categories, "category", "category")}${chipList(term.tags, "", "tag")}</div>
       </header>
 
       <dl class="record-meta">
@@ -831,6 +869,7 @@ function resetFilters() {
   elements.statusFilter.value = "";
   elements.sourceFilter.value = "";
   elements.sortFilter.value = "title_asc";
+  state.label = null;
   state.offset = 0;
   loadCatalog().catch(showFatalError);
 }
@@ -860,6 +899,11 @@ elements.detail.addEventListener("click", (event) => {
   const relation = event.target.closest("[data-slug]");
   if (relation) {
     selectTerm(relation.dataset.slug).catch(showFatalError);
+    return;
+  }
+  const chip = event.target.closest("[data-label]");
+  if (chip) {
+    filterByLabel(chip.dataset.labelKind, chip.dataset.label);
     return;
   }
   const action = event.target.closest("[data-action]")?.dataset.action;
@@ -919,6 +963,7 @@ elements.libraryButton.addEventListener("click", () => elements.searchInput.focu
 elements.dailyButton.addEventListener("click", () => jumpTo("/api/daily").catch(showFatalError));
 elements.randomButton.addEventListener("click", () => jumpTo("/api/random").catch(showFatalError));
 elements.clearFiltersButton.addEventListener("click", resetFilters);
+elements.labelFilterButton.addEventListener("click", clearLabelFilter);
 elements.themeToggle.addEventListener("change", () => applyTheme(elements.themeToggle.checked));
 elements.termForm.addEventListener("submit", saveTerm);
 elements.cancelTermButton.addEventListener("click", () => elements.termDialog.close());
