@@ -677,7 +677,9 @@ activado y no es algo que se pueda ver ni verificar.
 
 ## Preguntas abiertas (para decidir antes de picar codigo, no para un modelo chico)
 
-- Epica 5: opcion A vs B (arriba).
+(La de la epica 5, opcion A contra B, se decidio el 2026-08-19 por la A y ya
+esta implementada: ver 5.1.)
+
 - Epica 4: si en algun momento se pide el articulo completo offline en vez
   del resumen, decidir limite de tamano por termino y como manejar la
   atribucion CC BY-SA antes de guardarlo.
