@@ -17,3 +17,24 @@ internal fun foldedKey(value: String): String = buildString {
         if (character.isLetterOrDigit()) append(character.lowercaseChar())
     }
 }
+
+private val TRAILING_PARENTHETICAL = Regex("\\s*\\([^()]*\\)\\s*$")
+
+/**
+ * A title without the parenthetical that only tells it apart from its namesakes: "Spectre
+ * (vulnerabilidad)" is "Spectre". Nobody says the parenthetical out loud, so it is neither
+ * required of a typed answer nor worth blanking out of a clue on its own.
+ */
+internal fun titleWithoutDisambiguation(title: String): String =
+    TRAILING_PARENTHETICAL.replace(title, "").trim()
+
+/**
+ * Whether [typed] names the term titled [title]. Accents, case, spacing and punctuation are all
+ * forgiven, and so is the disambiguation parenthetical, in either direction: for "Spectre
+ * (vulnerabilidad)" both "spectre" and "Spectre (Vulnerabilidad)" are the answer.
+ */
+fun matchesAnswer(typed: String, title: String): Boolean {
+    val guess = foldedKey(typed)
+    if (guess.isEmpty()) return false
+    return guess == foldedKey(title) || guess == foldedKey(titleWithoutDisambiguation(title))
+}

@@ -67,9 +67,8 @@ proxima version mayor, decidida el 2026-08-20, y va antes que todo lo demas.
 Estan hechas 8.1 (tests JVM en Android, que antes no existian), 8.2
 (`ClueBuilder`), 8.3 (`DistractorPicker`) y 8.4 (la tanda de cinco preguntas
 en `CorpusRepository`), con 55 tests que corren sin emulador. Es decir: el
-juego ya se arma entero, y lo que falta es jugarlo. **Sigue 8.5**, el
-`CincoViewModel`: reloj por pregunta, aparicion de las opciones, verificacion
-de lo escrito y el puntaje sobre 10.
+juego ya se arma entero, y con 8.5 tambien se juega entero (reloj, puntaje y
+verificacion de lo escrito, con 76 tests). **Sigue 8.6**, la pantalla.
 
 Despues, en este orden:
 
@@ -562,10 +561,28 @@ diseno sin patron previo para calcar.
       mezclar idiomas, sin filtrar la respuesta en la pista y siempre con una
       sola opcion correcta. Falta verlo en el emulador (8.9), que es donde
       entran tambien los terminos personales.
-- [ ] **8.5** _(Sonnet 5 · M)_ `CincoViewModel`: cinco preguntas, reloj por
-      pregunta, aparicion de las opciones, verificacion del texto escrito
-      (sin acentos, sin mayusculas, aceptando el titulo con o sin el parentesis
-      de desambiguacion) y el puntaje sobre 10 descrito arriba.
+- [x] **8.5** ✅ `CincoViewModel` en `ui/games/`, con dieciseis tests que
+      corren el reloj en tiempo virtual (`kotlinx-coroutines-test`, dependencia
+      nueva). Cinco preguntas, 25 segundos cada una, y las opciones aparecen
+      faltando 10: no desde el principio, porque leer cuatro titulos antes
+      convierte "que termino es" en "cual de estos cuatro", que es el juego
+      facil y justamente el que vale menos.
+      Puntaje en `CincoScore`: escribir bien 2, elegir bien 1, maximo 10.
+      Una respuesta escrita que no es cuesta el tiempo que llevo escribirla,
+      **no** la pregunta: si la terminara, nadie arriesgaria a escribir y los
+      2 puntos serian inalcanzables por diseno. Elegir mal si termina la
+      pregunta, que es lo que significa elegir.
+      Cuando la pregunta se resuelve -escrita, elegida o vencida- aparecen las
+      cuatro opciones con la respuesta marcada: es la unica devolucion que da
+      el juego antes del resultado final.
+      `matchesAnswer` perdona acentos, mayusculas, espacios y puntuacion, y el
+      parentesis de desambiguacion en los dos sentidos; vive al lado de
+      `ClueBuilder` y comparte con el la misma nocion de titulo, asi lo que se
+      acepta como respuesta es exactamente lo que la pista tuvo que tapar.
+      El ViewModel recibe la funcion que arma la tanda en vez del repositorio,
+      para poder probar reloj, puntaje y verificacion sin Room; el modo por
+      categoria es un parametro del constructor, todavia sin pantalla que lo
+      prenda.
 - [ ] **8.6** _(Sonnet 5 · M)_ Pantalla del juego: la pista, el campo de texto,
       el reloj, y el 2x2 que aparece sobre el final.
 - [ ] **8.7** _(Sonnet 5 · S)_ Pantalla de resultados sobre 10, con el desglose

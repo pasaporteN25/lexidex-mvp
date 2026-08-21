@@ -53,7 +53,6 @@ object ClueBuilder {
     private val WORD = Regex("[\\p{L}\\p{N}]+(?:['\u2019][\\p{L}\\p{N}]+)*")
     private val TERMINATOR = Regex("[.!?\u2026]+")
     private val PARENTHETICAL = Regex("\\([^()]*\\)")
-    private val TRAILING_PARENTHETICAL = Regex("\\s*\\([^()]*\\)\\s*$")
     private val REFERENCE_MARKER = Regex("\\[\\d+]")
     private val ADJACENT_MASKS = Regex("$MASK(?:[\\s,;]+$MASK)+")
     private val SPACE_BEFORE_PUNCTUATION = Regex("\\s+([,;:.!?])")
@@ -239,7 +238,7 @@ object ClueBuilder {
 
     /** The whole title, plus the title without its disambiguation parenthetical. */
     private fun titlePhrases(title: String): Set<String> =
-        setOf(foldedKey(title), foldedKey(baseTitle(title))).filterTo(mutableSetOf(), String::isNotEmpty)
+        setOf(foldedKey(title), foldedKey(titleWithoutDisambiguation(title))).filterTo(mutableSetOf(), String::isNotEmpty)
 
     /**
      * Only words of the base title: the disambiguation parenthetical is not part of the answer
@@ -247,12 +246,10 @@ object ClueBuilder {
      * cost the clue a useful word without hiding anything.
      */
     private fun distinctiveTitleTokens(title: String): List<String> =
-        WORD.findAll(baseTitle(title))
+        WORD.findAll(titleWithoutDisambiguation(title))
             .map { foldedKey(it.value) }
             .filter { it.length >= MIN_DISTINCTIVE_LENGTH }
             .toList()
-
-    private fun baseTitle(title: String): String = TRAILING_PARENTHETICAL.replace(title, "").trim()
 
     private fun longestPhraseWords(title: String): Int =
         WORD.findAll(title).count().coerceAtLeast(1)
