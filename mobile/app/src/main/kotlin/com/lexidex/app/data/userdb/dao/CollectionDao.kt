@@ -15,6 +15,14 @@ data class CollectionWithCount(
     @ColumnInfo(name = "term_count") val termCount: Int,
 )
 
+/** Un miembro de coleccion con el uid de su coleccion, para el respaldo. */
+data class BackupMemberRow(
+    @ColumnInfo(name = "collection_uid") val collectionUid: String,
+    @ColumnInfo(name = "term_slug") val termSlug: String,
+    @ColumnInfo(name = "term_origin") val termOrigin: TermOrigin,
+    @ColumnInfo(name = "added_at") val addedAt: String,
+)
+
 @Dao
 interface CollectionDao {
     @Query(
@@ -26,6 +34,24 @@ interface CollectionDao {
         """,
     )
     suspend fun listAll(): List<CollectionWithCount>
+
+    @Query("SELECT * FROM collections ORDER BY name COLLATE NOCASE")
+    suspend fun listAllForBackup(): List<CollectionEntity>
+
+    /**
+     * Los miembros de todas las colecciones a la vez, referenciados por el uid de la coleccion:
+     * el id numerico es local a esta instalacion y no significa nada en otra.
+     */
+    @Query(
+        """
+        SELECT collections.uid AS collection_uid, collection_terms.term_slug AS term_slug,
+               collection_terms.term_origin AS term_origin, collection_terms.added_at AS added_at
+        FROM collection_terms
+        JOIN collections ON collections.id = collection_terms.collection_id
+        ORDER BY collections.uid, collection_terms.added_at
+        """,
+    )
+    suspend fun listAllMembersForBackup(): List<BackupMemberRow>
 
     @Query("SELECT * FROM collections WHERE uid = :uid LIMIT 1")
     suspend fun findByUid(uid: String): CollectionEntity?

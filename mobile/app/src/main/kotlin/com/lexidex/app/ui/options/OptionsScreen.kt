@@ -1,5 +1,9 @@
 package com.lexidex.app.ui.options
 
+import android.content.ContentResolver
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -24,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lexidex.app.domain.StorageInfo
@@ -74,6 +80,7 @@ fun OptionsScreen(viewModel: OptionsViewModel, onBack: () -> Unit) {
             ) {
                 PackageSection(storage)
                 PersonalSection(storage)
+                BackupSection(uiState, viewModel::onExportTo)
                 SourcesSection(storage)
             }
         }
@@ -118,6 +125,51 @@ private fun PersonalSection(storage: StorageInfo) {
         Field("Favoritos", storage.favorites.toString())
         Field("En el historial", storage.historyEntries.toString())
         Field("Archivo", storage.personalPath)
+    }
+}
+
+@Composable
+private fun BackupSection(
+    uiState: OptionsUiState,
+    onExportTo: (Uri, ContentResolver) -> Unit,
+) {
+    val context = LocalContext.current
+    // CreateDocument deja elegir carpeta y nombre con el selector del sistema: la aplicacion no
+    // pide permisos de almacenamiento ni sabe donde termino el archivo.
+    val chooseFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri -> uri?.let { onExportTo(it, context.contentResolver) } }
+
+    Section("RESPALDO") {
+        Explanation(
+            "Tus datos viven solo en este telefono. Guarda una copia en un archivo si no queres " +
+                "depender de eso; el paquete no hace falta respaldarlo porque viene con la " +
+                "aplicacion.",
+        )
+        Button(
+            onClick = { chooseFile.launch(defaultBackupFileName()) },
+            enabled = !uiState.isExporting,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+        ) {
+            Text(if (uiState.isExporting) "Guardando..." else "Exportar a un archivo")
+        }
+        uiState.exportMessage?.let { message ->
+            Text(
+                message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (uiState.exportFailed) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                modifier = Modifier.padding(
+                    horizontal = LexidexSpacing.panel,
+                    vertical = LexidexSpacing.tight,
+                ),
+            )
+        }
     }
 }
 

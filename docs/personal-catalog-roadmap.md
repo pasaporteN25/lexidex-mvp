@@ -67,8 +67,8 @@ su parte web (6.4).
 funcionalidad de esta version mayor, y quedo cerrada el mismo dia en que se
 decidio.
 
-1. **Respaldo de los datos personales** (epica 9) - los datos persisten, pero
-   no hay forma de sacarlos del telefono.
+1. **Importar un respaldo** (9.2) - exportar ya se puede desde el 2026-08-20;
+   traerlo de vuelta es lo que falta, y es la mitad dificil.
 2. **Articulo completo** (resto de la epica 4) - el mas grande de los que
    quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
 3. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
@@ -423,8 +423,9 @@ instalado, ni donde vive lo que uno guarda.
       `renderStats`, pero no el paquete instalado, ni la separacion entre las
       dos bases, ni que fuentes externas estan habilitadas.
 
-Candidato natural para sumar despues: un boton de exportar el catalogo
-personal desde esa misma pantalla (copia de seguridad). No esta pedido todavia.
+El boton de exportar el catalogo personal que se anoto aca como candidato
+natural termino existiendo: vive en esa misma pantalla, en la seccion RESPALDO
+(epica 9.1).
 
 ## 7. Actualizar el paquete base con un `palabras.txt` nuevo ✅ (primera vuelta)
 
@@ -682,7 +683,7 @@ segundo juego: no hay con que contrastar si la abstraccion es la correcta, y
 lo mas probable es que haya que rehacerla. Cuando llegue el juego dos, ahi se
 ve que se repite de verdad y se extrae.
 
-## 9. Respaldo de los datos personales ⬜
+## 9. Respaldo de los datos personales 🔶
 
 Surgido del 2026-08-20 al preguntar si los datos persisten.
 
@@ -697,13 +698,38 @@ cambia de telefono, se pierde. `allowBackup="true"` esta puesto, asi que el
 respaldo automatico de Android podria cubrirlo, pero depende de que lo tenga
 activado y no es algo que se pueda ver ni verificar.
 
-- [ ] **9.1** _(Sonnet 5 · M)_ Exportar el catalogo personal a un archivo
-      (JSON o el `.sqlite` entero) desde la pantalla de opciones, que ya es
-      donde se explica donde vive cada cosa.
+- [x] **9.1** ✅ Boton "Exportar a un archivo" en la seccion RESPALDO de la
+      pantalla de opciones, que es justo donde se explica donde vive cada cosa.
+      **JSON y no el `.sqlite` entero**: un `.sqlite` solo lo lee esta
+      aplicacion, y un respaldo que no se puede abrir para mirarlo es un
+      respaldo en el que hay que confiar a ciegas. El formato
+      (`domain/backup/PersonalCatalogBackup.kt`) lleva `format` y `version`
+      justamente para que una version futura pueda rechazarlo en vez de leerlo
+      mal, y salen escritos siempre (`encodeDefaults`).
+      Guarda las cinco tablas: terminos, favoritos, historial -una fila por
+      termino, igual que la pantalla-, colecciones y sus miembros. Los miembros
+      referencian la coleccion por **uid** y no por id numerico, que es local a
+      cada instalacion, y los terminos conservan su `uid`, del que sale el
+      slug: eso es lo que va a permitir que favoritos, historial y colecciones
+      sigan apuntando a algo despues de importar.
+      Es el primer uso de SAF (`ActivityResultContracts.CreateDocument`) en la
+      aplicacion: el usuario elige carpeta y nombre con el selector del
+      sistema, asi que no hizo falta ningun permiso de almacenamiento nuevo.
+      Seis tests fijan el formato; el resto se verifico en el emulador
+      exportando el catalogo real (2 terminos, 2 favoritos, 11 vistas, 1
+      coleccion) y leyendo el archivo resultante.
 - [ ] **9.2** _(Opus 5 · L)_ Importar ese archivo. Es bastante mas dificil que
       exportar: hay que decidir que pasa con lo que ya existe (¿se fusiona,
       se reemplaza, se duplica?) y validar un archivo que puede venir de
       cualquier lado, lo que lo convierte en entrada no confiable.
+      Dos cosas que ya dejo resueltas 9.1: el formato existe y esta cubierto
+      por tests, y `validatePersonalTerm` mas la deteccion de duplicados sirven
+      tal cual para validar lo que venga adentro.
+      Y una que aparecio al exportar datos reales: **hay favoritos que apuntan
+      a terminos que ya no existen** (uno de un termino borrado hace dias). El
+      respaldo los guarda tal como estan, asi que la importacion tiene que
+      decidir que hace con una referencia colgada: omitirla es lo unico que no
+      rompe nada.
 
 ## Preguntas abiertas (para decidir antes de picar codigo, no para un modelo chico)
 

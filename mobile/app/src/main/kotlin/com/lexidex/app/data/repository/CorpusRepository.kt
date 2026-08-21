@@ -22,6 +22,10 @@ import com.lexidex.app.domain.TermOrigin
 import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
 import com.lexidex.app.domain.TermSummary
+import com.lexidex.app.domain.backup.BackupCollection
+import com.lexidex.app.domain.backup.BackupTerm
+import com.lexidex.app.domain.backup.BackupTermRef
+import com.lexidex.app.domain.backup.PersonalCatalogBackup
 import com.lexidex.app.domain.games.CINCO_QUESTION_COUNT
 import com.lexidex.app.domain.games.CincoQuestion
 import com.lexidex.app.domain.games.CincoQuestionBuilder
@@ -275,6 +279,59 @@ class CorpusRepository(
         (fromPackage.map { it.toSummary() } + fromPersonal.map { it.toSummary() })
             .sortedBy { it.title.lowercase() }
     }
+
+    // region Respaldo
+
+    /**
+     * Todo el catalogo personal en un solo objeto, listo para escribir a un archivo. El paquete
+     * no entra: viene con la aplicacion y se puede volver a instalar, mientras que esto es lo
+     * unico que el usuario no puede recuperar de ningun otro lado.
+     */
+    suspend fun exportPersonalCatalog(): Result<PersonalCatalogBackup> = corpusResult {
+        val collections = collectionDao().listAllForBackup()
+        val membersByCollection = collectionDao().listAllMembersForBackup().groupBy { it.collectionUid }
+        PersonalCatalogBackup(
+            exportedAt = nowIso(),
+            terms = userTermDao().listAllForBackup().map { term ->
+                BackupTerm(
+                    uid = term.uid,
+                    slug = term.slug,
+                    title = term.title,
+                    language = term.language,
+                    kind = term.kind,
+                    status = term.status,
+                    summary = term.summary,
+                    content = term.content,
+                    sourceUrl = term.sourceUrl,
+                    categories = term.categories,
+                    tags = term.tags,
+                    notes = term.notes,
+                    revision = term.revision,
+                    createdAt = term.createdAt,
+                    updatedAt = term.updatedAt,
+                )
+            },
+            favorites = favoriteDao().listAll().map {
+                BackupTermRef(it.termSlug, it.termOrigin.wireValue(), it.createdAt)
+            },
+            history = historyDao().listAllForBackup().map {
+                BackupTermRef(it.termSlug, it.termOrigin.wireValue(), it.viewedAt)
+            },
+            collections = collections.map { collection ->
+                BackupCollection(
+                    uid = collection.uid,
+                    name = collection.name,
+                    createdAt = collection.createdAt,
+                    updatedAt = collection.updatedAt,
+                    members = membersByCollection[collection.uid].orEmpty().map {
+                        BackupTermRef(it.termSlug, it.termOrigin.wireValue(), it.addedAt)
+                    },
+                )
+            },
+        )
+    }
+
+    // endregion
 
     // region Personal term CRUD
 
@@ -607,6 +664,12 @@ private fun TermEntity.toSummary() = TermSummary(
     status = status,
     origin = TermOrigin.PACKAGE,
 )
+
+/** "package"/"personal", los mismos valores que guarda la base y que usa la API. */
+private fun TermOrigin.wireValue(): String = when (this) {
+    TermOrigin.PACKAGE -> "package"
+    TermOrigin.PERSONAL -> "personal"
+}
 
 private fun UserTermEntity.toGameTerm() = GameTerm(
     slug = slug,

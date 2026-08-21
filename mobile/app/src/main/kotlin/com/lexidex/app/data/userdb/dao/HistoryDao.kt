@@ -30,6 +30,20 @@ interface HistoryDao {
     )
     suspend fun recentlyViewed(limit: Int): List<RecentHistoryRow>
 
+    /**
+     * El historial entero para el respaldo, con el mismo colapso que [recentlyViewed]: una fila
+     * por termino. Guardar cada visita repetida abultaria el archivo sin decir nada nuevo.
+     */
+    @Query(
+        """
+        SELECT term_slug, term_origin, MAX(viewed_at) AS viewed_at
+        FROM history_entries
+        GROUP BY term_slug, term_origin
+        ORDER BY viewed_at DESC
+        """,
+    )
+    suspend fun listAllForBackup(): List<RecentHistoryRow>
+
     @Query("DELETE FROM history_entries WHERE term_slug = :slug AND term_origin = :origin")
     suspend fun deleteByTerm(slug: String, origin: TermOrigin)
 

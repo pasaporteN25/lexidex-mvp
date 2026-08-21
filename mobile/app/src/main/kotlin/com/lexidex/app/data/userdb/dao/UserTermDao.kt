@@ -48,6 +48,10 @@ interface UserTermDao {
     )
     suspend fun findDuplicate(normalizedTitle: String, language: String, excludeUid: String?): String?
 
+    /** Todo el catalogo personal para el respaldo, sin paginar: es lo que el usuario escribio. */
+    @Query("SELECT * FROM user_terms ORDER BY title COLLATE NOCASE")
+    suspend fun listAllForBackup(): List<UserTermEntity>
+
     /**
      * Los terminos propios que llevan una categoria. Aca la etiqueta no es una tabla sino una
      * lista JSON en la misma fila, asi que `json_each` la abre para poder compararla entera: un
