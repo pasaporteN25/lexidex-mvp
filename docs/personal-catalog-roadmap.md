@@ -149,11 +149,19 @@ sobre 2.570 terminos**, asi que ya hay algo que navegar.
       0,23 MB. `--clean-categories` reaplica el filtro a lo ya guardado sin
       volver a la red, que es como se afino sin gastar otra tanda de pedidos.
 
-- [ ] **2.1** _(Sonnet 5)_ Backend: agregar filtro por etiqueta en
-      `add_catalog_filters` (`backend/lexidex_api.py:511`) - un query param
-      `tag=` que filtre contra la lista JSON de tags. Toca SQL contra JSON,
-      vale la pena algo de cuidado. Sumar un test junto a los que ya existen
-      para los otros filtros.
+- [x] **2.1** ✅ Filtro en `add_catalog_filters`, con dos parametros y no uno:
+      `tag=` **y** `category=`. La tarea pedia solo `tag=`, pero el paquete
+      v0.4.0 tiene **cero tags** y 1.882 categorias: filtrar solo por tag no
+      encontraria nada fuera del catalogo personal, que es lo contrario de lo
+      que desbloqueo la epica.
+      Cada etiqueta vive de dos formas -tabla normalizada en el paquete, lista
+      JSON en la fila del termino personal-, asi que el filtro se arma distinto
+      segun el catalogo (`add_label_filter`): `EXISTS` contra la tabla de
+      union, o `EXISTS` contra `json_each(...)`. Compara sin distinguir
+      mayusculas, porque una etiqueta escrita a mano en un termino propio casi
+      nunca coincide en mayusculas con la del paquete.
+      Un test cubre las dos formas a la vez: una categoria compartida entre un
+      termino del paquete y uno personal devuelve los dos.
 - [ ] **2.2** _(Haiku 4.5)_ Web: exponer el filtro nuevo en la UI, mismo
       estilo que el selector de idioma/origen que ya esta en `frontend/app.js`.
 - [ ] **2.3** _(Haiku 4.5)_ Android: hacer que `TermChip` acepte un `onClick`

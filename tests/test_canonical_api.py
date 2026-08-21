@@ -177,6 +177,84 @@ class CanonicalApiTest(PackageFixture, unittest.TestCase):
         self.assertEqual(updated["notes"], ["Revision terminada."])
         self.assertEqual(remaining, 0)
 
+    def test_filters_both_catalogs_by_the_same_label(self):
+        # El paquete guarda las etiquetas en tablas normalizadas y el catalogo personal como
+        # lista JSON en la fila. Una etiqueta compartida tiene que traer las dos.
+        # `with` sobre una conexion sqlite abre transaccion pero no la cierra, y en Windows el
+        # archivo queda tomado hasta que el temporal se borra. De ahi el close explicito.
+        writable = sqlite3.connect(self.database)
+        try:
+            writable.execute("INSERT INTO categories (name) VALUES ('Mareas')")
+            writable.execute(
+                """
+                INSERT INTO term_categories (term_id, category_id)
+                SELECT terms.id, categories.id FROM terms, categories
+                WHERE terms.slug LIKE '%tide%' AND categories.name = 'Mareas'
+                """
+            )
+            writable.commit()
+        finally:
+            writable.close()
+        package_connection = api.connect(self.database, readonly=True)
+        user_connection = api.connect_user(self.user_database)
+        try:
+            api.create_personal_term(
+                package_connection,
+                user_connection,
+                {
+                    "title": "Marea viva",
+                    "language": "es",
+                    "categories": ["mareas"],
+                    "tags": ["oceanografia"],
+                },
+            )
+            api.create_personal_term(
+                package_connection,
+                user_connection,
+                {
+                    "title": "Nota sin relacion",
+                    "language": "es",
+                    "categories": ["Otra cosa"],
+                    "tags": ["otra"],
+                },
+            )
+            by_category = api.combined_list_terms(
+                package_connection,
+                user_connection,
+                {"category": ["Mareas"], "limit": ["20"]},
+                canonical=True,
+            )
+            by_tag = api.combined_list_terms(
+                package_connection,
+                user_connection,
+                {"tag": ["OCEANOGRAFIA"], "limit": ["20"]},
+                canonical=True,
+            )
+            unknown = api.combined_list_terms(
+                package_connection,
+                user_connection,
+                {"category": ["No existe"], "limit": ["20"]},
+                canonical=True,
+            )
+            narrowed = api.combined_list_terms(
+                package_connection,
+                user_connection,
+                {"category": ["Mareas"], "origin": ["personal"], "limit": ["20"]},
+                canonical=True,
+            )
+        finally:
+            package_connection.close()
+            user_connection.close()
+
+        # Una del paquete y una personal, y la coincidencia no distingue mayusculas.
+        self.assertEqual(by_category["total"], 2)
+        self.assertEqual(
+            {item["origin"] for item in by_category["items"]}, {"package", "personal"}
+        )
+        self.assertEqual([item["title"] for item in by_tag["items"]], ["Marea viva"])
+        self.assertEqual(unknown["total"], 0)
+        self.assertEqual([item["title"] for item in narrowed["items"]], ["Marea viva"])
+
     def test_rejects_duplicate_from_package_and_reports_facets(self):
         package_connection = api.connect(self.database, readonly=True)
         user_connection = api.connect_user(self.user_database)

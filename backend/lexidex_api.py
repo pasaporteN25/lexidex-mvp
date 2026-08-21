@@ -544,11 +544,47 @@ def personal_term_from_row(row, include_details=True):
     return data
 
 
+# Una etiqueta vive de dos formas segun el catalogo: tabla normalizada en el paquete (que es de
+# solo lectura y llega ya indexado), lista JSON en la fila del termino personal. El filtro tiene
+# que valer para las dos, porque una etiqueta compartida entre un termino propio y uno del
+# paquete es justamente el caso que hace util navegar por etiquetas.
+LABEL_SOURCES = {
+    "category": ("term_categories", "category_id", "categories", "categories_json"),
+    "tag": ("term_tags", "tag_id", "tags", "tags_json"),
+}
+
+
+def add_label_filter(where, params, value, label, table_name, canonical):
+    """Filtra por una categoria o etiqueta exacta, sin distinguir mayusculas."""
+    if not value:
+        return
+    junction, foreign_key, catalog, json_column = LABEL_SOURCES[label]
+    if canonical:
+        where.append(
+            f"EXISTS (SELECT 1 FROM {junction} jx"
+            f" JOIN {catalog} lx ON lx.id = jx.{foreign_key}"
+            f" WHERE jx.term_id = {table_name}.id AND lx.name = ? COLLATE NOCASE)"
+        )
+    else:
+        where.append(
+            f"EXISTS (SELECT 1 FROM json_each({table_name}.{json_column})"
+            " WHERE json_each.value = ? COLLATE NOCASE)"
+        )
+    params.append(value)
+
+
 def add_catalog_filters(where, params, query, table_name="terms", canonical=True):
     language = query_value(query, "language")
     kind = query_value(query, "kind")
     status = query_value(query, "status")
     source = query_value(query, "source")
+
+    add_label_filter(
+        where, params, query_value(query, "category"), "category", table_name, canonical
+    )
+    add_label_filter(
+        where, params, query_value(query, "tag"), "tag", table_name, canonical
+    )
 
     if language:
         where.append(f"{table_name}.language = ?")
