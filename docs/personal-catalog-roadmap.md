@@ -65,9 +65,11 @@ Al 2026-08-20 estan cerradas las epicas 1, 3, 5, 6 y 7, mas la tarea 2.0.
 **Lo proximo es el minijuego "Cinco" (epica 8).** Es la funcionalidad de la
 proxima version mayor, decidida el 2026-08-20, y va antes que todo lo demas.
 Estan hechas 8.1 (tests JVM en Android, que antes no existian), 8.2
-(`ClueBuilder`) y 8.3 (`DistractorPicker`), las tres con tests que corren sin
-emulador: 49 en total. **Sigue 8.4**, la consulta de terminos elegibles en
-`CorpusRepository`, que es lo que le da a esas dos clases con que trabajar.
+(`ClueBuilder`), 8.3 (`DistractorPicker`) y 8.4 (la tanda de cinco preguntas
+en `CorpusRepository`), con 55 tests que corren sin emulador. Es decir: el
+juego ya se arma entero, y lo que falta es jugarlo. **Sigue 8.5**, el
+`CincoViewModel`: reloj por pregunta, aparicion de las opciones, verificacion
+de lo escrito y el puntaje sobre 10.
 
 Despues, en este orden:
 
@@ -533,10 +535,33 @@ diseno sin patron previo para calcar.
       ofrecer los dos haria que dos de las cuatro opciones fueran correctas.
       Si el pozo no da para tres senuelos devuelve null y el termino se saltea,
       en vez de armar una pregunta con menos opciones.
-- [ ] **8.4** _(Sonnet 5 · M)_ Repositorio: consulta de terminos elegibles
-      (con contenido, de los dos origenes) y del subconjunto con categoria
-      utilizable. Devolver una tanda de cinco ya armada, no de a una, para no
-      ir a la base entre pregunta y pregunta.
+- [x] **8.4** ✅ `CorpusRepository.buildCincoRound(boostWithCategories)`
+      devuelve las cinco preguntas ya armadas -pista, cuatro opciones
+      mezcladas y de que pozo salieron los senuelos- en una sola ida a la
+      base. Consultas nuevas en `TermDao` (elegibles al azar, el subconjunto
+      con categoria utilizable, muestra de opciones por idioma, y los miembros
+      de una categoria) y en `UserTermDao` (los personales con contenido, que
+      se leen enteros porque son pocos).
+      Los candidatos se sortean pesados por tamano de catalogo, igual que
+      `getRandomTerm`, asi un termino propio sale tan seguido como su
+      proporcion real; el modo por categoria cambia **cuales** terminos del
+      paquete entran al sorteo (los 779), no esa proporcion. Se sortean quince
+      candidatos para cinco preguntas: el que no da pista, o no consigue tres
+      senuelos de su idioma, se saltea en vez de ser un error. Si aun asi no
+      salen cinco, falla con `CorpusError.NotEnoughPlayableTerms`.
+      El umbral de 4 miembros en SQL se cuenta sin separar por idioma a
+      proposito: la version por idioma tardaba 1,7 s contra 13 ms sobre el
+      paquete real y solo cambia un termino (779 contra 778). El
+      `DistractorPicker` sigue contando por idioma cuando elige, y vuelve al
+      modo idioma si la categoria no llega, asi que el SQL puede ser el filtro
+      grueso.
+      `CincoQuestionBuilder` es la parte pura y testeable (seis tests): pista
+      + senuelos + mezclar las cuatro opciones. El armado completo, que
+      necesita Room, se simulo con el mismo SQL sobre el paquete real: 120
+      partidas y 600 preguntas sin repetir pregunta dentro de una partida, sin
+      mezclar idiomas, sin filtrar la respuesta en la pista y siempre con una
+      sola opcion correcta. Falta verlo en el emulador (8.9), que es donde
+      entran tambien los terminos personales.
 - [ ] **8.5** _(Sonnet 5 · M)_ `CincoViewModel`: cinco preguntas, reloj por
       pregunta, aparicion de las opciones, verificacion del texto escrito
       (sin acentos, sin mayusculas, aceptando el titulo con o sin el parentesis

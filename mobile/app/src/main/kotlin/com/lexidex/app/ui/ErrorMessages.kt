@@ -16,6 +16,7 @@ fun Throwable.toUserMessage(): String = when (this) {
     is CorpusError.PersonalTermNotFound,
     is CorpusError.DuplicateCollection,
     is CorpusError.CollectionNotFound,
+    is CorpusError.NotEnoughPlayableTerms,
     -> message ?: GENERIC
 
     is KnowledgeSourceError.Offline ->

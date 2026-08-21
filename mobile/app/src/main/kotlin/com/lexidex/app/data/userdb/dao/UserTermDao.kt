@@ -48,6 +48,14 @@ interface UserTermDao {
     )
     suspend fun findDuplicate(normalizedTitle: String, language: String, excludeUid: String?): String?
 
+    /**
+     * Los terminos personales que el minijuego puede usar, con sus categorias ya adentro (viajan
+     * como JSON en la fila). El catalogo personal se lee entero porque es chico: son los terminos
+     * que cargo el usuario, no los miles del paquete.
+     */
+    @Query("SELECT * FROM user_terms WHERE content <> '' ORDER BY title COLLATE NOCASE LIMIT :limit")
+    suspend fun listEligible(limit: Int): List<UserTermEntity>
+
     @Insert
     suspend fun insert(term: UserTermEntity): Long
 

@@ -21,6 +21,11 @@ import com.lexidex.app.domain.TermOrigin
 import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
 import com.lexidex.app.domain.TermSummary
+import com.lexidex.app.domain.games.CINCO_QUESTION_COUNT
+import com.lexidex.app.domain.games.CincoQuestion
+import com.lexidex.app.domain.games.CincoQuestionBuilder
+import com.lexidex.app.domain.games.DistractorPicker
+import com.lexidex.app.domain.games.GameTerm
 import java.net.URI
 import java.time.Instant
 import java.util.UUID
@@ -34,6 +39,12 @@ private const val DEFAULT_HISTORY_LIMIT = 50
 private const val DEFAULT_PERSONAL_LIST_LIMIT = 500
 private const val DEFAULT_CATALOG_PAGE = 100
 private const val MAX_COLLECTION_NAME = 80
+
+/** Three times what a round needs: candidates that cannot become a question are walked past. */
+private const val CANDIDATES_PER_ROUND = CINCO_QUESTION_COUNT * 3
+
+/** Same-language terms drawn per question: enough to survive the picker's filtering. */
+private const val OPTION_SAMPLE_SIZE = 40
 
 /** Days from the proleptic-Gregorian epoch (year 1) to the Unix epoch - `date(1970,1,1).toordinal()` in Python. */
 private const val PYTHON_ORDINAL_EPOCH_OFFSET = 719_163L
@@ -114,6 +125,125 @@ class CorpusRepository(
                 personalDao.getRandomTerm()?.let { buildPersonalDetail(it) }
             }
         }
+    }
+
+    // endregion
+
+    // region Minijuego "Cinco"
+
+    /**
+     * A whole round: five questions with their clue and their four options already assembled, so
+     * that nothing goes back to the database between one question and the next.
+     *
+     * Candidates are drawn weighted by catalog size, the way [getRandomTerm] does, so a personal
+     * term comes up as often as it is a share of everything askable. [boostWithCategories] changes
+     * which package terms are drawn - only those in a category big enough to furnish a question -
+     * but not that share, and it never forces the mode: a category that cannot supply three decoys
+     * in the answer's own language falls back to the language pool, question by question.
+     *
+     * More candidates are drawn than a round needs. A term whose extract yields no fair clue, or
+     * whose language holds no three others to stand next to it, is walked past rather than treated
+     * as an error.
+     */
+    suspend fun buildCincoRound(boostWithCategories: Boolean = false): Result<List<CincoQuestion>> =
+        corpusResult {
+            val packageDao = termDao()
+            val personalTerms = userTermDao().listEligible(DEFAULT_PERSONAL_LIST_LIMIT)
+            val packageCount = packageDao.countEnrichedTerms()
+            if (packageCount + personalTerms.size < CINCO_QUESTION_COUNT) {
+                throw CorpusError.NotEnoughPlayableTerms()
+            }
+
+            val builder = CincoQuestionBuilder()
+            val questions = mutableListOf<CincoQuestion>()
+            val candidates =
+                drawCandidates(packageDao, personalTerms, packageCount, boostWithCategories)
+            for (candidate in candidates) {
+                if (questions.size == CINCO_QUESTION_COUNT) break
+                val pool =
+                    optionPoolFor(packageDao, personalTerms, candidate.term, boostWithCategories)
+                builder.build(candidate.term, candidate.extract, pool, boostWithCategories)
+                    ?.let(questions::add)
+            }
+            if (questions.size < CINCO_QUESTION_COUNT) {
+                throw CorpusError.NotEnoughPlayableTerms()
+            }
+            questions
+        }
+
+    /** A term drawn as a possible answer, before anyone knows whether it can become a question. */
+    private class GameCandidate(val term: GameTerm, val extract: String)
+
+    private suspend fun drawCandidates(
+        packageDao: TermDao,
+        personalTerms: List<UserTermEntity>,
+        packageCount: Long,
+        boostWithCategories: Boolean,
+    ): List<GameCandidate> {
+        val total = packageCount + personalTerms.size
+        val personalSlots = (1..CANDIDATES_PER_ROUND)
+            .count { Random.nextLong(total) >= packageCount }
+            .coerceAtMost(personalTerms.size)
+        val fromPackage = if (boostWithCategories) {
+            packageDao.randomEligibleTermsWithUsableCategory(
+                DistractorPicker.MIN_CATEGORY_MEMBERS,
+                CANDIDATES_PER_ROUND - personalSlots,
+            )
+        } else {
+            packageDao.randomEligibleTerms(CANDIDATES_PER_ROUND - personalSlots)
+        }
+        val fromPersonal = personalTerms.shuffled().take(personalSlots)
+        return (
+            fromPackage.map { term ->
+                // id is nullable only to match the pre-packaged schema; a row read always has one.
+                val categories = if (boostWithCategories) {
+                    packageDao.getCategoriesForTerm(requireNotNull(term.id)).map { it.name }
+                } else {
+                    emptyList()
+                }
+                GameCandidate(
+                    GameTerm(term.slug, term.title, term.language, categories),
+                    term.content,
+                )
+            } + fromPersonal.map { GameCandidate(it.toGameTerm(), it.content) }
+            ).shuffled()
+    }
+
+    /**
+     * What the decoys for [answer] may be drawn from: every same-language member of its own
+     * categories, the personal catalog, and a random sample of the package. The picker does the
+     * filtering and the counting, and it can only count the categories it is handed - which is why
+     * the category members arrive whole rather than sampled.
+     */
+    private suspend fun optionPoolFor(
+        packageDao: TermDao,
+        personalTerms: List<UserTermEntity>,
+        answer: GameTerm,
+        boostWithCategories: Boolean,
+    ): List<GameTerm> {
+        val categoryMembers = if (boostWithCategories && answer.categories.isNotEmpty()) {
+            packageDao.eligibleOptionsInCategories(answer.categories, answer.language)
+                .groupBy { it.slug }
+                .map { (slug, rows) ->
+                    GameTerm(
+                        slug = slug,
+                        title = rows.first().title,
+                        language = rows.first().language,
+                        categories = rows.map { it.categoryName },
+                    )
+                }
+        } else {
+            emptyList()
+        }
+        val personalOptions = personalTerms
+            .filter { it.language.equals(answer.language, ignoreCase = true) }
+            .map { it.toGameTerm() }
+        val sample = packageDao
+            .randomEligibleOptions(answer.language, answer.slug, OPTION_SAMPLE_SIZE)
+            .map { GameTerm(it.slug, it.title, it.language) }
+        // Category members first: where a term appears twice, the copy carrying its categories is
+        // the one that survives the dedupe.
+        return (categoryMembers + personalOptions + sample).distinctBy { it.slug }
     }
 
     // endregion
@@ -448,6 +578,13 @@ private fun TermEntity.toSummary() = TermSummary(
     language = language,
     status = status,
     origin = TermOrigin.PACKAGE,
+)
+
+private fun UserTermEntity.toGameTerm() = GameTerm(
+    slug = slug,
+    title = title,
+    language = language,
+    categories = categories,
 )
 
 private fun UserTermEntity.toSummary() = TermSummary(

@@ -22,5 +22,9 @@ sealed class CorpusError(message: String, cause: Throwable? = null) : Exception(
 
     class CollectionNotFound(uid: String) : CorpusError("La coleccion ya no existe.")
 
+    /** The catalog cannot furnish a whole round of the mini-game. */
+    class NotEnoughPlayableTerms :
+        CorpusError("No hay suficientes terminos con contenido para armar una partida.")
+
     class Unexpected(cause: Throwable) : CorpusError("Unexpected corpus error", cause)
 }
