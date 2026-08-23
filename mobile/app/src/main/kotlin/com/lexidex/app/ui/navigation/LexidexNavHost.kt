@@ -43,6 +43,9 @@ fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<Knowledg
                 viewModel = viewModel,
                 onTermClick = { slug -> navController.navigate(TermDetailRoute(slug)) },
                 onCreateClick = { navController.navigate(PersonalTermEditorRoute()) },
+                onAddSearchedTerm = { query ->
+                    navController.navigate(PersonalTermEditorRoute(initialTitle = query))
+                },
                 onPlayCincoClick = { navController.navigate(CincoRoute) },
                 onCatalogClick = { navController.navigate(CatalogRoute) },
                 onCollectionsClick = { navController.navigate(CollectionsRoute) },
@@ -130,7 +133,12 @@ fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<Knowledg
         composable<PersonalTermEditorRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<PersonalTermEditorRoute>()
             val viewModel = viewModel<PersonalTermEditorViewModel>(
-                factory = PersonalTermEditorViewModel.factory(repository, route.slug, knowledgeSources),
+                factory = PersonalTermEditorViewModel.factory(
+                    repository,
+                    route.slug,
+                    knowledgeSources,
+                    route.initialTitle,
+                ),
             )
             PersonalTermEditorScreen(
                 viewModel = viewModel,

@@ -57,6 +57,7 @@ class PersonalTermEditorViewModel(
     private val repository: CorpusRepository,
     private val editSlug: String?,
     private val knowledgeSources: List<KnowledgeSource> = emptyList(),
+    initialTitle: String? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(PersonalTermEditorUiState())
     val uiState: StateFlow<PersonalTermEditorUiState> = _uiState.asStateFlow()
@@ -72,7 +73,20 @@ class PersonalTermEditorViewModel(
     val knowledgeSourceName: String? get() = knowledgeSource?.displayName
 
     init {
-        if (editSlug != null) loadForEdit(editSlug)
+        if (editSlug != null) {
+            loadForEdit(editSlug)
+        } else if (!initialTitle.isNullOrBlank()) {
+            // Llegando desde una busqueda sin resultados: el titulo ya esta escrito y la consulta
+            // a la fuente externa tambien. Se abre el buscador pero no se dispara: salir a la red
+            // sigue siendo algo que el usuario pide, no algo que pasa por navegar.
+            _uiState.update {
+                it.copy(
+                    title = initialTitle.trim(),
+                    searchQuery = initialTitle.trim(),
+                    isSearchOpen = knowledgeSource != null,
+                )
+            }
+        }
     }
 
     private fun loadForEdit(slug: String) {
@@ -246,7 +260,10 @@ class PersonalTermEditorViewModel(
             repository: CorpusRepository,
             editSlug: String?,
             knowledgeSources: List<KnowledgeSource>,
+            initialTitle: String? = null,
         ): ViewModelProvider.Factory =
-            viewModelFactoryOf { PersonalTermEditorViewModel(repository, editSlug, knowledgeSources) }
+            viewModelFactoryOf {
+                PersonalTermEditorViewModel(repository, editSlug, knowledgeSources, initialTitle)
+            }
     }
 }

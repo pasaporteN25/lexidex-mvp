@@ -399,6 +399,18 @@ mueven enteras al backend y Android/web pasan a ser solo consumidores)
       `LexidexApplication` ya expone una **lista** de fuentes, no una sola.
       Falta el espejo en Python cuando se haga 5.2.
 
+### Agregado despues: buscar algo que no esta es la forma natural de agregarlo
+
+Pedido el 2026-08-20. Una busqueda sin resultados mostraba un cartel y nada mas.
+Ahora ofrece agregar el termino buscado: el boton lleva al mismo editor que el
+`+`, con el titulo ya escrito y el buscador de Wikipedia abierto con esa misma
+consulta. **No dispara la busqueda sola**: salir a la red sigue siendo algo que
+el usuario pide, no algo que pasa por navegar, que es lo que dice la pantalla de
+opciones sobre las fuentes externas.
+
+Cancelar el dialogo deja el formulario manual con el titulo puesto, asi que el
+camino sin conexion tambien queda mas corto que antes.
+
 ## 6. Pantalla de opciones: de donde sale y donde se guarda la informacion 🔶
 
 Pedido del 2026-08-19. Hoy la respuesta existe pero solo en documentos, no en

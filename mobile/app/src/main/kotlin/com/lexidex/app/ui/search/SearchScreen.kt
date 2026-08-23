@@ -27,6 +27,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -63,6 +65,7 @@ fun SearchScreen(
     viewModel: SearchViewModel,
     onTermClick: (String) -> Unit,
     onCreateClick: () -> Unit,
+    onAddSearchedTerm: (String) -> Unit,
     onPlayCincoClick: () -> Unit,
     onCatalogClick: () -> Unit,
     onCollectionsClick: () -> Unit,
@@ -88,6 +91,7 @@ fun SearchScreen(
         onRandomClick = viewModel::onRandomClick,
         onTermClick = onTermClick,
         onCreateClick = onCreateClick,
+        onAddSearchedTerm = onAddSearchedTerm,
         onPlayCincoClick = onPlayCincoClick,
         onCatalogClick = onCatalogClick,
         onCollectionsClick = onCollectionsClick,
@@ -105,6 +109,7 @@ private fun SearchContent(
     onRandomClick: () -> Unit,
     onTermClick: (String) -> Unit,
     onCreateClick: () -> Unit,
+    onAddSearchedTerm: (String) -> Unit,
     onPlayCincoClick: () -> Unit,
     onCatalogClick: () -> Unit,
     onCollectionsClick: () -> Unit,
@@ -153,7 +158,7 @@ private fun SearchContent(
                     .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.compact),
             )
             if (uiState.showResults) {
-                SearchResults(uiState, onTermClick)
+                SearchResults(uiState, onTermClick, onAddSearchedTerm)
             } else {
                 DailyTermSection(uiState, onTermClick, onPlayCincoClick)
             }
@@ -231,11 +236,15 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit, modifier
 }
 
 @Composable
-private fun SearchResults(uiState: SearchUiState, onTermClick: (String) -> Unit) {
+private fun SearchResults(
+    uiState: SearchUiState,
+    onTermClick: (String) -> Unit,
+    onAddSearchedTerm: (String) -> Unit,
+) {
     when {
         uiState.isSearching -> LoadingBox()
         uiState.errorMessage != null -> MessageBox(uiState.errorMessage)
-        uiState.results.isEmpty() -> MessageBox("Sin resultados para \"${uiState.query}\"")
+        uiState.results.isEmpty() -> NothingFound(uiState.query, onAddSearchedTerm)
         else -> LazyColumn {
             items(uiState.results, key = { it.slug }) { term ->
                 TermRow(
@@ -331,6 +340,40 @@ private fun DailyTermCard(term: TermSummary, onClick: () -> Unit) {
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Buscar algo que no esta es el momento natural para agregarlo: el termino ya esta escrito y la
+ * intencion ya existe. Antes esto era solo un cartel diciendo que no.
+ */
+@Composable
+private fun NothingFound(query: String, onAddSearchedTerm: (String) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(LexidexSpacing.section),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            "Sin resultados para \"$query\"",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            "Todavia no esta en tu catalogo.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = LexidexSpacing.tight),
+        )
+        Button(
+            onClick = { onAddSearchedTerm(query) },
+            modifier = Modifier.padding(top = LexidexSpacing.compact),
+        ) {
+            Text("Agregar \"$query\"")
         }
     }
 }
