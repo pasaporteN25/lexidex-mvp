@@ -417,17 +417,21 @@ mueven enteras al backend y Android/web pasan a ser solo consumidores)
       `LexidexApplication` ya expone una **lista** de fuentes, no una sola.
       Falta el espejo en Python cuando se haga 5.2.
 
-### Agregado despues: buscar algo que no esta es la forma natural de agregarlo
+### Agregado despues de cerrar la epica
 
-Pedido el 2026-08-20. Una busqueda sin resultados mostraba un cartel y nada mas.
-Ahora ofrece agregar el termino buscado: el boton lleva al mismo editor que el
-`+`, con el titulo ya escrito y el buscador de Wikipedia abierto con esa misma
-consulta. **No dispara la busqueda sola**: salir a la red sigue siendo algo que
-el usuario pide, no algo que pasa por navegar, que es lo que dice la pantalla de
-opciones sobre las fuentes externas.
-
-Cancelar el dialogo deja el formulario manual con el titulo puesto, asi que el
-camino sin conexion tambien queda mas corto que antes.
+- [x] **5.9** ✅ Pedido el 2026-08-20: una busqueda sin resultados mostraba un
+      cartel y nada mas. Ahora ofrece agregar el termino buscado, que es el
+      momento natural para hacerlo -el termino ya esta escrito y la intencion ya
+      existe-. El boton lleva al mismo editor que el `+`, con el titulo ya
+      puesto y el buscador de Wikipedia abierto con esa misma consulta.
+      **No dispara la busqueda sola**: salir a la red sigue siendo algo que el
+      usuario pide, no algo que pasa por navegar, que es lo que la pantalla de
+      opciones promete sobre las fuentes externas. Cancelar el dialogo deja el
+      formulario manual con el titulo puesto, asi que el camino sin conexion
+      tambien quedo mas corto.
+      Verificado en el emulador con "kintsugi": aparece la oferta, el editor
+      abre con el titulo y la consulta cargadas, y cancelar deja el formulario
+      listo para llenar a mano.
 
 ## 6. Pantalla de opciones: de donde sale y donde se guarda la informacion 🔶
 
