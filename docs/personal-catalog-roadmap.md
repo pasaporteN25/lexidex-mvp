@@ -76,20 +76,24 @@ saber esto porque cambia el tamano real de la tarea:
 Como project leader dejo esto priorizado, pero es una sugerencia, no una
 imposicion:
 
-Al 2026-08-20 estan cerradas las epicas 1, 2, 3, 5, 7 y 8, mas la epica 6 salvo
-su parte web (6.4).
+Al 2026-08-20 estan cerradas las epicas 1, 2, 3, 7 y 8. La 5 y la 6 estan
+completas salvo por una tarea cada una, agregada o pendiente despues del cierre:
+5.10 y 6.4.
 
 **El minijuego "Cinco" (epica 8) esta terminado y verificado a mano.** Era la
 funcionalidad de esta version mayor, y quedo cerrada el mismo dia en que se
 decidio.
 
-1. **Importar un respaldo** (9.2) - exportar ya se puede desde el 2026-08-20;
+1. **CTA de "agregar lo que buscaste" debajo de los resultados** (5.10) - lo mas
+   chico de la lista y lo que mas se usa: la busqueda de la pantalla principal
+   es la puerta de entrada de todos los dias.
+2. **Importar un respaldo** (9.2) - exportar ya se puede desde el 2026-08-20;
    traerlo de vuelta es lo que falta, y es la mitad dificil.
-2. **Articulo completo** (resto de la epica 4) - el mas grande de los que
+3. **Articulo completo** (resto de la epica 4) - el mas grande de los que
    quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
-3. **Copias fechadas y versionadas del articulo** (epica 10) - empieza barato
+4. **Copias fechadas y versionadas del articulo** (epica 10) - empieza barato
    (10.1 y 10.2 son fechar y mostrar) y se pone cara al final (10.6).
-4. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
+5. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
    al final de la epica 7.
 
 ---
@@ -322,7 +326,7 @@ antes de mostrarlo en vez de solo escaparlo (ya anotado en
 `docs/security-threat-model.md`, seccion "Contenido malicioso"). Hoy el
 contenido es texto plano, que es lo que permite seguir escapando sin sanear.
 
-## 5. Alta de terminos buscando en Wikipedia en vez de pegar un link ✅
+## 5. Alta de terminos buscando en Wikipedia en vez de pegar un link 🔶
 
 **Completada el 2026-08-19**, en las dos plataformas. Queda como trabajo
 futuro, no bloqueante: sumar una segunda fuente de conocimiento implementando
@@ -419,6 +423,10 @@ mueven enteras al backend y Android/web pasan a ser solo consumidores)
 
 ### Agregado despues de cerrar la epica
 
+Las tareas 5.1 a 5.8 se cerraron el 2026-08-19 y la epica quedo terminada. Lo
+que sigue son puertas de entrada nuevas al mismo flujo, pedidas despues, y son
+la razon de que el encabezado haya vuelto a 🔶.
+
 - [x] **5.9** ✅ Pedido el 2026-08-20: una busqueda sin resultados mostraba un
       cartel y nada mas. Ahora ofrece agregar el termino buscado, que es el
       momento natural para hacerlo -el termino ya esta escrito y la intencion ya
@@ -432,6 +440,16 @@ mueven enteras al backend y Android/web pasan a ser solo consumidores)
       Verificado en el emulador con "kintsugi": aparece la oferta, el editor
       abre con el titulo y la consulta cargadas, y cancelar deja el formulario
       listo para llenar a mano.
+- [ ] **5.10** _(Sonnet 5 · S)_ La misma oferta, pero **debajo de la lista de
+      resultados** de la lupa de la pantalla principal, no solo cuando la
+      busqueda no devolvio nada. Encontrar algo no quiere decir haber encontrado
+      lo que se buscaba: buscar "tango" y que aparezcan tres terminos que no son
+      el que uno queria es exactamente el caso donde hoy no hay ninguna salida,
+      porque 5.9 solo aparece con la lista vacia.
+      Va al final del listado, separada de los resultados y mas discreta que la
+      de 5.9 -ahi es la unica accion posible, aca compite con los resultados
+      reales-, y lleva al mismo lugar: el editor con el titulo escrito y el
+      buscador de la fuente externa cargado con esa consulta.
 
 ## 6. Pantalla de opciones: de donde sale y donde se guarda la informacion 🔶
 
