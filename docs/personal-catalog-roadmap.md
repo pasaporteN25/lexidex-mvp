@@ -9,6 +9,22 @@ ruta general del proyecto) y con `docs/decisions/0002-personal-catalog-overlay.m
 archivo es el backlog de producto de ese catalogo personal en particular, mas
 detallado y mas vivo que esos dos.
 
+## Para que es esto
+
+Recordado por Lucas el 2026-08-20, y vale como criterio para ordenar el backlog:
+Lexidex es **una agenda de terminos personal** y **una fuente de conocimiento
+desconectada de internet para consulta rapida**. De ahi salen dos consecuencias
+que ya decidieron cosas:
+
+- **Estar sin conexion es el producto, no una limitacion.** El paquete viaja con
+  la aplicacion y las fuentes externas se consultan solo cuando el usuario lo
+  pide explicitamente al crear un termino. Cualquier cosa que haga que una
+  consulta normal dependa de la red va en contra del sentido del asunto.
+- **La mitad personal es la que el usuario no puede recuperar.** El paquete se
+  reinstala; los terminos propios, favoritos, historial y colecciones no existen
+  en ningun otro lado. Por eso el respaldo (epica 9) pesa mas que agregar
+  capacidad nueva.
+
 Convencion de estado, igual que en `docs/roadmap.md` y `mobile/README.md`:
 ✅ hecho y verificado · 🔶 en progreso · ⬜ pendiente.
 
@@ -71,7 +87,9 @@ decidio.
    traerlo de vuelta es lo que falta, y es la mitad dificil.
 2. **Articulo completo** (resto de la epica 4) - el mas grande de los que
    quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
-3. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
+3. **Copias fechadas y versionadas del articulo** (epica 10) - empieza barato
+   (10.1 y 10.2 son fechar y mostrar) y se pone cara al final (10.6).
+4. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
    al final de la epica 7.
 
 ---
@@ -743,6 +761,70 @@ activado y no es algo que se pueda ver ni verificar.
       decidir que hace con una referencia colgada: omitirla es lo unico que no
       rompe nada.
 
+## 10. Copias fechadas del articulo, y mas de una ⬜
+
+Pedido el 2026-08-20. Hoy cada termino guarda **una** copia del extracto y
+**ninguna fecha**: no hay forma de saber de cuando es lo que se lee, ni de
+conservar la version anterior cuando el articulo de origen cambia. La idea es
+que el usuario pueda tener varias copias del mismo termino, ver de cuando es
+cada una, elegir con cual se queda, borrar las que no quiere y actualizar a
+mano.
+
+**Lo que se midio antes de planificar** (2026-08-20, sobre el paquete v0.4.0):
+
+- `sources.retrieved_at` esta **vacio en los 4.539 sources**. La columna existe
+  en `docs/corpus-schema.sql` pero `tools/enrich_corpus.py` nunca la escribio,
+  asi que hoy no hay ninguna fecha por articulo que mostrar. Lo unico fechado es
+  `package_meta.created_at`, que es cuando se construyo el paquete entero.
+- En el mismo lugar aparecio que `package_meta.package_version` dice
+  `0.2.0-seed.1` dentro del paquete v0.4.0: el enriquecimiento no actualizo esa
+  fila. La pantalla de opciones muestra la version correcta porque la lee del
+  manifiesto, no de ahi.
+
+**Donde viven las copias.** El paquete es de solo lectura y se reemplaza entero
+cuando llega una version nueva (ADR 0002), asi que las copias adicionales de un
+articulo del paquete **no pueden guardarse ahi**: van en la base de usuario,
+como una capa encima, referenciando por slug + origen igual que favoritos y
+colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
+
+### Tareas
+
+- [ ] **10.1** _(Sonnet 5 · M)_ Fechar la copia en origen: que
+      `tools/enrich_corpus.py` escriba `sources.retrieved_at` y
+      `sources.content_sha256`, que ya existen en el esquema y estan vacias.
+      Implica volver a correr el enriquecimiento y cortar un paquete nuevo. Sin
+      esto no hay fecha que mostrar. De paso, corregir `package_meta` para que
+      la version que guarda el paquete sea la del paquete.
+- [ ] **10.2** _(Haiku 4.5 · S)_ Mostrar esa fecha en la ficha ("Copia del
+      19/08/2026") en Android y en la web. Es leer un campo que ya viaja.
+- [ ] **10.3** _(Opus 5 · L)_ Tabla de versiones en la base de usuario:
+      contenido, resumen, fecha de captura, sha256 y cual esta activa, por slug
+      + origen. Migracion 2 -> 3 escrita a mano, como la de colecciones.
+      **Decision que hay que tomar aca**: el indice FTS del paquete se armo con
+      el texto del paquete, asi que una copia mas nueva guardada como capa **no
+      seria buscable** salvo que se indexe tambien. Hay que decidir si la
+      busqueda sigue al contenido activo o al empaquetado antes de escribir la
+      tabla.
+- [ ] **10.4** _(Sonnet 5 · M)_ Actualizar **un** termino desde su ficha:
+      pedirlo a la fuente, comparar sha256 con la copia que ya hay, y guardar
+      una version nueva solo si cambio. Si no cambio, decirlo ("sin cambios
+      desde el 19/08") en vez de duplicar. Es la unidad que pidio Lucas para no
+      obligar a actualizar todo.
+- [ ] **10.5** _(Sonnet 5 · M)_ Lista de copias en la ficha: fechas, cual esta
+      activa, elegir otra, borrar una. Borrar la activa deja activa la mas
+      reciente que quede.
+- [ ] **10.6** _(Opus 5 · L)_ Actualizacion masiva desde opciones, y es la
+      tarea pesada: **por lotes, lenta, asincronica, cancelable y capaz de
+      retomar**. El antecedente esta medido en la epica 4: ~4.500 pedidos
+      sueltos hacen que Wikipedia devuelva 429 muy rapido (39 de 60 fallaron en
+      la primera prueba) y la Action API acepta 20 titulos por consulta. En el
+      telefono hay ademas dos decisiones sin tomar: donde corre (hoy no hay
+      WorkManager en el proyecto) y cuanto espacio se permite gastar, porque
+      guardar varias copias multiplica los 10 MB que ya ocupa el paquete.
+- [ ] **10.7** _(Sonnet 5 · M)_ Verificar a mano: actualizar un termino que
+      cambio, uno que no, quedarse con una copia vieja, borrar otra, y correr
+      una actualizacion masiva cortandola por la mitad para ver que retoma.
+
 ## Preguntas abiertas (para decidir antes de picar codigo, no para un modelo chico)
 
 (La de la epica 5, opcion A contra B, se decidio el 2026-08-19 por la A y ya
@@ -753,3 +835,7 @@ esta implementada: ver 5.1.)
   atribucion CC BY-SA antes de guardarlo.
 - Epica 3: si "colecciones" en algun momento necesita compartirse entre
   dispositivos (hoy no, ver 3.1).
+- Epica 10: cuantas copias por termino se guardan como maximo y cuanto espacio
+  se permite gastar; si la busqueda sigue al contenido activo o al empaquetado
+  (ver 10.3); y como se atribuye CC BY-SA cuando se guardan varias copias
+  fechadas del mismo articulo.
