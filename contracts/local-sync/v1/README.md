@@ -20,6 +20,17 @@ El endpoint queda en localhost hasta que 9.6 incorpore TLS, pairing y una
 credencial revocable por dispositivo. Ningun campo de este JSON es una
 credencial.
 
+## Persistencia compatible
+
+El esquema personal v3 que deja 9.4 esta fijado en
+[`storage-schema.json`](storage-schema.json). Python/SQLite y Room deben exponer
+las mismas ocho tablas sincronizables y de control. Favoritos, historial y
+miembros conservan filas ausentes mediante `is_present` y una `revision`; los
+borrados de terminos y colecciones se retienen en `sync_tombstones`. El journal
+es monotono y `(source_device_id, change_id)` es unico. `updated_at`, `at` y
+fechas de retencion siguen siendo metadata: ninguna consulta de persistencia
+las usa para decidir que revision gana.
+
 ## Identificadores
 
 | Campo | Forma v1 | Semantica |

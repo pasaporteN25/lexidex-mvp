@@ -10,7 +10,6 @@ import com.lexidex.app.data.userdb.UserDatabaseProvider
 import com.lexidex.app.data.userdb.LexidexUserDatabase
 import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.CollectionEntity
-import com.lexidex.app.data.userdb.entity.HistoryEntryEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 import com.lexidex.app.domain.CatalogFilter
 import com.lexidex.app.domain.HistoryItem
@@ -432,18 +431,16 @@ class CorpusRepository(
         }
         plan.historyToAdd.forEach { reference ->
             database.historyDao().record(
-                HistoryEntryEntity(
-                    termSlug = reference.slug,
-                    termOrigin = reference.origin.toTermOrigin(),
-                    viewedAt = reference.at,
-                ),
+                slug = reference.slug,
+                origin = reference.origin.toTermOrigin(),
+                viewedAt = reference.at,
             )
         }
         plan.membersToAdd.forEach { member ->
-            val collectionId = collectionDao.findByUid(member.collectionUid)?.id
+            collectionDao.findByUid(member.collectionUid)
                 ?: throw CorpusError.CollectionNotFound(member.collectionUid)
             collectionDao.addMember(
-                collectionId = collectionId,
+                collectionUid = member.collectionUid,
                 slug = member.reference.slug,
                 origin = member.reference.origin.toTermOrigin(),
                 addedAt = member.reference.at,
@@ -505,12 +502,19 @@ class CorpusRepository(
     }
 
     suspend fun deletePersonalTerm(slug: String): Result<Unit> = corpusResult {
-        if (userTermDao().deleteBySlug(slug) == 0) {
-            throw CorpusError.PersonalTermNotFound(slug)
+        val database = userDatabaseProvider.get()
+        database.withWriteTransaction {
+            val now = nowIso()
+            val collections = database.collectionDao()
+                .uidsContaining(slug, TermOrigin.PERSONAL)
+            if (database.userTermDao().deleteBySlug(slug) == 0) {
+                throw CorpusError.PersonalTermNotFound(slug)
+            }
+            database.favoriteDao().remove(slug, TermOrigin.PERSONAL, now)
+            database.historyDao().deleteByTerm(slug, TermOrigin.PERSONAL, now)
+            database.collectionDao().removeTermEverywhere(slug, TermOrigin.PERSONAL, now)
+            collections.forEach { database.collectionDao().touch(it, now) }
         }
-        favoriteDao().remove(slug, TermOrigin.PERSONAL)
-        historyDao().deleteByTerm(slug, TermOrigin.PERSONAL)
-        collectionDao().removeTermEverywhere(slug, TermOrigin.PERSONAL)
     }
 
     private suspend fun requireNoDuplicate(normalizedTitle: String, language: String, excludeUid: String?) {
@@ -606,7 +610,7 @@ class CorpusRepository(
     suspend fun toggleFavorite(slug: String, origin: TermOrigin): Result<Boolean> = corpusResult {
         val dao = favoriteDao()
         if (dao.find(slug, origin) != null) {
-            dao.remove(slug, origin)
+            dao.remove(slug, origin, nowIso())
             false
         } else {
             dao.add(slug, origin, nowIso())
@@ -666,8 +670,7 @@ class CorpusRepository(
 
     suspend fun deleteCollection(uid: String): Result<Unit> = corpusResult {
         val dao = collectionDao()
-        val collection = dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
-        collection.id?.let { dao.deleteMembers(it) }
+        dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
         dao.deleteByUid(uid)
     }
 
@@ -678,7 +681,7 @@ class CorpusRepository(
     suspend fun getCollection(uid: String): Result<TermCollectionDetail> = corpusResult {
         val dao = collectionDao()
         val collection = dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
-        val terms = dao.members(collection.id ?: 0L)
+        val terms = dao.members(collection.uid)
             .mapNotNull { resolveSummary(it.termSlug, it.termOrigin) }
         TermCollectionDetail(collection.uid, collection.name, terms)
     }
@@ -692,10 +695,20 @@ class CorpusRepository(
         origin: TermOrigin,
         member: Boolean,
     ): Result<Unit> = corpusResult {
-        val dao = collectionDao()
-        val collection = dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
-        val id = collection.id ?: throw CorpusError.CollectionNotFound(uid)
-        if (member) dao.addMember(id, slug, origin, nowIso()) else dao.removeMember(id, slug, origin)
+        val database = userDatabaseProvider.get()
+        database.withWriteTransaction {
+            val dao = database.collectionDao()
+            dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
+            if (dao.isMember(uid, slug, origin) != member) {
+                val now = nowIso()
+                if (member) {
+                    dao.addMember(uid, slug, origin, now)
+                } else {
+                    dao.removeMember(uid, slug, origin, now)
+                }
+                dao.touch(uid, now)
+            }
+        }
     }
 
     // endregion
@@ -703,7 +716,7 @@ class CorpusRepository(
     // region History
 
     suspend fun recordHistoryView(slug: String, origin: TermOrigin): Result<Unit> = corpusResult {
-        historyDao().record(HistoryEntryEntity(termSlug = slug, termOrigin = origin, viewedAt = nowIso()))
+        historyDao().record(slug, origin, nowIso())
     }
 
     suspend fun listRecentHistory(limit: Int = DEFAULT_HISTORY_LIMIT): Result<List<HistoryItem>> = corpusResult {

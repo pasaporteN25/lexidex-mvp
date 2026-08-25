@@ -2,9 +2,7 @@ package com.lexidex.app.data.userdb.dao
 
 import androidx.room3.ColumnInfo
 import androidx.room3.Dao
-import androidx.room3.Insert
 import androidx.room3.Query
-import com.lexidex.app.data.userdb.entity.HistoryEntryEntity
 import com.lexidex.app.domain.TermOrigin
 
 data class RecentHistoryRow(
@@ -15,15 +13,26 @@ data class RecentHistoryRow(
 
 @Dao
 interface HistoryDao {
-    @Insert
-    suspend fun record(entry: HistoryEntryEntity)
+    @Query(
+        """
+        INSERT INTO history_entries(
+          term_slug, term_origin, viewed_at, updated_at, is_present, revision
+        ) VALUES (:slug, :origin, :viewedAt, :viewedAt, 1, 1)
+        ON CONFLICT(term_slug, term_origin) DO UPDATE SET
+          viewed_at = excluded.viewed_at,
+          updated_at = excluded.updated_at,
+          is_present = 1,
+          revision = history_entries.revision + 1
+        """,
+    )
+    suspend fun record(slug: String, origin: TermOrigin, viewedAt: String)
 
     /** One row per term, collapsed to its latest view, most recent first. */
     @Query(
         """
-        SELECT term_slug, term_origin, MAX(viewed_at) AS viewed_at
+        SELECT term_slug, term_origin, viewed_at
         FROM history_entries
-        GROUP BY term_slug, term_origin
+        WHERE is_present = 1
         ORDER BY viewed_at DESC
         LIMIT :limit
         """,
@@ -36,18 +45,24 @@ interface HistoryDao {
      */
     @Query(
         """
-        SELECT term_slug, term_origin, MAX(viewed_at) AS viewed_at
+        SELECT term_slug, term_origin, viewed_at
         FROM history_entries
-        GROUP BY term_slug, term_origin
+        WHERE is_present = 1
         ORDER BY viewed_at DESC
         """,
     )
     suspend fun listAllForBackup(): List<RecentHistoryRow>
 
-    @Query("DELETE FROM history_entries WHERE term_slug = :slug AND term_origin = :origin")
-    suspend fun deleteByTerm(slug: String, origin: TermOrigin)
+    @Query(
+        """
+        UPDATE history_entries
+        SET is_present = 0, updated_at = :updatedAt, revision = revision + 1
+        WHERE term_slug = :slug AND term_origin = :origin AND is_present = 1
+        """,
+    )
+    suspend fun deleteByTerm(slug: String, origin: TermOrigin, updatedAt: String): Int
 
     /** Terminos distintos vistos, no visitas: es lo que la pantalla de historial muestra. */
-    @Query("SELECT COUNT(DISTINCT term_slug || '|' || term_origin) FROM history_entries")
+    @Query("SELECT COUNT(*) FROM history_entries WHERE is_present = 1")
     suspend fun countDistinctTerms(): Long
 }

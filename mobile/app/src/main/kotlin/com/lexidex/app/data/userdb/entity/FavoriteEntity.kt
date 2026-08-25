@@ -15,4 +15,7 @@ data class FavoriteEntity(
     @ColumnInfo(name = "term_slug") val termSlug: String,
     @ColumnInfo(name = "term_origin") val termOrigin: TermOrigin,
     @ColumnInfo(name = "created_at") val createdAt: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: String = createdAt,
+    @ColumnInfo(name = "is_present", defaultValue = "1") val isPresent: Boolean = true,
+    @ColumnInfo(defaultValue = "1") val revision: Long = 1,
 )

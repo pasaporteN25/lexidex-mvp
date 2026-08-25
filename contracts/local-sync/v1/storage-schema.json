@@ -1,0 +1,37 @@
+{
+  "schema_version": 3,
+  "tables": {
+    "user_terms": {
+      "primary_key": ["id"],
+      "columns": ["id", "uid", "slug", "title", "normalized_title", "language", "kind", "status", "summary", "content", "source_url", "categories_json", "tags_json", "notes", "revision", "created_at", "updated_at"]
+    },
+    "favorites": {
+      "primary_key": ["term_slug", "term_origin"],
+      "columns": ["term_slug", "term_origin", "created_at", "updated_at", "is_present", "revision"]
+    },
+    "history_entries": {
+      "primary_key": ["term_slug", "term_origin"],
+      "columns": ["term_slug", "term_origin", "viewed_at", "updated_at", "is_present", "revision"]
+    },
+    "collections": {
+      "primary_key": ["id"],
+      "columns": ["id", "uid", "name", "normalized_name", "created_at", "updated_at", "revision"]
+    },
+    "collection_terms": {
+      "primary_key": ["collection_uid", "term_slug", "term_origin"],
+      "columns": ["collection_uid", "term_slug", "term_origin", "added_at", "updated_at", "is_present", "revision"]
+    },
+    "sync_journal": {
+      "primary_key": ["cursor"],
+      "columns": ["cursor", "source_device_id", "change_id", "entity_type", "entity_id_json", "operation", "revision", "payload_version", "changed_at", "payload_json"]
+    },
+    "sync_replica_cursors": {
+      "primary_key": ["device_id"],
+      "columns": ["device_id", "last_applied_cursor", "updated_at"]
+    },
+    "sync_tombstones": {
+      "primary_key": ["entity_type", "entity_id_json"],
+      "columns": ["entity_type", "entity_id_json", "revision", "cursor", "deleted_at", "purge_after"]
+    }
+  }
+}

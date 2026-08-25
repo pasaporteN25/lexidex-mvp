@@ -17,4 +17,5 @@ data class CollectionEntity(
     @ColumnInfo(name = "normalized_name") val normalizedName: String,
     @ColumnInfo(name = "created_at") val createdAt: String,
     @ColumnInfo(name = "updated_at") val updatedAt: String,
+    @ColumnInfo(defaultValue = "1") val revision: Long = 1,
 )

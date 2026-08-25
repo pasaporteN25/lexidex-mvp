@@ -101,6 +101,8 @@ CREATE TABLE IF NOT EXISTS term_relations (
 """
 
 
+USER_SCHEMA_VERSION = 3
+
 USER_SCHEMA = """
 PRAGMA foreign_keys = ON;
 
@@ -110,22 +112,30 @@ PRAGMA foreign_keys = ON;
 -- a un termino del paquete como a uno propio, que estan en bases distintas.
 CREATE TABLE IF NOT EXISTS collections (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  uid TEXT NOT NULL UNIQUE,
+  uid TEXT NOT NULL,
   name TEXT NOT NULL,
-  normalized_name TEXT NOT NULL UNIQUE,
+  normalized_name TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0)
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS index_collections_uid ON collections(uid);
+CREATE UNIQUE INDEX IF NOT EXISTS index_collections_normalized_name
+  ON collections(normalized_name);
+
 CREATE TABLE IF NOT EXISTS collection_terms (
-  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  collection_uid TEXT NOT NULL REFERENCES collections(uid) ON DELETE CASCADE,
   term_slug TEXT NOT NULL,
   term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
   added_at TEXT NOT NULL,
-  PRIMARY KEY (collection_id, term_slug, term_origin)
+  updated_at TEXT NOT NULL,
+  is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  PRIMARY KEY (collection_uid, term_slug, term_origin)
 );
 
-CREATE INDEX IF NOT EXISTS idx_collection_terms_term
+CREATE INDEX IF NOT EXISTS index_collection_terms_term_slug_term_origin
   ON collection_terms(term_slug, term_origin);
 
 CREATE TABLE IF NOT EXISTS user_terms (
@@ -153,6 +163,73 @@ CREATE TABLE IF NOT EXISTS user_terms (
 CREATE INDEX IF NOT EXISTS idx_user_terms_language_title
   ON user_terms(language, normalized_title);
 CREATE INDEX IF NOT EXISTS idx_user_terms_status ON user_terms(status);
+
+CREATE TABLE IF NOT EXISTS favorites (
+  term_slug TEXT NOT NULL,
+  term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  PRIMARY KEY (term_slug, term_origin)
+);
+
+CREATE TABLE IF NOT EXISTS history_entries (
+  term_slug TEXT NOT NULL,
+  term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+  viewed_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  PRIMARY KEY (term_slug, term_origin)
+);
+
+CREATE INDEX IF NOT EXISTS index_history_entries_term_slug_term_origin
+  ON history_entries(term_slug, term_origin);
+
+CREATE TABLE IF NOT EXISTS sync_journal (
+  cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_device_id TEXT NOT NULL,
+  change_id TEXT NOT NULL,
+  entity_type TEXT NOT NULL CHECK (
+    entity_type IN ('personal_term', 'favorite', 'history', 'collection', 'collection_member')
+  ),
+  entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
+  operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  payload_version INTEGER NOT NULL DEFAULT 1 CHECK (payload_version = 1),
+  changed_at TEXT NOT NULL,
+  payload_json TEXT CHECK (payload_json IS NULL OR json_valid(payload_json)),
+  CHECK (
+    (operation = 'delete' AND payload_json IS NULL) OR
+    (operation = 'upsert' AND payload_json IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS index_sync_journal_source_device_id_change_id
+  ON sync_journal(source_device_id, change_id);
+CREATE INDEX IF NOT EXISTS index_sync_journal_entity_type_entity_id_json
+  ON sync_journal(entity_type, entity_id_json);
+
+CREATE TABLE IF NOT EXISTS sync_replica_cursors (
+  device_id TEXT PRIMARY KEY,
+  last_applied_cursor INTEGER NOT NULL DEFAULT 0 CHECK (last_applied_cursor >= 0),
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_tombstones (
+  entity_type TEXT NOT NULL CHECK (
+    entity_type IN ('personal_term', 'favorite', 'history', 'collection', 'collection_member')
+  ),
+  entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  cursor INTEGER NOT NULL CHECK (cursor > 0),
+  deleted_at TEXT NOT NULL,
+  purge_after TEXT NOT NULL,
+  PRIMARY KEY (entity_type, entity_id_json)
+);
+
+CREATE INDEX IF NOT EXISTS index_sync_tombstones_cursor ON sync_tombstones(cursor);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS user_terms_fts USING fts5(
   title,
@@ -196,7 +273,7 @@ CREATE TRIGGER IF NOT EXISTS user_terms_au AFTER UPDATE ON user_terms BEGIN
   );
 END;
 
-PRAGMA user_version = 1;
+PRAGMA user_version = 3;
 """
 
 
@@ -257,20 +334,323 @@ def connect_user(db_path):
     return connect(db_path, readonly=False)
 
 
+def table_columns(conn, table):
+    return {row["name"] for row in conn.execute(f'PRAGMA table_info("{table}")')}
+
+
+def add_column_if_missing(conn, table, column, declaration):
+    if column not in table_columns(conn, table):
+        conn.execute(f'ALTER TABLE "{table}" ADD COLUMN {column} {declaration}')
+
+
+def ensure_sync_storage_tables(conn):
+    statements = (
+        """
+        CREATE TABLE IF NOT EXISTS favorites (
+          term_slug TEXT NOT NULL,
+          term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+          revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+          PRIMARY KEY (term_slug, term_origin)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS history_entries (
+          term_slug TEXT NOT NULL,
+          term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+          viewed_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+          revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+          PRIMARY KEY (term_slug, term_origin)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS collection_terms (
+          collection_uid TEXT NOT NULL REFERENCES collections(uid) ON DELETE CASCADE,
+          term_slug TEXT NOT NULL,
+          term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+          added_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+          revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+          PRIMARY KEY (collection_uid, term_slug, term_origin)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS sync_journal (
+          cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+          source_device_id TEXT NOT NULL,
+          change_id TEXT NOT NULL,
+          entity_type TEXT NOT NULL CHECK (
+            entity_type IN ('personal_term', 'favorite', 'history', 'collection', 'collection_member')
+          ),
+          entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
+          operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
+          revision INTEGER NOT NULL CHECK (revision > 0),
+          payload_version INTEGER NOT NULL DEFAULT 1 CHECK (payload_version = 1),
+          changed_at TEXT NOT NULL,
+          payload_json TEXT CHECK (payload_json IS NULL OR json_valid(payload_json)),
+          CHECK (
+            (operation = 'delete' AND payload_json IS NULL) OR
+            (operation = 'upsert' AND payload_json IS NOT NULL)
+          )
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS sync_replica_cursors (
+          device_id TEXT PRIMARY KEY,
+          last_applied_cursor INTEGER NOT NULL DEFAULT 0 CHECK (last_applied_cursor >= 0),
+          updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS sync_tombstones (
+          entity_type TEXT NOT NULL CHECK (
+            entity_type IN ('personal_term', 'favorite', 'history', 'collection', 'collection_member')
+          ),
+          entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
+          revision INTEGER NOT NULL CHECK (revision > 0),
+          cursor INTEGER NOT NULL CHECK (cursor > 0),
+          deleted_at TEXT NOT NULL,
+          purge_after TEXT NOT NULL,
+          PRIMARY KEY (entity_type, entity_id_json)
+        )
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS index_collections_uid ON collections(uid)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS index_collections_normalized_name ON collections(normalized_name)",
+        "CREATE INDEX IF NOT EXISTS index_collection_terms_term_slug_term_origin ON collection_terms(term_slug, term_origin)",
+        "CREATE INDEX IF NOT EXISTS index_history_entries_term_slug_term_origin ON history_entries(term_slug, term_origin)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS index_sync_journal_source_device_id_change_id ON sync_journal(source_device_id, change_id)",
+        "CREATE INDEX IF NOT EXISTS index_sync_journal_entity_type_entity_id_json ON sync_journal(entity_type, entity_id_json)",
+        "CREATE INDEX IF NOT EXISTS index_sync_tombstones_cursor ON sync_tombstones(cursor)",
+    )
+    for statement in statements:
+        conn.execute(statement)
+
+
+def ensure_user_term_search_schema(conn):
+    conn.execute(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS user_terms_fts USING fts5(
+          title, normalized_title, summary, content, tags_json,
+          content='user_terms', content_rowid='id',
+          tokenize='unicode61 remove_diacritics 2'
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS user_terms_ai AFTER INSERT ON user_terms BEGIN
+          INSERT INTO user_terms_fts(rowid, title, normalized_title, summary, content, tags_json)
+          VALUES (new.id, new.title, new.normalized_title, new.summary, new.content, new.tags_json);
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS user_terms_ad AFTER DELETE ON user_terms BEGIN
+          INSERT INTO user_terms_fts(user_terms_fts, rowid, title, normalized_title, summary, content, tags_json)
+          VALUES ('delete', old.id, old.title, old.normalized_title, old.summary, old.content, old.tags_json);
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS user_terms_au AFTER UPDATE ON user_terms BEGIN
+          INSERT INTO user_terms_fts(user_terms_fts, rowid, title, normalized_title, summary, content, tags_json)
+          VALUES ('delete', old.id, old.title, old.normalized_title, old.summary, old.content, old.tags_json);
+          INSERT INTO user_terms_fts(rowid, title, normalized_title, summary, content, tags_json)
+          VALUES (new.id, new.title, new.normalized_title, new.summary, new.content, new.tags_json);
+        END
+        """
+    )
+
+
+def validate_user_database(conn):
+    foreign_key_problem = conn.execute("PRAGMA foreign_key_check").fetchone()
+    if foreign_key_problem is not None:
+        raise sqlite3.IntegrityError(
+            f"foreign key violation in {foreign_key_problem['table']}"
+        )
+    result = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    if result != "ok":
+        raise sqlite3.DatabaseError(f"user database integrity check failed: {result}")
+
+
+def migrate_user_database_to_v3(conn):
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if not has_table(conn, "user_terms"):
+            raise sqlite3.DatabaseError("legacy user database has no user_terms table")
+
+        if not has_table(conn, "collections"):
+            conn.execute(
+                """
+                CREATE TABLE collections (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  uid TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  normalized_name TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0)
+                )
+                """
+            )
+
+        add_column_if_missing(
+            conn, "user_terms", "revision", "INTEGER NOT NULL DEFAULT 1"
+        )
+        add_column_if_missing(
+            conn,
+            "collections",
+            "revision",
+            "INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0)",
+        )
+
+        if has_table(conn, "favorites"):
+            invalid_favorites = conn.execute(
+                "SELECT COUNT(*) FROM favorites WHERE term_origin NOT IN ('package', 'personal')"
+            ).fetchone()[0]
+            if invalid_favorites:
+                raise sqlite3.IntegrityError(
+                    "favorites contains an invalid term_origin; migration aborted"
+                )
+            add_column_if_missing(
+                conn, "favorites", "updated_at", "TEXT NOT NULL DEFAULT ''"
+            )
+            conn.execute("UPDATE favorites SET updated_at = created_at WHERE updated_at = ''")
+            add_column_if_missing(
+                conn,
+                "favorites",
+                "is_present",
+                "INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1))",
+            )
+            add_column_if_missing(
+                conn,
+                "favorites",
+                "revision",
+                "INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0)",
+            )
+
+        if has_table(conn, "history_entries") and "id" in table_columns(
+            conn, "history_entries"
+        ):
+            invalid_history = conn.execute(
+                "SELECT COUNT(*) FROM history_entries WHERE term_origin NOT IN ('package', 'personal')"
+            ).fetchone()[0]
+            if invalid_history:
+                raise sqlite3.IntegrityError(
+                    "history_entries contains an invalid term_origin; migration aborted"
+                )
+            conn.execute(
+                """
+                CREATE TABLE history_entries_v3 (
+                  term_slug TEXT NOT NULL,
+                  term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+                  viewed_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+                  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+                  PRIMARY KEY (term_slug, term_origin)
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO history_entries_v3(
+                  term_slug, term_origin, viewed_at, updated_at, is_present, revision
+                )
+                SELECT term_slug, term_origin, MAX(viewed_at), MAX(viewed_at), 1, 1
+                FROM history_entries
+                GROUP BY term_slug, term_origin
+                """
+            )
+            conn.execute("DROP TABLE history_entries")
+            conn.execute("ALTER TABLE history_entries_v3 RENAME TO history_entries")
+
+        if has_table(conn, "collection_terms") and "collection_id" in table_columns(
+            conn, "collection_terms"
+        ):
+            orphan_count = conn.execute(
+                """
+                SELECT COUNT(*) FROM collection_terms ct
+                LEFT JOIN collections c ON c.id = ct.collection_id
+                WHERE c.id IS NULL
+                """
+            ).fetchone()[0]
+            if orphan_count:
+                raise sqlite3.IntegrityError(
+                    "collection_terms contains orphan rows; migration aborted"
+                )
+            invalid_members = conn.execute(
+                "SELECT COUNT(*) FROM collection_terms WHERE term_origin NOT IN ('package', 'personal')"
+            ).fetchone()[0]
+            if invalid_members:
+                raise sqlite3.IntegrityError(
+                    "collection_terms contains an invalid term_origin; migration aborted"
+                )
+            conn.execute(
+                """
+                CREATE TABLE collection_terms_v3 (
+                  collection_uid TEXT NOT NULL REFERENCES collections(uid) ON DELETE CASCADE,
+                  term_slug TEXT NOT NULL,
+                  term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+                  added_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+                  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+                  PRIMARY KEY (collection_uid, term_slug, term_origin)
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO collection_terms_v3(
+                  collection_uid, term_slug, term_origin, added_at, updated_at,
+                  is_present, revision
+                )
+                SELECT c.uid, ct.term_slug, ct.term_origin, ct.added_at, ct.added_at, 1, 1
+                FROM collection_terms ct
+                JOIN collections c ON c.id = ct.collection_id
+                """
+            )
+            conn.execute("DROP TABLE collection_terms")
+            conn.execute("ALTER TABLE collection_terms_v3 RENAME TO collection_terms")
+
+        ensure_sync_storage_tables(conn)
+        ensure_user_term_search_schema(conn)
+        conn.execute("INSERT INTO user_terms_fts(user_terms_fts) VALUES ('rebuild')")
+        validate_user_database(conn)
+        conn.execute(f"PRAGMA user_version = {USER_SCHEMA_VERSION}")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def initialize_user_database(db_path):
     path = Path(db_path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = connect_user(path)
     try:
-        conn.executescript(USER_SCHEMA)
-        columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(user_terms)")
-        }
-        if "revision" not in columns:
-            conn.execute(
-                "ALTER TABLE user_terms ADD COLUMN revision INTEGER NOT NULL DEFAULT 1"
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        has_personal_data = any(
+            has_table(conn, table)
+            for table in ("user_terms", "favorites", "history_entries", "collections")
+        )
+        if version == 0 and not has_personal_data:
+            conn.executescript(USER_SCHEMA)
+        elif version < USER_SCHEMA_VERSION:
+            migrate_user_database_to_v3(conn)
+        elif version > USER_SCHEMA_VERSION:
+            raise sqlite3.DatabaseError(
+                f"user database version {version} is newer than supported version {USER_SCHEMA_VERSION}"
             )
-        conn.commit()
+        validate_user_database(conn)
     finally:
         conn.close()
 
@@ -1168,10 +1548,53 @@ def update_personal_term(package_conn, user_conn, slug, payload):
 
 
 def delete_personal_term(user_conn, slug):
-    cursor = user_conn.execute("DELETE FROM user_terms WHERE slug = ?", (slug,))
-    if not cursor.rowcount:
-        raise ApiError(404, "not_found", "El termino personal no existe.")
-    user_conn.commit()
+    now = utc_now()
+    with user_conn:
+        term = user_conn.execute(
+            "SELECT uid FROM user_terms WHERE slug = ?", (slug,)
+        ).fetchone()
+        if term is None:
+            raise ApiError(404, "not_found", "El termino personal no existe.")
+        affected_collections = user_conn.execute(
+            """
+            SELECT collection_uid FROM collection_terms
+            WHERE term_slug = ? AND term_origin = 'personal' AND is_present = 1
+            """,
+            (slug,),
+        ).fetchall()
+        user_conn.execute("DELETE FROM user_terms WHERE uid = ?", (term["uid"],))
+        user_conn.execute(
+            """
+            UPDATE favorites
+            SET is_present = 0, updated_at = ?, revision = revision + 1
+            WHERE term_slug = ? AND term_origin = 'personal' AND is_present = 1
+            """,
+            (now, slug),
+        )
+        user_conn.execute(
+            """
+            UPDATE history_entries
+            SET is_present = 0, updated_at = ?, revision = revision + 1
+            WHERE term_slug = ? AND term_origin = 'personal' AND is_present = 1
+            """,
+            (now, slug),
+        )
+        user_conn.execute(
+            """
+            UPDATE collection_terms
+            SET is_present = 0, updated_at = ?, revision = revision + 1
+            WHERE term_slug = ? AND term_origin = 'personal' AND is_present = 1
+            """,
+            (now, slug),
+        )
+        user_conn.executemany(
+            """
+            UPDATE collections
+            SET updated_at = ?, revision = revision + 1
+            WHERE uid = ?
+            """,
+            [(now, row["collection_uid"]) for row in affected_collections],
+        )
 
 
 class CatalogStore:
@@ -1214,7 +1637,10 @@ def collection_from_row(row, count=0):
 def list_collections(user_conn):
     rows = user_conn.execute(
         """
-        SELECT c.*, (SELECT COUNT(*) FROM collection_terms ct WHERE ct.collection_id = c.id) AS n
+        SELECT c.*, (
+          SELECT COUNT(*) FROM collection_terms ct
+          WHERE ct.collection_uid = c.uid AND ct.is_present = 1
+        ) AS n
         FROM collections c
         ORDER BY c.name COLLATE NOCASE
         """
@@ -1260,20 +1686,24 @@ def rename_collection(user_conn, uid, payload):
     find_collection(user_conn, uid)
     name, normalized = validate_collection_name(payload, user_conn, exclude_uid=uid)
     user_conn.execute(
-        "UPDATE collections SET name = ?, normalized_name = ?, updated_at = ? WHERE uid = ?",
+        """
+        UPDATE collections
+        SET name = ?, normalized_name = ?, updated_at = ?, revision = revision + 1
+        WHERE uid = ?
+        """,
         (name, normalized, utc_now(), uid),
     )
     user_conn.commit()
     row = find_collection(user_conn, uid)
     count = user_conn.execute(
-        "SELECT COUNT(*) FROM collection_terms WHERE collection_id = ?", (row["id"],)
+        "SELECT COUNT(*) FROM collection_terms WHERE collection_uid = ? AND is_present = 1",
+        (row["uid"],),
     ).fetchone()[0]
     return collection_from_row(row, count)
 
 
 def delete_collection(user_conn, uid):
     row = find_collection(user_conn, uid)
-    user_conn.execute("DELETE FROM collection_terms WHERE collection_id = ?", (row["id"],))
     user_conn.execute("DELETE FROM collections WHERE id = ?", (row["id"],))
     user_conn.commit()
 
@@ -1283,9 +1713,9 @@ def collection_detail(package_conn, user_conn, uid, canonical):
     members = user_conn.execute(
         """
         SELECT term_slug, term_origin FROM collection_terms
-        WHERE collection_id = ? ORDER BY added_at DESC
+        WHERE collection_uid = ? AND is_present = 1 ORDER BY added_at DESC
         """,
-        (row["id"],),
+        (row["uid"],),
     ).fetchall()
     items = []
     for member in members:
@@ -1308,25 +1738,46 @@ def add_term_to_collection(package_conn, user_conn, uid, payload, canonical):
     term = get_catalog_term(package_conn, user_conn, slug, canonical)
     if term is None or term.get("origin") != origin:
         raise ApiError(404, "not_found", "El termino no existe en el catalogo.")
-    user_conn.execute(
+    changed_at = utc_now()
+    change = user_conn.execute(
         """
-        INSERT OR IGNORE INTO collection_terms(collection_id, term_slug, term_origin, added_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO collection_terms(
+          collection_uid, term_slug, term_origin, added_at, updated_at, is_present, revision
+        ) VALUES (?, ?, ?, ?, ?, 1, 1)
+        ON CONFLICT(collection_uid, term_slug, term_origin) DO UPDATE SET
+          added_at = excluded.added_at,
+          updated_at = excluded.updated_at,
+          is_present = 1,
+          revision = collection_terms.revision + 1
+        WHERE collection_terms.is_present = 0
         """,
-        (row["id"], slug, origin, utc_now()),
+        (row["uid"], slug, origin, changed_at, changed_at),
     )
-    user_conn.execute("UPDATE collections SET updated_at = ? WHERE id = ?", (utc_now(), row["id"]))
+    if change.rowcount:
+        user_conn.execute(
+            "UPDATE collections SET updated_at = ?, revision = revision + 1 WHERE id = ?",
+            (changed_at, row["id"]),
+        )
     user_conn.commit()
     return collection_detail(package_conn, user_conn, uid, canonical)
 
 
 def remove_term_from_collection(package_conn, user_conn, uid, slug, origin, canonical):
     row = find_collection(user_conn, uid)
-    user_conn.execute(
-        "DELETE FROM collection_terms WHERE collection_id = ? AND term_slug = ? AND term_origin = ?",
-        (row["id"], slug, origin),
+    changed_at = utc_now()
+    change = user_conn.execute(
+        """
+        UPDATE collection_terms
+        SET is_present = 0, updated_at = ?, revision = revision + 1
+        WHERE collection_uid = ? AND term_slug = ? AND term_origin = ? AND is_present = 1
+        """,
+        (changed_at, row["uid"], slug, origin),
     )
-    user_conn.execute("UPDATE collections SET updated_at = ? WHERE id = ?", (utc_now(), row["id"]))
+    if change.rowcount:
+        user_conn.execute(
+            "UPDATE collections SET updated_at = ?, revision = revision + 1 WHERE id = ?",
+            (changed_at, row["id"]),
+        )
     user_conn.commit()
     return collection_detail(package_conn, user_conn, uid, canonical)
 

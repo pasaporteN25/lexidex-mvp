@@ -414,6 +414,14 @@ class CollectionsTest(PackageFixture, unittest.TestCase):
             detail = api.collection_detail(package_conn, user_conn, collection["uid"], True)
             self.assertEqual(detail["term_count"], 1)
             self.assertEqual(detail["items"][0]["origin"], "package")
+            removed_member = user_conn.execute(
+                """
+                SELECT is_present, revision FROM collection_terms
+                WHERE collection_uid = ? AND term_slug = ? AND term_origin = 'personal'
+                """,
+                (collection["uid"], personal["slug"]),
+            ).fetchone()
+            self.assertEqual((removed_member["is_present"], removed_member["revision"]), (0, 2))
         finally:
             package_conn.close()
             user_conn.close()

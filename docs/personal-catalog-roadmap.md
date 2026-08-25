@@ -831,11 +831,16 @@ el flujo funcione.
       `contracts/local-sync/v1/fixtures/`; cuatro tests Kotlin y cuatro Python
       fijan la interpretacion. El bootstrap queda explicitamente en el
       planificador de importacion 9.2, sin un segundo merge.
-- [ ] **9.4** _(Opus 5 · L)_ Volver sincronizables ambos esquemas. Dar paridad
-      a web y Android para terminos, favoritos, historial, colecciones y
-      miembros; agregar revision/estado a las entidades que hoy solo existen o
-      no, journal local, cursor por dispositivo y tombstones. Las fechas se
-      muestran, pero no deciden conflictos porque los relojes pueden diferir.
+- [x] **9.4** ✅ Esquema personal v3 comun y migraciones preservadoras en
+      Python/SQLite y Room. Web y Android tienen paridad para terminos,
+      favoritos, una fila de historial por termino, colecciones y miembros con
+      identidad estable por `collection_uid`; estados y revisiones reemplazan
+      la ausencia implicita. Ambos lados incorporan journal monotono, cursor
+      por replica y tombstones. La migracion colapsa solo las visitas repetidas
+      a la ultima ya visible, aborta ante miembros huerfanos o origenes
+      invalidos y valida `foreign_key_check` + `integrity_check` antes de
+      confirmar. `contracts/local-sync/v1/storage-schema.json` fija la paridad;
+      las fechas quedan como metadata y nunca ordenan conflictos.
 - [ ] **9.5** _(Opus 5 · L)_ Motor y API de intercambio, inicialmente solo en
       localhost: push + pull transaccional, secuencia monotona del hub,
       idempotencia al repetir un lote, paginado, validacion y referencias a

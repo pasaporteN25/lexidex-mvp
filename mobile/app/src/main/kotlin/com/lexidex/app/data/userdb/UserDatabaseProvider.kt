@@ -56,6 +56,205 @@ internal val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+/**
+ * Convierte las identidades locales de v2 en identidades estables y agrega el almacenamiento de
+ * sincronizacion. Room ejecuta la migracion dentro de una transaccion: cualquier error conserva
+ * intacta la base v2.
+ */
+internal val MIGRATION_2_3 = object : Migration(2, 3) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        checkMigrationPreconditions(connection)
+
+        connection.execSQL(
+            "ALTER TABLE `collections` ADD COLUMN `revision` INTEGER NOT NULL DEFAULT 1",
+        )
+        connection.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_collections_uid` ON `collections` (`uid`)",
+        )
+        connection.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_collections_normalized_name` ON `collections` (`normalized_name`)",
+        )
+
+        connection.execSQL(
+            """
+            CREATE TABLE `favorites_v3` (
+              `term_slug` TEXT NOT NULL,
+              `term_origin` TEXT NOT NULL,
+              `created_at` TEXT NOT NULL,
+              `updated_at` TEXT NOT NULL,
+              `is_present` INTEGER NOT NULL DEFAULT 1,
+              `revision` INTEGER NOT NULL DEFAULT 1,
+              PRIMARY KEY(`term_slug`, `term_origin`)
+            )
+            """.trimIndent(),
+        )
+        connection.execSQL(
+            """
+            INSERT INTO `favorites_v3`(
+              `term_slug`, `term_origin`, `created_at`, `updated_at`, `is_present`, `revision`
+            )
+            SELECT `term_slug`, `term_origin`, `created_at`, `created_at`, 1, 1 FROM `favorites`
+            """.trimIndent(),
+        )
+        connection.execSQL("DROP TABLE `favorites`")
+        connection.execSQL("ALTER TABLE `favorites_v3` RENAME TO `favorites`")
+
+        connection.execSQL(
+            """
+            CREATE TABLE `history_entries_v3` (
+              `term_slug` TEXT NOT NULL,
+              `term_origin` TEXT NOT NULL,
+              `viewed_at` TEXT NOT NULL,
+              `updated_at` TEXT NOT NULL,
+              `is_present` INTEGER NOT NULL DEFAULT 1,
+              `revision` INTEGER NOT NULL DEFAULT 1,
+              PRIMARY KEY(`term_slug`, `term_origin`)
+            )
+            """.trimIndent(),
+        )
+        connection.execSQL(
+            """
+            INSERT INTO `history_entries_v3`(
+              `term_slug`, `term_origin`, `viewed_at`, `updated_at`, `is_present`, `revision`
+            )
+            SELECT `term_slug`, `term_origin`, MAX(`viewed_at`), MAX(`viewed_at`), 1, 1
+            FROM `history_entries`
+            GROUP BY `term_slug`, `term_origin`
+            """.trimIndent(),
+        )
+        connection.execSQL("DROP TABLE `history_entries`")
+        connection.execSQL("ALTER TABLE `history_entries_v3` RENAME TO `history_entries`")
+        connection.execSQL(
+            "CREATE INDEX `index_history_entries_term_slug_term_origin` ON `history_entries` (`term_slug`, `term_origin`)",
+        )
+
+        connection.execSQL(
+            """
+            CREATE TABLE `collection_terms_v3` (
+              `collection_uid` TEXT NOT NULL,
+              `term_slug` TEXT NOT NULL,
+              `term_origin` TEXT NOT NULL,
+              `added_at` TEXT NOT NULL,
+              `updated_at` TEXT NOT NULL,
+              `is_present` INTEGER NOT NULL DEFAULT 1,
+              `revision` INTEGER NOT NULL DEFAULT 1,
+              PRIMARY KEY(`collection_uid`, `term_slug`, `term_origin`),
+              FOREIGN KEY(`collection_uid`) REFERENCES `collections`(`uid`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        connection.execSQL(
+            """
+            INSERT INTO `collection_terms_v3`(
+              `collection_uid`, `term_slug`, `term_origin`, `added_at`, `updated_at`,
+              `is_present`, `revision`
+            )
+            SELECT c.`uid`, ct.`term_slug`, ct.`term_origin`, ct.`added_at`, ct.`added_at`, 1, 1
+            FROM `collection_terms` ct
+            JOIN `collections` c ON c.`id` = ct.`collection_id`
+            """.trimIndent(),
+        )
+        connection.execSQL("DROP TABLE `collection_terms`")
+        connection.execSQL("ALTER TABLE `collection_terms_v3` RENAME TO `collection_terms`")
+        connection.execSQL(
+            "CREATE INDEX `index_collection_terms_collection_uid` ON `collection_terms` (`collection_uid`)",
+        )
+        connection.execSQL(
+            "CREATE INDEX `index_collection_terms_term_slug_term_origin` ON `collection_terms` (`term_slug`, `term_origin`)",
+        )
+
+        connection.execSQL(
+            """
+            CREATE TABLE `sync_journal` (
+              `cursor` INTEGER PRIMARY KEY AUTOINCREMENT,
+              `source_device_id` TEXT NOT NULL,
+              `change_id` TEXT NOT NULL,
+              `entity_type` TEXT NOT NULL,
+              `entity_id_json` TEXT NOT NULL,
+              `operation` TEXT NOT NULL,
+              `revision` INTEGER NOT NULL,
+              `payload_version` INTEGER NOT NULL DEFAULT 1,
+              `changed_at` TEXT NOT NULL,
+              `payload_json` TEXT
+            )
+            """.trimIndent(),
+        )
+        connection.execSQL(
+            "CREATE UNIQUE INDEX `index_sync_journal_source_device_id_change_id` ON `sync_journal` (`source_device_id`, `change_id`)",
+        )
+        connection.execSQL(
+            "CREATE INDEX `index_sync_journal_entity_type_entity_id_json` ON `sync_journal` (`entity_type`, `entity_id_json`)",
+        )
+        connection.execSQL(
+            """
+            CREATE TABLE `sync_replica_cursors` (
+              `device_id` TEXT NOT NULL,
+              `last_applied_cursor` INTEGER NOT NULL DEFAULT 0,
+              `updated_at` TEXT NOT NULL,
+              PRIMARY KEY(`device_id`)
+            )
+            """.trimIndent(),
+        )
+        connection.execSQL(
+            """
+            CREATE TABLE `sync_tombstones` (
+              `entity_type` TEXT NOT NULL,
+              `entity_id_json` TEXT NOT NULL,
+              `revision` INTEGER NOT NULL,
+              `cursor` INTEGER NOT NULL,
+              `deleted_at` TEXT NOT NULL,
+              `purge_after` TEXT NOT NULL,
+              PRIMARY KEY(`entity_type`, `entity_id_json`)
+            )
+            """.trimIndent(),
+        )
+        connection.execSQL(
+            "CREATE INDEX `index_sync_tombstones_cursor` ON `sync_tombstones` (`cursor`)",
+        )
+
+        check(scalarLong(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check") == 0L) {
+            "foreign key validation failed after user database migration"
+        }
+        check(scalarText(connection, "PRAGMA integrity_check") == "ok") {
+            "integrity check failed after user database migration"
+        }
+    }
+}
+
+private fun checkMigrationPreconditions(connection: SQLiteConnection) {
+    check(
+        scalarLong(
+            connection,
+            """
+            SELECT COUNT(*) FROM `collection_terms` ct
+            LEFT JOIN `collections` c ON c.`id` = ct.`collection_id`
+            WHERE c.`id` IS NULL
+            """.trimIndent(),
+        ) == 0L,
+    ) { "collection_terms contains orphan rows; migration aborted" }
+
+    listOf("favorites", "history_entries", "collection_terms").forEach { table ->
+        check(
+            scalarLong(
+                connection,
+                "SELECT COUNT(*) FROM `$table` WHERE `term_origin` NOT IN ('package', 'personal')",
+            ) == 0L,
+        ) { "$table contains an invalid term_origin; migration aborted" }
+    }
+}
+
+private fun scalarLong(connection: SQLiteConnection, sql: String): Long =
+    connection.prepare(sql).use { statement ->
+        check(statement.step())
+        statement.getLong(0)
+    }
+
+private fun scalarText(connection: SQLiteConnection, sql: String): String =
+    connection.prepare(sql).use { statement ->
+        check(statement.step())
+        statement.getText(0)
+    }
+
 /** Builds [LexidexUserDatabase] once per process; plain Room, no asset, nothing to verify. */
 class UserDatabaseProvider(
     private val context: Context,
@@ -69,7 +268,7 @@ class UserDatabaseProvider(
             )
                 .setDriver(BundledSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
         }
     }

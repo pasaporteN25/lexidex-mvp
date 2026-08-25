@@ -6,11 +6,15 @@ import androidx.room3.RoomDatabase
 import com.lexidex.app.data.userdb.dao.CollectionDao
 import com.lexidex.app.data.userdb.dao.FavoriteDao
 import com.lexidex.app.data.userdb.dao.HistoryDao
+import com.lexidex.app.data.userdb.dao.SyncStorageDao
 import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.CollectionEntity
 import com.lexidex.app.data.userdb.entity.CollectionTermEntity
 import com.lexidex.app.data.userdb.entity.FavoriteEntity
 import com.lexidex.app.data.userdb.entity.HistoryEntryEntity
+import com.lexidex.app.data.userdb.entity.SyncJournalEntity
+import com.lexidex.app.data.userdb.entity.SyncReplicaCursorEntity
+import com.lexidex.app.data.userdb.entity.SyncTombstoneEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 import com.lexidex.app.data.userdb.entity.UserTermFtsEntity
 
@@ -27,8 +31,11 @@ import com.lexidex.app.data.userdb.entity.UserTermFtsEntity
         HistoryEntryEntity::class,
         CollectionEntity::class,
         CollectionTermEntity::class,
+        SyncJournalEntity::class,
+        SyncReplicaCursorEntity::class,
+        SyncTombstoneEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 @ColumnTypeConverters(StringListConverter::class, TermOriginConverter::class)
@@ -37,4 +44,5 @@ abstract class LexidexUserDatabase : RoomDatabase() {
     abstract fun favoriteDao(): FavoriteDao
     abstract fun historyDao(): HistoryDao
     abstract fun collectionDao(): CollectionDao
+    abstract fun syncStorageDao(): SyncStorageDao
 }
