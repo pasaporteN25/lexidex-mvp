@@ -42,6 +42,7 @@ private class RecordingSyncStore(
     override suspend fun pending(limit: Int) = outbox.take(limit)
     override suspend fun pendingCount() = outbox.size.toLong()
     override suspend fun storedCursor(hubId: String) = "0"
+    override suspend fun lastSyncAt(hubId: String): String? = null
 
     override suspend fun upsertTerm(uid: String, payload: JsonObject, revision: Long) {
         calls += "upsertTerm:$uid:$revision"

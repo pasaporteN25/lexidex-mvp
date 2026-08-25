@@ -28,6 +28,14 @@ interface SyncStore {
     suspend fun pendingCount(): Long
     suspend fun storedCursor(hubId: String): String
 
+    /**
+     * Cuando se sincronizo por ultima vez.
+     *
+     * Sale de `updated_at` del cursor, que ya se escribe en cada intercambio: guardar la fecha
+     * aparte seria guardar dos veces lo mismo y abrir la puerta a que discrepen.
+     */
+    suspend fun lastSyncAt(hubId: String): String?
+
     suspend fun upsertTerm(uid: String, payload: JsonObject, revision: Long)
     suspend fun deleteTerm(uid: String)
     suspend fun upsertCollection(uid: String, payload: JsonObject, revision: Long)
@@ -59,6 +67,9 @@ class RoomSyncStore(private val database: LexidexUserDatabase) : SyncStore {
 
     override suspend fun storedCursor(hubId: String): String =
         database.syncStorageDao().cursorFor(hubId)?.lastAppliedCursor?.toString() ?: "0"
+
+    override suspend fun lastSyncAt(hubId: String): String? =
+        database.syncStorageDao().cursorFor(hubId)?.updatedAt
 
     override suspend fun upsertTerm(uid: String, payload: JsonObject, revision: Long) {
         val dao = database.userTermDao()

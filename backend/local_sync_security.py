@@ -33,7 +33,13 @@ import threading
 from collections import deque
 from pathlib import Path
 
-from local_sync_engine import SyncEngineError, now_timestamp, read_sidecar, update_sidecar
+from local_sync_engine import (
+    SyncEngineError,
+    hub_identity,
+    now_timestamp,
+    read_sidecar,
+    update_sidecar,
+)
 
 
 PAIRING_TOKEN_TTL_SECONDS = 300
@@ -163,7 +169,7 @@ class HubSecurity:
         payload = {
             "protocol": PAIRING_PROTOCOL,
             "version": PAIRING_VERSION,
-            "hub_id": read_sidecar(self.user_db_path).get("hub_id", ""),
+            "hub_id": hub_identity(self.user_db_path),
             "url": url,
             "token": token,
             "expires_at": expires_at,
@@ -211,7 +217,7 @@ class HubSecurity:
 
         update_sidecar(self.user_db_path, mutate)
         return {
-            "hub_id": read_sidecar(self.user_db_path).get("hub_id", ""),
+            "hub_id": hub_identity(self.user_db_path),
             "device_id": device_id,
             "credential": f"{device_id}.{secret}",
         }

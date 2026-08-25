@@ -126,6 +126,16 @@ class PairingTest(unittest.TestCase):
         self.assertIn(DEVICE, self.security.devices())
         self.assertTrue(record["purge_after"] > record["revoked_at"])
 
+    def test_the_offer_names_the_hub_even_before_anyone_synced(self):
+        # La identidad del hub se creaba recien al sincronizar, asi que el primer emparejamiento
+        # ofrecia `hub_id` vacio y el telefono lo rechazaba por no tener la forma del protocolo.
+        fresh = Path(self.temp_dir.name) / "otra.sqlite"
+        api.initialize_user_database(fresh)
+
+        offer = security.HubSecurity(fresh).start_pairing("http://127.0.0.1:8765")
+
+        self.assertRegex(offer["hub_id"], r"^hub_[0-9a-f]{32}$")
+
     def test_the_pairing_payload_pins_the_certificate(self):
         certificate = Path(self.temp_dir.name) / "hub.pem"
         certificate.write_text(TEST_CERTIFICATE, encoding="utf-8")

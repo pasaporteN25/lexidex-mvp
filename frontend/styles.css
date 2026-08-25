@@ -1554,3 +1554,73 @@ dialog::backdrop {
     transition-duration: 1ms !important;
   }
 }
+
+.rail-sync {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rail-line);
+  display: grid;
+  gap: 10px;
+}
+
+.rail-sync h2 {
+  margin: 0;
+  color: var(--rail-muted);
+  font-size: var(--text-compact);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rail-sync .quiet {
+  margin: 0;
+  color: var(--rail-muted);
+  font-size: var(--text-compact);
+  line-height: 1.5;
+}
+
+/* El codigo se corta con `pre-wrap` en vez de scrollear: es para leerlo y copiarlo entero. */
+.pairing-code {
+  margin: 0;
+  padding: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--rail-line);
+  border-radius: 6px;
+  color: var(--rail-ink);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.device-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.device-list li {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #263632;
+  color: var(--rail-ink);
+  font-size: var(--text-compact);
+}
+
+.link-action {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--rail-muted);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-action:hover {
+  color: var(--rail-ink);
+}

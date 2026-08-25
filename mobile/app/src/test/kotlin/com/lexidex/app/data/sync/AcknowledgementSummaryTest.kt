@@ -1,5 +1,6 @@
 package com.lexidex.app.data.sync
 
+import com.lexidex.app.data.userdb.entity.SyncJournalEntity
 import com.lexidex.app.domain.sync.SyncAcknowledgement
 import com.lexidex.app.domain.sync.SyncProblem
 import com.lexidex.app.ui.options.outcomeMessage
@@ -26,13 +27,25 @@ private fun rejected(id: String, code: String) = SyncAcknowledgement(
     problem = SyncProblem(code = code, message = "no se aplico", details = JsonObject(emptyMap())),
 )
 
+private fun termRow(changeId: String, title: String) = SyncJournalEntity(
+    cursor = 1,
+    sourceDeviceId = "dev_" + "1".repeat(32),
+    changeId = changeId,
+    entityType = "personal_term",
+    entityIdJson = """{"uid":"usr_${"3".repeat(32)}"}""",
+    operation = "upsert",
+    revision = 2,
+    changedAt = "2026-08-25T13:00:00Z",
+    payloadJson = """{"title":"$title","slug":"personal-x--33333333","language":"es"}""",
+)
+
 class AcknowledgementSummaryTest {
 
     @Test
     fun `a duplicate counts as accepted, because the hub already has it`() {
         val summary = summarizeAcknowledgements(
             listOf(applied("chg_a"), duplicate("chg_b")),
-            emptyMap(),
+            emptyList(),
         )
 
         assertEquals(2, summary.accepted)
@@ -47,7 +60,7 @@ class AcknowledgementSummaryTest {
             rejected("chg_c", "parent_deleted"),
         )
 
-        val summary = summarizeAcknowledgements(acknowledgements, emptyMap())
+        val summary = summarizeAcknowledgements(acknowledgements, emptyList())
 
         // Un cambio en conflicto no mejora reintentandolo: su base_revision quedo vieja para
         // siempre. Si no saliera de la bandeja, chocaria en cada intercambio y no avanzaria nunca.
@@ -57,20 +70,39 @@ class AcknowledgementSummaryTest {
     }
 
     @Test
-    fun `a refusal carries the entity type so the screen can name what failed`() {
+    fun `a refusal keeps the local version, which is the only copy left of it`() {
         val summary = summarizeAcknowledgements(
-            listOf(conflict("chg_b", "identity_conflict")),
-            mapOf("chg_b" to "personal_term"),
+            listOf(conflict("chg_b", "stale_revision")),
+            listOf(termRow("chg_b", "Redes locales del telefono")),
         )
 
-        assertEquals("personal_term", summary.refused.single().entityType)
+        // La version del hub se aplica encima al sincronizar. Sin este payload, elegir "conservar
+        // lo mio" no tendria de donde sacar el "lo mio".
+        val refused = summary.refused.single()
+        assertEquals("personal_term", refused.entityType)
+        assertEquals("Redes locales del telefono", refused.label)
+        assertTrue(refused.isDecidable)
+        assertEquals("personal-x--33333333", refused.termSlug())
+        assertEquals("Redes locales del telefono", refused.asTermInput()?.title)
+    }
+
+    @Test
+    fun `a refusal nobody can decide is reported but offers no choice`() {
+        val summary = summarizeAcknowledgements(
+            listOf(rejected("chg_c", "parent_deleted")),
+            listOf(termRow("chg_c", "Huerfano")),
+        )
+
+        // Ofrecer "conservar lo mio" volveria a fallar igual: el termino del que dependia ya no
+        // existe. Se informa y se deja ahi.
+        assertTrue(!summary.refused.single().isDecidable)
     }
 
     @Test
     fun `an unacknowledged change stays in the outbox`() {
         // El contrato permite que el hub no evalue alguna mutacion. Esa tiene que sobrevivir para
         // volver a salir en el proximo intercambio.
-        val summary = summarizeAcknowledgements(listOf(applied("chg_a")), emptyMap())
+        val summary = summarizeAcknowledgements(listOf(applied("chg_a")), emptyList())
 
         assertEquals(listOf("chg_a"), summary.evaluated)
     }

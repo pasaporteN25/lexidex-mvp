@@ -1,5 +1,7 @@
 package com.lexidex.app.data.sync
 
+import com.lexidex.app.data.repository.PersonalTermInput
+import com.lexidex.app.data.userdb.entity.SyncJournalEntity
 import com.lexidex.app.domain.TermOrigin
 import com.lexidex.app.domain.sync.MAX_SYNC_CHANGES
 import com.lexidex.app.domain.sync.SYNC_PROTOCOL_NAME
@@ -16,6 +18,8 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 
 private const val MAX_PAGES_PER_SYNC = 50
@@ -32,13 +36,45 @@ internal fun plusRetention(deletedAt: String): String = try {
     deletedAt
 }
 
-/** Lo que el hub no acepto de este dispositivo, con el motivo que dio. */
+/**
+ * Lo que el hub no acepto de este dispositivo, con el motivo y **con la version local**.
+ *
+ * El payload es el que iba en la fila de journal rechazada, o sea exactamente lo que el usuario
+ * habia escrito. Se conserva porque sin el no hay eleccion posible: la version del hub ya se
+ * aplico encima y la local no estaria en ningun lado. Con el, "conservar lo mio" es volver a
+ * guardarlo, que genera un cambio nuevo encadenado contra la revision que trajo el hub.
+ */
 data class RefusedChange(
     val changeId: String,
     val entityType: String,
     val code: String,
     val message: String,
-)
+    val payload: JsonObject? = null,
+    /** Titulo o nombre, para poder nombrar el conflicto sin volver a leer la base. */
+    val label: String = "",
+    /** El `entity_id` canonico de la fila rechazada: es como se vuelve a encontrar la entidad. */
+    val entityIdJson: String = "",
+) {
+    /** `uid` del termino o de la coleccion en conflicto, cuando la identidad es un uid. */
+    val uid: String?
+        get() = runCatching {
+            (Json.parseToJsonElement(entityIdJson) as JsonObject)["uid"]?.jsonPrimitive?.content
+        }.getOrNull()
+
+    /**
+     * Un rechazo sobre el que el usuario puede decidir algo.
+     *
+     * `parent_deleted` o `invalid_change` no lo son: el termino del que dependia ya no existe, o
+     * el cambio nunca fue valido. Ofrecer "conservar lo mio" ahi seria ofrecer algo que volveria
+     * a fallar igual.
+     */
+    val isDecidable: Boolean
+        get() = payload != null && code in DECIDABLE_PROBLEMS
+
+    private companion object {
+        val DECIDABLE_PROBLEMS = setOf("stale_revision", "identity_conflict", "duplicate_name")
+    }
+}
 
 /** Resultado de una sincronizacion completa, que es lo que la pantalla tiene para mostrar. */
 data class SyncOutcome(
@@ -66,21 +102,66 @@ data class AcknowledgementSummary(
  */
 fun summarizeAcknowledgements(
     acknowledgements: List<SyncAcknowledgement>,
-    entityTypes: Map<String, String>,
-): AcknowledgementSummary = AcknowledgementSummary(
-    accepted = acknowledgements.count { it.status in ACCEPTED_STATUSES },
-    refused = acknowledgements
-        .filter { it.status !in ACCEPTED_STATUSES }
-        .map { acknowledgement ->
-            RefusedChange(
-                changeId = acknowledgement.changeId,
-                entityType = entityTypes[acknowledgement.changeId].orEmpty(),
-                code = acknowledgement.problem?.code ?: "invalid_change",
-                message = acknowledgement.problem?.message.orEmpty(),
-            )
-        },
-    evaluated = acknowledgements.map { it.changeId },
-)
+    sent: List<SyncJournalEntity>,
+): AcknowledgementSummary {
+    val rows = sent.associateBy { it.changeId }
+    return AcknowledgementSummary(
+        accepted = acknowledgements.count { it.status in ACCEPTED_STATUSES },
+        refused = acknowledgements
+            .filter { it.status !in ACCEPTED_STATUSES }
+            .map { acknowledgement ->
+                val row = rows[acknowledgement.changeId]
+                val payload = row?.payloadJson?.let {
+                    runCatching { Json.parseToJsonElement(it) as JsonObject }.getOrNull()
+                }
+                RefusedChange(
+                    changeId = acknowledgement.changeId,
+                    entityType = row?.entityType.orEmpty(),
+                    code = acknowledgement.problem?.code ?: "invalid_change",
+                    message = acknowledgement.problem?.message.orEmpty(),
+                    payload = payload,
+                    label = payload?.let { it.label() }.orEmpty(),
+                    entityIdJson = row?.entityIdJson.orEmpty(),
+                )
+            },
+        evaluated = acknowledgements.map { it.changeId },
+    )
+}
+
+private fun JsonObject.label(): String =
+    get("title")?.jsonPrimitive?.content ?: get("name")?.jsonPrimitive?.content.orEmpty()
+
+/**
+ * La version local que el hub rechazo, de vuelta en la forma que espera el editor.
+ *
+ * Devolver un [PersonalTermInput] y no escribir directo es a proposito: al reponerla vuelve a
+ * pasar por la validacion y por el journal, o sea que se convierte en un cambio nuevo encadenado
+ * contra la revision que trajo el hub. Sin eso ganaria una vez y volveria a chocar en el
+ * intercambio siguiente.
+ */
+fun RefusedChange.asTermInput(titleOverride: String? = null): PersonalTermInput? {
+    val payload = payload ?: return null
+    if (entityType != SyncChangeRecorder.ENTITY_TERM) return null
+    fun text(key: String) = payload[key]?.jsonPrimitive?.content.orEmpty()
+    fun list(key: String) =
+        payload[key]?.jsonArray?.joinToString(", ") { it.jsonPrimitive.content }.orEmpty()
+    return PersonalTermInput(
+        title = titleOverride ?: text("title"),
+        language = text("language"),
+        kind = text("kind"),
+        status = text("status"),
+        summary = text("summary"),
+        content = text("content"),
+        sourceUrl = text("source_url"),
+        categoriesText = list("categories"),
+        tagsText = list("tags"),
+        notes = text("notes"),
+    )
+}
+
+/** El slug del termino rechazado, que es estable por `uid` y por eso sigue siendo el del hub. */
+fun RefusedChange.termSlug(): String? =
+    payload?.get("slug")?.jsonPrimitive?.content?.takeIf { entityType == SyncChangeRecorder.ENTITY_TERM }
 
 /**
  * Une las piezas de un intercambio: manda la bandeja de salida, aplica la pagina del hub y avanza
@@ -119,7 +200,7 @@ class SyncCoordinator(
             val response = client.exchange(binding, requestJson.encodeToString(request))
             val progressed =
                 response.changes.isNotEmpty() || response.acknowledgements.isNotEmpty()
-            outcome = absorb(binding, outcome, response, pending.map { it.changeId to it.entityType })
+            outcome = absorb(binding, outcome, response, pending)
 
             if (!response.hasMore && store.pendingCount() == 0L) break
             // Sin pagina nueva y sin nada reconocido, otra vuelta mandaria exactamente lo mismo.
@@ -133,11 +214,12 @@ class SyncCoordinator(
         binding: SyncHubBinding,
         previous: SyncOutcome,
         response: SyncExchangeResponse,
-        sent: List<Pair<String, String>>,
+        sent: List<SyncJournalEntity>,
     ): SyncOutcome {
-        // El acknowledgement solo trae el `change_id`. El tipo se recupera de la bandeja antes de
-        // vaciarla, para poder decir "no se pudo guardar un termino" y no "un cambio".
-        val summary = summarizeAcknowledgements(response.acknowledgements, sent.toMap())
+        // El acknowledgement solo trae el `change_id`. Lo demas -que entidad era y que decia la
+        // version local- se recupera de la bandeja antes de vaciarla, que es la ultima chance:
+        // despues de esta transaccion esas filas ya no estan.
+        val summary = summarizeAcknowledgements(response.acknowledgements, sent)
 
         store.transaction {
             response.changes.forEach { change -> apply(change) }

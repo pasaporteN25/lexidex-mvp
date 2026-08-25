@@ -23,6 +23,10 @@ const elements = {
   packageLabel: document.querySelector("#packageLabel"),
   personalCount: document.querySelector("#personalCount"),
   stats: document.querySelector("#stats"),
+  pairButton: document.querySelector("#pairButton"),
+  pairingCode: document.querySelector("#pairingCode"),
+  pairingHint: document.querySelector("#pairingHint"),
+  deviceList: document.querySelector("#deviceList"),
   themeToggle: document.querySelector("#themeToggle"),
   searchInput: document.querySelector("#searchInput"),
   languageFilter: document.querySelector("#languageFilter"),
@@ -986,15 +990,80 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+/**
+ * El codigo de emparejamiento se muestra entero, para copiarlo a mano.
+ *
+ * Es la mitad de escritorio de lo que en el telefono es "pegar el codigo". Dibujarlo como QR
+ * necesitaria una libreria; mientras tanto el texto cumple la misma funcion y cruza por la
+ * pantalla, que es lo que importa: el token no viaja por la red hacia el telefono.
+ */
+async function showPairingCode() {
+  elements.pairButton.disabled = true;
+  try {
+    const offer = await api("/api/sync/v1/pairing", { method: "POST" });
+    elements.pairingCode.textContent = JSON.stringify(offer, null, 2);
+    elements.pairingCode.hidden = false;
+    elements.pairingHint.hidden = false;
+  } catch (error) {
+    showSnackbar(error.message);
+  } finally {
+    elements.pairButton.disabled = false;
+  }
+}
+
+async function refreshDevices() {
+  let devices = [];
+  try {
+    devices = (await api("/api/sync/v1/devices")).items || [];
+  } catch (_error) {
+    // La lista es informativa: si falla, el resto de la aplicacion no tiene por que enterarse.
+    return;
+  }
+  if (devices.length === 0) {
+    elements.deviceList.innerHTML = "";
+    return;
+  }
+  elements.deviceList.innerHTML = devices
+    .map((device) => {
+      const label = escapeHtml(device.label || device.device_id.slice(0, 12));
+      const seen = device.revoked_at
+        ? "revocado"
+        : device.last_seen_at
+          ? `visto ${escapeHtml(device.last_seen_at)}`
+          : "sin sincronizar todavia";
+      const action = device.revoked_at
+        ? ""
+        : `<button class="link-action" type="button" data-revoke="${escapeHtml(device.device_id)}">Revocar</button>`;
+      return `<li><span>${label}</span><span class="quiet">${seen}</span>${action}</li>`;
+    })
+    .join("");
+}
+
+async function revokeDevice(deviceId) {
+  try {
+    await api(`/api/sync/v1/devices/${encodeURIComponent(deviceId)}`, { method: "DELETE" });
+    showSnackbar("Ese dispositivo ya no puede sincronizar.");
+    await refreshDevices();
+  } catch (error) {
+    showSnackbar(error.message);
+  }
+}
+
 async function init() {
   elements.themeToggle.checked = document.documentElement.dataset.theme === "dark";
   if (window.matchMedia("(max-width: 720px)").matches) {
     elements.filterPanel.removeAttribute("open");
   }
+  elements.pairButton.addEventListener("click", showPairingCode);
+  elements.deviceList.addEventListener("click", (event) => {
+    const deviceId = event.target.dataset?.revoke;
+    if (deviceId) revokeDevice(deviceId);
+  });
   try {
     await refreshMetadata();
     await loadCatalog();
     await refreshCollectionsCount();
+    await refreshDevices();
   } catch (error) {
     showFatalError(error);
   }

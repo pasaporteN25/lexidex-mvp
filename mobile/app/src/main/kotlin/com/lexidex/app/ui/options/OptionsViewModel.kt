@@ -10,8 +10,12 @@ import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.data.repository.InvalidPersonalCatalogBackupException
 import com.lexidex.app.data.repository.MAX_BACKUP_BYTES
 import com.lexidex.app.data.repository.PersonalCatalogImportSummary
+import com.lexidex.app.data.sync.RefusedChange
+import com.lexidex.app.data.sync.SyncError
 import com.lexidex.app.data.sync.SyncOutcome
 import com.lexidex.app.data.sync.SyncRepository
+import com.lexidex.app.data.sync.asTermInput
+import com.lexidex.app.data.sync.termSlug
 import com.lexidex.app.domain.StorageInfo
 import com.lexidex.app.domain.backup.toJson
 import com.lexidex.app.ui.toUserMessage
@@ -57,12 +61,30 @@ data class SyncUiState(
     val exchangeUrl: String? = null,
     val isPinned: Boolean = false,
     val pendingChanges: Long = 0,
+    val lastSyncAt: String? = null,
     val isPairing: Boolean = false,
     val isSyncing: Boolean = false,
     val message: String? = null,
     val failed: Boolean = false,
+    /** Se puede reintentar sin que el usuario cambie nada: red caida, hub ocupado. */
+    val isRetryable: Boolean = false,
+    val conflicts: List<RefusedChange> = emptyList(),
 ) {
     val isPaired: Boolean get() = hubId != null
+
+    /** Los que admiten una decision; el resto solo se informa. */
+    val decidableConflicts: List<RefusedChange> get() = conflicts.filter { it.isDecidable }
+}
+
+/**
+ * Un fallo que se resuelve solo si se reintenta, sin que el usuario toque nada.
+ *
+ * Separa "el hub estaba ocupado" de "el certificado cambio": el primero merece un boton de
+ * reintentar, el segundo una explicacion y volver a emparejar.
+ */
+private fun Throwable.isRetryableSync(): Boolean = when (this) {
+    is SyncError.Offline, is SyncError.HubUnreachable, is SyncError.RateLimited -> true
+    else -> false
 }
 
 /** Nombre propuesto al elegir donde guardar: la fecha es lo que distingue un respaldo de otro. */
@@ -102,6 +124,7 @@ class OptionsViewModel(
         viewModelScope.launch {
             val binding = syncRepository.binding()
             val pending = syncRepository.pendingChanges()
+            val lastSyncAt = syncRepository.lastSyncAt()
             _uiState.update { state ->
                 state.copy(
                     sync = state.sync.copy(
@@ -109,10 +132,86 @@ class OptionsViewModel(
                         exchangeUrl = binding?.exchangeUrl,
                         isPinned = binding?.certificateSha256 != null,
                         pendingChanges = pending,
+                        lastSyncAt = lastSyncAt,
                     ),
                 )
             }
         }
+    }
+
+    /**
+     * Repone la version del telefono sobre la que trajo el hub.
+     *
+     * Se guarda de nuevo por el camino normal de edicion, asi que sale como un cambio nuevo
+     * encadenado contra la revision del hub. Reponerla escribiendo directo ganaria esta vez y
+     * volveria a chocar en el intercambio siguiente.
+     */
+    fun onKeepLocal(conflict: RefusedChange) {
+        val slug = conflict.termSlug()
+        val input = conflict.asTermInput()
+        if (slug == null || input == null) {
+            resolveCollectionConflict(conflict)
+            return
+        }
+        viewModelScope.launch {
+            repository.updatePersonalTerm(slug, input).fold(
+                onSuccess = { dismissConflict(conflict, "Se conservo la version del telefono.") },
+                onFailure = { error -> failConflict(error.toUserMessage()) },
+            )
+        }
+    }
+
+    /** Quedarse con lo del hub no escribe nada: su version ya se aplico al sincronizar. */
+    fun onKeepHub(conflict: RefusedChange) {
+        dismissConflict(conflict, "Se conservo la version del hub.")
+    }
+
+    /**
+     * Guarda la version del telefono como un termino aparte.
+     *
+     * Lleva un sufijo en el titulo porque el titulo normalizado mas el idioma son la identidad de
+     * un termino personal: sin el, la copia chocaria contra el original apenas se sincronice.
+     */
+    fun onKeepBoth(conflict: RefusedChange) {
+        val input = conflict.asTermInput(titleOverride = "${conflict.label} (de este telefono)")
+            ?: return
+        viewModelScope.launch {
+            repository.createPersonalTerm(input).fold(
+                onSuccess = { dismissConflict(conflict, "Quedaron las dos versiones.") },
+                onFailure = { error -> failConflict(error.toUserMessage()) },
+            )
+        }
+    }
+
+    /** Una coleccion solo tiene nombre: conservar el del telefono es renombrarla de vuelta. */
+    private fun resolveCollectionConflict(conflict: RefusedChange) {
+        val uid = conflict.uid
+        if (uid == null || conflict.label.isBlank()) {
+            dismissConflict(conflict, "Se conservo la version del hub.")
+            return
+        }
+        viewModelScope.launch {
+            repository.renameCollection(uid, conflict.label).fold(
+                onSuccess = { dismissConflict(conflict, "Se conservo el nombre del telefono.") },
+                onFailure = { error -> failConflict(error.toUserMessage()) },
+            )
+        }
+    }
+
+    private fun dismissConflict(conflict: RefusedChange, message: String) {
+        updateSync { state ->
+            state.copy(
+                conflicts = state.conflicts.filterNot { it.changeId == conflict.changeId },
+                message = message,
+                failed = false,
+            )
+        }
+        refresh()
+        refreshSync()
+    }
+
+    private fun failConflict(message: String) {
+        updateSync { it.copy(message = message, failed = true) }
     }
 
     fun onPair(code: String, label: String) {
@@ -154,6 +253,8 @@ class OptionsViewModel(
                             // Un cambio rechazado no es un fallo de la sincronizacion: el resto
                             // viajo. Se marca igual para que no pase desapercibido.
                             failed = outcome.refused.isNotEmpty(),
+                            isRetryable = false,
+                            conflicts = outcome.refused,
                         )
                     }
                     refresh()
@@ -161,7 +262,12 @@ class OptionsViewModel(
                 },
                 onFailure = { error ->
                     updateSync {
-                        it.copy(isSyncing = false, message = error.toUserMessage(), failed = true)
+                        it.copy(
+                            isSyncing = false,
+                            message = error.toUserMessage(),
+                            failed = true,
+                            isRetryable = error.isRetryableSync(),
+                        )
                     }
                 },
             )

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "lexidex",
+      "runtimeExecutable": "py",
+      "runtimeArgs": ["backend/lexidex_api.py", "--host", "127.0.0.1", "--port", "8765"],
+      "port": 8765
+    }
+  ]
+}

@@ -27,6 +27,11 @@ class SyncRepository(
     suspend fun pendingChanges(): Long =
         userDatabaseProvider.get().syncStorageDao().pendingCount()
 
+    suspend fun lastSyncAt(): String? {
+        val hubId = bindingStore.read()?.hubId ?: return null
+        return RoomSyncStore(userDatabaseProvider.get()).lastSyncAt(hubId)
+    }
+
     /**
      * Canjea el codigo que el hub muestra y guarda el vinculo.
      *

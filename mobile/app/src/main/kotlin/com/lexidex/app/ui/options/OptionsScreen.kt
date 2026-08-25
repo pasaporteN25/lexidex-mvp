@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lexidex.app.domain.StorageInfo
 import com.lexidex.app.data.repository.PersonalCatalogImportSummary
+import com.lexidex.app.data.sync.RefusedChange
 import com.lexidex.app.ui.OnResume
 import com.lexidex.app.ui.theme.LexidexSpacing
 
@@ -100,6 +101,9 @@ fun OptionsScreen(viewModel: OptionsViewModel, onBack: () -> Unit) {
                     onPair = viewModel::onPair,
                     onSyncNow = viewModel::onSyncNow,
                     onUnpair = viewModel::onUnpair,
+                    onKeepLocal = viewModel::onKeepLocal,
+                    onKeepHub = viewModel::onKeepHub,
+                    onKeepBoth = viewModel::onKeepBoth,
                 )
                 SourcesSection(storage)
             }
@@ -241,6 +245,9 @@ private fun SyncSection(
     onPair: (String, String) -> Unit,
     onSyncNow: () -> Unit,
     onUnpair: () -> Unit,
+    onKeepLocal: (RefusedChange) -> Unit,
+    onKeepHub: (RefusedChange) -> Unit,
+    onKeepBoth: (RefusedChange) -> Unit,
 ) {
     var code by rememberSaveable { mutableStateOf("") }
     val deviceLabel = remember { "${Build.MANUFACTURER} ${Build.MODEL}".trim() }
@@ -261,6 +268,7 @@ private fun SyncSection(
                 "Certificado",
                 if (sync.isPinned) "fijado al emparejar" else "sin TLS (solo red de confianza)",
             )
+            Field("Ultima sincronizacion", sync.lastSyncAt ?: "nunca")
             Button(
                 onClick = onSyncNow,
                 enabled = !sync.isSyncing,
@@ -321,6 +329,68 @@ private fun SyncSection(
                     vertical = LexidexSpacing.tight,
                 ),
             )
+        }
+        // Solo cuando reintentar puede cambiar el resultado. Ofrecerlo ante un certificado
+        // distinto invitaria a insistir contra algo que no es el hub.
+        if (sync.isRetryable && !sync.isSyncing) {
+            OutlinedButton(
+                onClick = onSyncNow,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+            ) {
+                Text("Reintentar")
+            }
+        }
+
+        sync.conflicts.forEach { conflict ->
+            ConflictRow(
+                conflict = conflict,
+                onKeepLocal = { onKeepLocal(conflict) },
+                onKeepHub = { onKeepHub(conflict) },
+                onKeepBoth = { onKeepBoth(conflict) },
+            )
+        }
+    }
+}
+
+/**
+ * Un conflicto y las tres salidas.
+ *
+ * Se muestra tambien cuando no hay decision posible -por ejemplo si el termino del que dependia ya
+ * no existe- porque el usuario igual tiene que enterarse de que ese cambio no viajo.
+ */
+@Composable
+private fun ConflictRow(
+    conflict: RefusedChange,
+    onKeepLocal: () -> Unit,
+    onKeepHub: () -> Unit,
+    onKeepBoth: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+    ) {
+        Text(
+            conflict.label.ifBlank { "Un cambio" } + " se edito en los dos lados",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            conflict.message.ifBlank { "El hub no lo acepto." },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (!conflict.isDecidable) return@Column
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = LexidexSpacing.tight),
+            horizontalArrangement = Arrangement.spacedBy(LexidexSpacing.tight),
+        ) {
+            TextButton(onClick = onKeepLocal) { Text("Lo del telefono") }
+            TextButton(onClick = onKeepHub) { Text("Lo del hub") }
+            if (conflict.entityType == "personal_term") {
+                TextButton(onClick = onKeepBoth) { Text("Los dos") }
+            }
         }
     }
 }
