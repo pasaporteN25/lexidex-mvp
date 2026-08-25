@@ -7,6 +7,7 @@ import com.lexidex.app.data.db.dao.TermDao
 import com.lexidex.app.data.db.entity.SourceEntity
 import com.lexidex.app.data.db.entity.TermEntity
 import com.lexidex.app.data.userdb.UserDatabaseProvider
+import com.lexidex.app.data.userdb.LexidexUserDatabase
 import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.CollectionEntity
 import com.lexidex.app.data.userdb.entity.HistoryEntryEntity
@@ -31,6 +32,7 @@ import com.lexidex.app.domain.games.CincoQuestion
 import com.lexidex.app.domain.games.CincoQuestionBuilder
 import com.lexidex.app.domain.games.DistractorPicker
 import com.lexidex.app.domain.games.GameTerm
+import androidx.room3.withWriteTransaction
 import java.net.URI
 import java.time.Instant
 import java.util.UUID
@@ -288,11 +290,51 @@ class CorpusRepository(
      * unico que el usuario no puede recuperar de ningun otro lado.
      */
     suspend fun exportPersonalCatalog(): Result<PersonalCatalogBackup> = corpusResult {
-        val collections = collectionDao().listAllForBackup()
-        val membersByCollection = collectionDao().listAllMembersForBackup().groupBy { it.collectionUid }
-        PersonalCatalogBackup(
-            exportedAt = nowIso(),
-            terms = userTermDao().listAllForBackup().map { term ->
+        personalCatalogSnapshot(userDatabaseProvider.get(), nowIso())
+    }
+
+    /** Reads and compares an untrusted backup without writing anything. */
+    suspend fun previewPersonalCatalogImport(text: String): Result<PersonalCatalogImportSummary> =
+        corpusResult {
+            val incoming = validatedPersonalCatalogBackupFromJson(text)
+            val installedPackage = installedPackageSnapshot(incoming)
+            val userDatabase = userDatabaseProvider.get()
+            planPersonalCatalogImport(
+                incoming = incoming,
+                current = personalCatalogSnapshot(userDatabase, nowIso()),
+                installedPackage = installedPackage,
+            ).summary
+        }
+
+    /** Applies a freshly rebuilt merge plan atomically. Repeating the same file is safe. */
+    suspend fun importPersonalCatalog(text: String): Result<PersonalCatalogImportSummary> =
+        corpusResult {
+            val incoming = validatedPersonalCatalogBackupFromJson(text)
+            // The package is immutable and lives in another database. Resolve it before holding
+            // the personal database's writer transaction.
+            val installedPackage = installedPackageSnapshot(incoming)
+            val userDatabase = userDatabaseProvider.get()
+            userDatabase.withWriteTransaction {
+                val plan = planPersonalCatalogImport(
+                    incoming = incoming,
+                    current = personalCatalogSnapshot(userDatabase, nowIso()),
+                    installedPackage = installedPackage,
+                )
+                applyPersonalCatalogImport(userDatabase, plan)
+                plan.summary
+            }
+        }
+
+    private suspend fun personalCatalogSnapshot(
+        database: LexidexUserDatabase,
+        exportedAt: String,
+    ): PersonalCatalogBackup {
+        val collections = database.collectionDao().listAllForBackup()
+        val membersByCollection = database.collectionDao().listAllMembersForBackup()
+            .groupBy { it.collectionUid }
+        return PersonalCatalogBackup(
+            exportedAt = exportedAt,
+            terms = database.userTermDao().listAllForBackup().map { term ->
                 BackupTerm(
                     uid = term.uid,
                     slug = term.slug,
@@ -311,10 +353,10 @@ class CorpusRepository(
                     updatedAt = term.updatedAt,
                 )
             },
-            favorites = favoriteDao().listAll().map {
+            favorites = database.favoriteDao().listAll().map {
                 BackupTermRef(it.termSlug, it.termOrigin.wireValue(), it.createdAt)
             },
-            history = historyDao().listAllForBackup().map {
+            history = database.historyDao().listAllForBackup().map {
                 BackupTermRef(it.termSlug, it.termOrigin.wireValue(), it.viewedAt)
             },
             collections = collections.map { collection ->
@@ -329,6 +371,84 @@ class CorpusRepository(
                 )
             },
         )
+    }
+
+    private suspend fun installedPackageSnapshot(
+        incoming: PersonalCatalogBackup,
+    ): InstalledPackageSnapshot {
+        val dao = termDao()
+        val titleSlugs = buildMap {
+            incoming.terms
+                .map { TermTitleKey(normalizedKey(it.title), it.language) }
+                .distinct()
+                .forEach { key ->
+                    dao.findByNormalizedTitle(key.normalizedTitle, key.language)?.let { slug ->
+                        put(key, slug)
+                    }
+                }
+        }
+        val referencedPackageSlugs = buildSet {
+            incoming.favorites.filterToPackageSlugs(this)
+            incoming.history.filterToPackageSlugs(this)
+            incoming.collections.forEach { it.members.filterToPackageSlugs(this) }
+        }
+        val installedSlugs = referencedPackageSlugs.filterTo(mutableSetOf()) { slug ->
+            dao.getBySlug(slug) != null
+        }
+        return InstalledPackageSnapshot(installedSlugs, titleSlugs)
+    }
+
+    private suspend fun applyPersonalCatalogImport(
+        database: LexidexUserDatabase,
+        plan: PersonalCatalogImportPlan,
+    ) {
+        val termDao = database.userTermDao()
+        plan.termsToAdd.forEach { termDao.insert(it.toEntity()) }
+        plan.termsToUpdate.forEach { imported ->
+            val local = termDao.getByUid(imported.uid)
+                ?: throw CorpusError.PersonalTermNotFound(imported.slug)
+            termDao.update(imported.toEntity(id = local.id))
+        }
+
+        val collectionDao = database.collectionDao()
+        plan.collectionsToAdd.forEach { collection ->
+            collectionDao.insert(collection.toEntity())
+        }
+        plan.collectionsToUpdate.forEach { collection ->
+            collectionDao.rename(
+                uid = collection.uid,
+                name = collection.name,
+                normalizedName = normalizedKey(collection.name),
+                updatedAt = collection.updatedAt,
+            )
+        }
+
+        plan.favoritesToAdd.forEach { reference ->
+            database.favoriteDao().add(
+                reference.slug,
+                reference.origin.toTermOrigin(),
+                reference.at,
+            )
+        }
+        plan.historyToAdd.forEach { reference ->
+            database.historyDao().record(
+                HistoryEntryEntity(
+                    termSlug = reference.slug,
+                    termOrigin = reference.origin.toTermOrigin(),
+                    viewedAt = reference.at,
+                ),
+            )
+        }
+        plan.membersToAdd.forEach { member ->
+            val collectionId = collectionDao.findByUid(member.collectionUid)?.id
+                ?: throw CorpusError.CollectionNotFound(member.collectionUid)
+            collectionDao.addMember(
+                collectionId = collectionId,
+                slug = member.reference.slug,
+                origin = member.reference.origin.toTermOrigin(),
+                addedAt = member.reference.at,
+            )
+        }
     }
 
     // endregion
@@ -648,6 +768,8 @@ class CorpusRepository(
             Result.failure(CorpusError.PackageCorrupted(e))
         } catch (e: PersonalTermValidationException) {
             Result.failure(CorpusError.InvalidField(e.field, e.message ?: "Campo invalido"))
+        } catch (e: InvalidPersonalCatalogBackupException) {
+            Result.failure(CorpusError.InvalidBackup(e.message ?: "El respaldo no es valido.", e))
         } catch (e: CorpusError) {
             Result.failure(e)
         } catch (e: Exception) {
@@ -670,6 +792,44 @@ private fun TermOrigin.wireValue(): String = when (this) {
     TermOrigin.PACKAGE -> "package"
     TermOrigin.PERSONAL -> "personal"
 }
+
+private fun String.toTermOrigin(): TermOrigin = when (this) {
+    "package" -> TermOrigin.PACKAGE
+    "personal" -> TermOrigin.PERSONAL
+    else -> error("Origen de termino no validado: $this")
+}
+
+private fun List<BackupTermRef>.filterToPackageSlugs(destination: MutableSet<String>) {
+    asSequence().filter { it.origin == "package" }.mapTo(destination) { it.slug }
+}
+
+private fun BackupTerm.toEntity(id: Long = 0) = UserTermEntity(
+    id = id,
+    uid = uid,
+    slug = slug,
+    title = title,
+    normalizedTitle = normalizedKey(title),
+    language = language,
+    kind = kind,
+    status = status,
+    summary = summary,
+    content = content,
+    sourceUrl = sourceUrl,
+    categories = categories,
+    tags = tags,
+    notes = notes,
+    revision = revision,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+)
+
+private fun BackupCollection.toEntity() = CollectionEntity(
+    uid = uid,
+    name = name,
+    normalizedName = normalizedKey(name),
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+)
 
 private fun UserTermEntity.toGameTerm() = GameTerm(
     slug = slug,

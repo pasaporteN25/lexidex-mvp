@@ -12,6 +12,9 @@ herramienta opcional; su evaluacion esta en
 riesgos que gatea URLs, sincronizacion, carga de archivos y un servidor fuera
 de localhost esta en
 [`docs/security-threat-model.md`](docs/security-threat-model.md).
+La propuesta priorizada para sincronizar la capa personal entre Android y la
+web/desktop en la misma red esta en
+[`docs/local-network-sync-plan.md`](docs/local-network-sync-plan.md).
 
 ## Estado actual
 

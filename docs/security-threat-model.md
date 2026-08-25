@@ -22,13 +22,14 @@ denegacion de servicio, secretos, privacidad y cadena de suministro.
 | Superficie | Implementada hoy | Nota |
 | --- | --- | --- |
 | Importacion de URLs arbitrarias | No | El usuario nunca elige el destino. `source_url` se sigue guardando como texto validado y nunca se descarga. Desde 2026-08-19 hay busqueda contra Wikipedia (ADR 0003), pero contra un host fijo de una allowlist, con el aporte del usuario viajando solo como parametro codificado: ver "Busqueda en fuentes externas" mas abajo. |
-| Sincronizacion remota o cuentas | No | No hay autenticacion, sesiones ni sincronizacion en ningun modulo. |
+| Sincronizacion local LAN | No | Planificada, no implementada: el diseno propuesto esta en `local-network-sync-plan.md` y la epica 9.3-9.12. |
+| Sincronizacion remota o cuentas | No | No hay autenticacion, sesiones ni sincronizacion remota en ningun modulo. |
 | Carga de archivos no confiables | No | No existe endpoint de upload. |
 | Servidor fuera de localhost | Posible con un flag | `--host` en `lexidex_api.py` y `-HostAddress` en `start-lexidex.ps1` aceptan cualquier direccion; nada en el codigo bloquea o advierte si no es loopback. |
 | Integracion con modelos o servicios externos | No | No hay clientes HTTP salientes ni manejo de claves en el repo. |
 
-Cuatro de las cinco superficies simplemente no existen todavia, asi que no
-generan riesgo activo. La quinta -el servidor fuera de localhost- es la unica
+Cinco de las seis superficies simplemente no existen todavia, asi que no
+generan riesgo activo. La sexta -el servidor fuera de localhost- es la unica
 que un cambio de un solo parametro podria activar hoy sin que el codigo lo
 acompane con controles.
 
@@ -288,7 +289,9 @@ enriquecido; es un requisito de diseno para la etapa 2 de la hoja de ruta.
 - Cuando se diseñe sincronizacion o exportacion, tener en cuenta que
   `source_url` y las notas personales pueden revelar interes o habitos de
   lectura del usuario; cualquier sync debe cifrar en transito y en reposo,
-  no solo autenticar.
+  no solo autenticar. El plan LAN del 2026-08-24 adopta TLS, identidad del hub
+  fijada mediante QR y credenciales revocables por dispositivo; nada de eso
+  esta implementado todavia.
 
 ## Cadena de suministro de paquetes de conocimiento
 
@@ -317,6 +320,7 @@ enriquecido; es un requisito de diseno para la etapa 2 de la hoja de ruta.
 | Superficie | Bloqueada por | Antes de habilitar |
 | --- | --- | --- |
 | Importacion de URLs arbitrarias | No implementada | Checklist de SSRF completa (seccion arriba) |
+| Sincronizacion local LAN | Planificada, no implementada | Completar 9.3-9.12: contrato y conflictos, TLS + pairing, autenticacion por dispositivo, limites, tombstones y pruebas con red hostil |
 | Sincronizacion remota o cuentas | No disenada | Modelo de autenticacion, cifrado en transito y en reposo, gestion de secretos |
 | Carga de archivos no confiables | No implementada | Validacion por contenido real (magic bytes, no extension), limites de tamano, sandboxing |
 | Servidor fuera de localhost | Un flag sin guardas | ~~Fix de control de origen~~ (implementado), autenticacion, TLS o tunel, rate limiting |

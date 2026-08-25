@@ -9,6 +9,7 @@ import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.data.repository.PersonalTermInput
 import com.lexidex.app.ui.toUserMessage
 import com.lexidex.app.ui.viewModelFactoryOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +43,7 @@ data class PersonalTermEditorUiState(
     val hasSearched: Boolean = false,
     val isImporting: Boolean = false,
     val searchErrorMessage: String? = null,
+    val isLanguageFromSource: Boolean = false,
 ) {
     val canSave: Boolean get() = title.isNotBlank() && !isSaving && !isDeleting
     val canSubmitSearch: Boolean get() = searchQuery.isNotBlank() && !isSearching && !isImporting
@@ -76,16 +78,15 @@ class PersonalTermEditorViewModel(
         if (editSlug != null) {
             loadForEdit(editSlug)
         } else if (!initialTitle.isNullOrBlank()) {
-            // Llegando desde una busqueda sin resultados: el titulo ya esta escrito y la consulta
-            // a la fuente externa tambien. Se abre el buscador pero no se dispara: salir a la red
-            // sigue siendo algo que el usuario pide, no algo que pasa por navegar.
+            val seededTitle = initialTitle.trim()
             _uiState.update {
                 it.copy(
-                    title = initialTitle.trim(),
-                    searchQuery = initialTitle.trim(),
+                    title = seededTitle,
+                    searchQuery = seededTitle,
                     isSearchOpen = knowledgeSource != null,
                 )
             }
+            if (knowledgeSource != null) onSubmitSearch()
         }
     }
 
@@ -120,7 +121,9 @@ class PersonalTermEditorViewModel(
     }
 
     fun onTitleChange(value: String) = _uiState.update { it.copy(title = value) }
-    fun onLanguageChange(value: String) = _uiState.update { it.copy(language = value) }
+    fun onLanguageChange(value: String) = _uiState.update {
+        if (it.isLanguageFromSource) it else it.copy(language = value)
+    }
     fun onKindChange(value: String) = _uiState.update { it.copy(kind = value) }
     fun onStatusChange(value: String) = _uiState.update { it.copy(status = value) }
     fun onSummaryChange(value: String) = _uiState.update { it.copy(summary = value) }
@@ -155,7 +158,7 @@ class PersonalTermEditorViewModel(
         if (!state.canSubmitSearch) return
         viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true, searchErrorMessage = null) }
-            runCatching { source.search(state.searchQuery, state.language) }.fold(
+            suspendRunCatching { source.search(state.searchQuery, state.language) }.fold(
                 onSuccess = { results ->
                     _uiState.update {
                         it.copy(isSearching = false, hasSearched = true, searchResults = results)
@@ -183,7 +186,7 @@ class PersonalTermEditorViewModel(
         val source = knowledgeSource ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isImporting = true, searchErrorMessage = null) }
-            runCatching { source.fetch(result) }.fold(
+            suspendRunCatching { source.fetch(result) }.fold(
                 onSuccess = { article ->
                     _uiState.update {
                         it.copy(
@@ -195,6 +198,7 @@ class PersonalTermEditorViewModel(
                             summary = article.summary,
                             content = article.content,
                             sourceUrl = article.sourceUrl,
+                            isLanguageFromSource = true,
                         )
                     }
                 },
@@ -267,3 +271,12 @@ class PersonalTermEditorViewModel(
             }
     }
 }
+
+private suspend inline fun <T> suspendRunCatching(block: () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        Result.failure(error)
+    }

@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
@@ -254,6 +255,28 @@ private fun SearchResults(
                     onClick = { onTermClick(term.slug) },
                 )
             }
+            if (uiState.showAddSearchedTermFooter) {
+                item {
+                    AddSearchedTermFooter(
+                        query = uiState.query,
+                        onAddSearchedTerm = onAddSearchedTerm,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddSearchedTermFooter(query: String, onAddSearchedTerm: (String) -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.section),
+        contentAlignment = Alignment.Center,
+    ) {
+        TextButton(onClick = { onAddSearchedTerm(query) }) {
+            Text("Agregar \"$query\"")
         }
     }
 }

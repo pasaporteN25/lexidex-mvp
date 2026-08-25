@@ -76,24 +76,24 @@ saber esto porque cambia el tamano real de la tarea:
 Como project leader dejo esto priorizado, pero es una sugerencia, no una
 imposicion:
 
-Al 2026-08-20 estan cerradas las epicas 1, 2, 3, 7 y 8. La 5 y la 6 estan
-completas salvo por una tarea cada una, agregada o pendiente despues del cierre:
-5.10 y 6.4.
+Al 2026-08-24 estan cerradas las epicas 1, 2, 3, 7 y 8. La epica 5 recibio
+tareas nuevas despues del cierre y la 6 conserva su equivalente web pendiente.
+La siguiente capacidad grande priorizada es sincronizar la capa personal entre
+Android y desktop/web cuando comparten la red local.
 
 **El minijuego "Cinco" (epica 8) esta terminado y verificado a mano.** Era la
 funcionalidad de esta version mayor, y quedo cerrada el mismo dia en que se
 decidio.
 
-1. **CTA de "agregar lo que buscaste" debajo de los resultados** (5.10) - lo mas
-   chico de la lista y lo que mas se usa: la busqueda de la pantalla principal
-   es la puerta de entrada de todos los dias.
-2. **Importar un respaldo** (9.2) - exportar ya se puede desde el 2026-08-20;
-   traerlo de vuelta es lo que falta, y es la mitad dificil.
-3. **Articulo completo** (resto de la epica 4) - el mas grande de los que
+1. **Sincronizacion local mobile <-> desktop/web** (9.3 a 9.12) - siguiente
+   epica grande. Primero manual, bidireccional, sin cuenta y con el desktop/web
+   dockerizado como hub local; el plan tecnico vive en
+   `docs/local-network-sync-plan.md`.
+2. **Articulo completo** (resto de la epica 4) - el mas grande de los que
    quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
-4. **Copias fechadas y versionadas del articulo** (epica 10) - empieza barato
+3. **Copias fechadas y versionadas del articulo** (epica 10) - empieza barato
    (10.1 y 10.2 son fechar y mostrar) y se pone cara al final (10.6).
-5. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
+4. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
    al final de la epica 7.
 
 ---
@@ -431,16 +431,12 @@ la razon de que el encabezado haya vuelto a 🔶.
       cartel y nada mas. Ahora ofrece agregar el termino buscado, que es el
       momento natural para hacerlo -el termino ya esta escrito y la intencion ya
       existe-. El boton lleva al mismo editor que el `+`, con el titulo ya
-      puesto y el buscador de Wikipedia abierto con esa misma consulta.
-      **No dispara la busqueda sola**: salir a la red sigue siendo algo que el
-      usuario pide, no algo que pasa por navegar, que es lo que la pantalla de
-      opciones promete sobre las fuentes externas. Cancelar el dialogo deja el
-      formulario manual con el titulo puesto, asi que el camino sin conexion
-      tambien quedo mas corto.
-      Verificado en el emulador con "kintsugi": aparece la oferta, el editor
-      abre con el titulo y la consulta cargadas, y cancelar deja el formulario
-      listo para llenar a mano.
-- [ ] **5.10** _(Sonnet 5 · S)_ La misma oferta, pero **debajo de la lista de
+      puesto. Elegir esa oferta ya es el pedido explicito de consultar la fuente:
+      el buscador de Wikipedia se abre y dispara una vez esa misma consulta, sin
+      exigir un segundo toque en `Buscar`. La cruz o `Atras` cierran el dialogo y
+      dejan el formulario manual con el titulo puesto, asi que el camino sin
+      conexion tambien sigue disponible.
+- [x] **5.10** ✅ Completado el 2026-08-23: la misma oferta, pero **debajo de la lista de
       resultados** de la lupa de la pantalla principal, no solo cuando la
       busqueda no devolvio nada. Encontrar algo no quiere decir haber encontrado
       lo que se buscaba: buscar "tango" y que aparezcan tres terminos que no son
@@ -450,6 +446,21 @@ la razon de que el encabezado haya vuelto a 🔶.
       de 5.9 -ahi es la unica accion posible, aca compite con los resultados
       reales-, y lleva al mismo lugar: el editor con el titulo escrito y el
       buscador de la fuente externa cargado con esa consulta.
+      Quedo como una accion de texto separada al final de la lista, sin competir
+      con las filas. Verificado con "tango" en un Moto G41 y luego de punta a
+      punta en el emulador: aparece despues del ultimo resultado y abre el
+      buscador de Wikipedia con resultados ya cargados. El dialogo usa una cruz
+      superior en lugar de `Cancelar`. Al importar un articulo, el idioma queda
+      fijado al informado por la fuente; al crear el termino completamente a
+      mano, el idioma sigue siendo editable.
+- [ ] **5.11** _(M)_ Buscar primero en Wikipedia en espanol y, solamente si no
+      devuelve resultados, repetir en ingles. Cada resultado debe conservar y
+      mostrar su idioma real, que luego queda fijado al importar el articulo.
+      Evitar mezclar ambas consultas si la primera ya encontro algo.
+- [ ] **5.12** _(L)_ Permitir elegir una fuente, un grupo de fuentes o todas.
+      Antes de habilitar `Todas`, definir deduplicacion entre fuentes, limites de
+      concurrencia y pedidos, cancelacion, latencia esperable y una indicacion
+      visible del consumo de datos; no debe convertirse en la opcion por defecto.
 
 ## 6. Pantalla de opciones: de donde sale y donde se guarda la informacion 🔶
 
@@ -735,7 +746,7 @@ segundo juego: no hay con que contrastar si la abstraccion es la correcta, y
 lo mas probable es que haya que rehacerla. Cuando llegue el juego dos, ahi se
 ve que se repite de verdad y se extrae.
 
-## 9. Respaldo de los datos personales 🔶
+## 9. Respaldo y sincronizacion local de los datos personales 🔶
 
 Surgido del 2026-08-20 al preguntar si los datos persisten.
 
@@ -770,18 +781,93 @@ activado y no es algo que se pueda ver ni verificar.
       Seis tests fijan el formato; el resto se verifico en el emulador
       exportando el catalogo real (2 terminos, 2 favoritos, 11 vistas, 1
       coleccion) y leyendo el archivo resultante.
-- [ ] **9.2** _(Opus 5 · L)_ Importar ese archivo. Es bastante mas dificil que
-      exportar: hay que decidir que pasa con lo que ya existe (¿se fusiona,
-      se reemplaza, se duplica?) y validar un archivo que puede venir de
-      cualquier lado, lo que lo convierte en entrada no confiable.
-      Dos cosas que ya dejo resueltas 9.1: el formato existe y esta cubierto
-      por tests, y `validatePersonalTerm` mas la deteccion de duplicados sirven
-      tal cual para validar lo que venga adentro.
-      Y una que aparecio al exportar datos reales: **hay favoritos que apuntan
-      a terminos que ya no existen** (uno de un termino borrado hace dias). El
-      respaldo los guarda tal como estan, asi que la importacion tiene que
-      decidir que hace con una referencia colgada: omitirla es lo unico que no
-      rompe nada.
+- [x] **9.2** ✅ Importar ese archivo desde Opciones con el selector nativo
+      (`ActivityResultContracts.OpenDocument`), revisar una vista previa y
+      confirmar antes de escribir. La politica v1 es **fusionar, nunca
+      reemplazar**: un termino con el mismo `uid` solo se actualiza si trae una
+      `revision` mayor; un titulo + idioma ocupado por otra identidad se omite
+      y reporta. Las colecciones se reconocen por `uid`, el historial solo
+      agrega una vista mas reciente y favoritos/miembros usan `slug + origin`.
+      Repetir el mismo archivo produce cero cambios.
+
+      El archivo se trata como entrada no confiable: lectura UTF-8 limitada a
+      10 MB, `format` y `version` compatibles, topes de entidades, fechas ISO,
+      ids/slugs coherentes y todos los campos de termino pasan por
+      `validatePersonalTerm`. Primero se valida entero y luego el plan se
+      recalcula y aplica dentro de una unica transaccion de Room; cualquier
+      falla revierte todo. Una referencia `personal` sin termino resoluble se
+      omite y reporta. Una referencia `package` que la version instalada no
+      resuelve se conserva y se muestra como pendiente, para que dos
+      dispositivos con paquetes distintos no pierdan informacion en 9.3+.
+
+      Nueve tests nuevos cubren formato/version, campos y slugs manipulados,
+      revisiones, conflictos, referencias colgantes, historial, colecciones,
+      idempotencia y el limite del lector. Hay un fixture v1 estable en
+      `mobile/app/src/test/resources/backup/personal-catalog-v1.json`. La suite
+      completa, lint y el APK pasaron; en el emulador se importaron de verdad
+      1 termino, 1 favorito, 1 vista, 1 coleccion y 2 miembros, y la segunda
+      importacion mostro cero cambios.
+
+### Sincronizacion local mobile <-> desktop/web
+
+Pedido el 2026-08-24 y elevado al segundo lugar del orden sugerido, inmediatamente
+despues de 9.2. Habia referencias a "sincronizacion futura" en el ADR 0002 y
+compuertas en el modelo de amenazas, pero no un diseno. La propuesta completa,
+alternativas y criterios de aceptacion estan en
+[`local-network-sync-plan.md`](local-network-sync-plan.md).
+
+La primera version usa desktop/web como **hub local**, idealmente dockerizado,
+y Android como replica offline. Solo sincroniza la capa personal; nunca el
+paquete canonico. Es manual al principio, sin cuenta ni nube, con QR para
+emparejar. mDNS/NSD queda como comodidad posterior y no como requisito para que
+el flujo funcione.
+
+- [ ] **9.3** _(Sonnet 5 · M)_ ADR y contrato v1. Fijar alcance, versionado,
+      identidades estables, `change_id` idempotente, `device_id`, cursor del
+      servidor, limites de lote, errores y reglas por entidad. Incluir fixtures
+      JSON que Kotlin y Python deban interpretar igual. No empezar dos motores
+      de merge distintos: el de importar 9.2 es el bootstrap de sync.
+- [ ] **9.4** _(Opus 5 · L)_ Volver sincronizables ambos esquemas. Dar paridad
+      a web y Android para terminos, favoritos, historial, colecciones y
+      miembros; agregar revision/estado a las entidades que hoy solo existen o
+      no, journal local, cursor por dispositivo y tombstones. Las fechas se
+      muestran, pero no deciden conflictos porque los relojes pueden diferir.
+- [ ] **9.5** _(Opus 5 · L)_ Motor y API de intercambio, inicialmente solo en
+      localhost: push + pull transaccional, secuencia monotona del hub,
+      idempotencia al repetir un lote, paginado, validacion y referencias a
+      terminos de paquete conservadas aunque el paquete local no las resuelva.
+      Una edicion contra una `base_revision` vieja devuelve conflicto; no pisa.
+- [ ] **9.6** _(Opus 5 · L)_ Seguridad y emparejamiento antes de exponer la
+      LAN: TLS con identidad fijada mediante QR, token de un solo uso con
+      vencimiento, credencial distinta por dispositivo guardada hasheada en el
+      hub y protegida por Android Keystore, revocacion, rate limit, limites de
+      cuerpo y logs sin contenido privado. `127.0.0.1` sigue siendo el default.
+- [ ] **9.7** _(Sonnet 5 · M)_ Dockerizar frontend + API. `Dockerfile` y
+      `compose.yaml`, paquete montado de solo lectura, volumen persistente para
+      datos personales e identidad, usuario no-root y healthcheck. Publicar
+      loopback por defecto; un perfil LAN separado recibe la interfaz/IP y no
+      usa el inseguro `8765:8765` abierto en todas las interfaces por accidente.
+- [ ] **9.8** _(Opus 5 · L)_ Cliente Android: capa de red y repositorio como
+      frontera de errores, QR/URL manual, credencial segura, outbox, cursor,
+      aplicacion transaccional y accion `Sincronizar ahora`. Sin hub disponible
+      toda la app sigue funcionando offline y el error no bloquea la consulta.
+- [ ] **9.9** _(Sonnet 5 · M)_ UX en ambos lados: dispositivo conectado, ultima
+      sincronizacion, conteos antes de la primera mezcla, progreso, errores
+      reintentables y conflictos. Terminos/colecciones concurrentes permiten
+      elegir mobile, desktop o conservar ambos; borrados no resucitan solos.
+- [ ] **9.10** _(Sonnet 5 · M)_ Descubrimiento opcional con `_lexidex-sync._tcp`
+      y `NsdManager`, validando siempre la identidad emparejada y conservando QR
+      como fallback. Preparar el selector de servicio de Android 17 para evitar
+      pedir acceso amplio a toda la LAN cuando alcance.
+- [ ] **9.11** _(Sonnet 5 · M)_ Solo despues de estabilizar el modo manual,
+      evaluar sync al abrir la app y WorkManager con opt-in. Nunca hacer que la
+      consulta normal dependa del hub ni escanear la red indefinidamente en
+      segundo plano.
+- [ ] **9.12** _(Opus 5 · L)_ Verificacion de punta a punta con dos replicas y
+      Docker real: cambios en ambos sentidos, edicion concurrente, borrado
+      offline, lote repetido, corte a mitad, paquetes distintos, revocacion,
+      recreacion del contenedor y restauracion del volumen. Correr tambien el
+      checklist actualizado del modelo de amenazas antes de declarar LAN lista.
 
 ## 10. Copias fechadas del articulo, y mas de una ⬜
 

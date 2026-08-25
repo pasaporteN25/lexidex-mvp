@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -205,7 +206,16 @@ private fun PersonalTermEditorContent(
                 value = uiState.language,
                 onValueChange = onLanguageChange,
                 label = { Text("Idioma") },
-                supportingText = { Text("es, en, pt, fr, de, it, und") },
+                supportingText = {
+                    Text(
+                        if (uiState.isLanguageFromSource) {
+                            "Definido por ${search.sourceName}"
+                        } else {
+                            "es, en, pt, fr, de, it, und"
+                        },
+                    )
+                },
+                readOnly = uiState.isLanguageFromSource,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -293,7 +303,19 @@ private fun KnowledgeSearchDialog(
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f),
         ) {
             Column(modifier = Modifier.padding(LexidexSpacing.panel)) {
-                Text("Buscar en $sourceName", style = MaterialTheme.typography.headlineMedium)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        "Buscar en $sourceName",
+                        style = MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = search.onClose) {
+                        Icon(Icons.Default.Close, contentDescription = "Cerrar busqueda")
+                    }
+                }
                 Text(
                     "Se busca en la edicion en \"${uiState.language}\".",
                     style = MaterialTheme.typography.bodySmall,
@@ -311,14 +333,12 @@ private fun KnowledgeSearchDialog(
                         .fillMaxWidth()
                         .padding(top = LexidexSpacing.compact),
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(LexidexSpacing.tight),
+                TextButton(
+                    onClick = search.onSubmit,
+                    enabled = uiState.canSubmitSearch,
                     modifier = Modifier.padding(top = LexidexSpacing.tight),
                 ) {
-                    TextButton(onClick = search.onSubmit, enabled = uiState.canSubmitSearch) {
-                        Text("Buscar")
-                    }
-                    TextButton(onClick = search.onClose) { Text("Cancelar") }
+                    Text("Buscar")
                 }
 
                 if (uiState.isSearching || uiState.isImporting) {

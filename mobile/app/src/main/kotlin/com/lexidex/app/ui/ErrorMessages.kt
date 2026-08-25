@@ -2,6 +2,7 @@ package com.lexidex.app.ui
 
 import com.lexidex.app.data.knowledge.KnowledgeSourceError
 import com.lexidex.app.data.repository.CorpusError
+import com.lexidex.app.data.repository.InvalidPersonalCatalogBackupException
 
 private const val GENERIC = "Ocurrio un error inesperado. Intenta de nuevo."
 
@@ -17,7 +18,10 @@ fun Throwable.toUserMessage(): String = when (this) {
     is CorpusError.DuplicateCollection,
     is CorpusError.CollectionNotFound,
     is CorpusError.NotEnoughPlayableTerms,
+    is CorpusError.InvalidBackup,
     -> message ?: GENERIC
+
+    is InvalidPersonalCatalogBackupException -> message ?: GENERIC
 
     is KnowledgeSourceError.Offline ->
         "Sin conexion. Podes cargar el termino a mano igual."

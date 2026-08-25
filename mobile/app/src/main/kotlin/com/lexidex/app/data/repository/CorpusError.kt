@@ -22,6 +22,9 @@ sealed class CorpusError(message: String, cause: Throwable? = null) : Exception(
 
     class CollectionNotFound(uid: String) : CorpusError("La coleccion ya no existe.")
 
+    /** An imported file was malformed, incompatible, oversized or contained invalid data. */
+    class InvalidBackup(message: String, cause: Throwable? = null) : CorpusError(message, cause)
+
     /** The catalog cannot furnish a whole round of the mini-game. */
     class NotEnoughPlayableTerms :
         CorpusError("No hay suficientes terminos con contenido para armar una partida.")

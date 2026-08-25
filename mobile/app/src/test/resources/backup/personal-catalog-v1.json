@@ -1,0 +1,58 @@
+{
+    "format": "lexidex-personal-catalog",
+    "version": 1,
+    "exportedAt": "2026-08-25T12:00:00Z",
+    "terms": [
+        {
+            "uid": "usr_99999999999999999999999999999999",
+            "slug": "personal-es-fixture-importacion--99999999",
+            "title": "Fixture importacion 9.2",
+            "language": "es",
+            "kind": "reference",
+            "status": "seed",
+            "summary": "Termino de prueba para verificar la importacion.",
+            "content": "Contenido local importado desde un respaldo versionado.",
+            "sourceUrl": "",
+            "categories": ["Pruebas"],
+            "tags": ["importacion"],
+            "notes": "Se puede borrar despues de la verificacion manual.",
+            "revision": 1,
+            "createdAt": "2026-08-25T11:00:00Z",
+            "updatedAt": "2026-08-25T11:00:00Z"
+        }
+    ],
+    "favorites": [
+        {
+            "slug": "fixture-package-term--does-not-exist",
+            "origin": "package",
+            "at": "2026-08-25T11:10:00Z"
+        }
+    ],
+    "history": [
+        {
+            "slug": "personal-es-fixture-importacion--99999999",
+            "origin": "personal",
+            "at": "2026-08-25T11:20:00Z"
+        }
+    ],
+    "collections": [
+        {
+            "uid": "col_99999999999999999999999999999999",
+            "name": "Fixture 9.2",
+            "createdAt": "2026-08-25T11:30:00Z",
+            "updatedAt": "2026-08-25T11:30:00Z",
+            "members": [
+                {
+                    "slug": "personal-es-fixture-importacion--99999999",
+                    "origin": "personal",
+                    "at": "2026-08-25T11:30:00Z"
+                },
+                {
+                    "slug": "fixture-package-term--does-not-exist",
+                    "origin": "package",
+                    "at": "2026-08-25T11:31:00Z"
+                }
+            ]
+        }
+    ]
+}

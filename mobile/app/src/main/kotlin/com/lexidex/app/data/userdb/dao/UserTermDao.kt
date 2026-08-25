@@ -23,6 +23,9 @@ interface UserTermDao {
     @Query("SELECT * FROM user_terms WHERE slug = :slug LIMIT 1")
     suspend fun getBySlug(slug: String): UserTermEntity?
 
+    @Query("SELECT * FROM user_terms WHERE uid = :uid LIMIT 1")
+    suspend fun getByUid(uid: String): UserTermEntity?
+
     /** Todo el catalogo personal, ordenado como `combined_list_terms(origin=personal)` en el backend. */
     @Query("SELECT * FROM user_terms ORDER BY title COLLATE NOCASE LIMIT :limit OFFSET :offset")
     suspend fun listAll(limit: Int, offset: Int): List<UserTermEntity>

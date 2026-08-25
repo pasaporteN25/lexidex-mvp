@@ -27,6 +27,8 @@ data class SearchUiState(
     val errorMessage: String? = null,
 ) {
     val showResults: Boolean get() = query.isNotBlank()
+    val showAddSearchedTermFooter: Boolean
+        get() = showResults && results.isNotEmpty() && !isSearching && errorMessage == null
 }
 
 sealed interface SearchEffect {
