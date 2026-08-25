@@ -1,0 +1,81 @@
+# Dos formas de correr el hub, y la diferencia entre las dos es a quien queda expuesto.
+#
+#   docker compose up                      -> solo esta maquina
+#   LEXIDEX_BIND=192.168.0.10 \
+#   LEXIDEX_TLS_DIR=./secrets \
+#   docker compose --profile lan up lexidex-lan
+#
+# El servicio de LAN no tiene valores por default a proposito: `${VAR:?...}` corta el arranque si
+# falta la interfaz o el certificado. Un `8765:8765` escrito de memoria publica en todas las
+# interfaces sin que nadie lo haya decidido, y es exactamente el accidente que esto evita.
+
+services:
+  lexidex:
+    build: .
+    image: lexidex-hub
+    # Loopback explicito: el hub queda accesible desde esta maquina y de ningun otro lado.
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      # El paquete es de solo lectura por contrato (ADR 0001), y el montaje lo hace cumplir
+      # aunque el codigo se equivoque.
+      - ./data/packages:/app/data/packages:ro
+      # Los datos personales y la identidad del hub sobreviven a reconstruir la imagen.
+      - lexidex-personal:/app/data/user
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=3).status == 200 else 1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  lexidex-lan:
+    extends:
+      service: lexidex
+    profiles:
+      - lan
+    # La interfaz la nombra quien levanta el servicio. Sin LEXIDEX_BIND no arranca.
+    ports:
+      - "${LEXIDEX_BIND:?nombra la interfaz o la IP que queres publicar, por ejemplo 192.168.0.10}:8765:8765"
+    volumes:
+      - ./data/packages:/app/data/packages:ro
+      - lexidex-personal:/app/data/user
+      - ${LEXIDEX_TLS_DIR:?apunta al directorio con hub-cert.pem y hub-key.pem}:/app/secrets:ro
+    command:
+      - python
+      - backend/lexidex_api.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --tls-cert
+      - /app/secrets/hub-cert.pem
+      - --tls-key
+      - /app/secrets/hub-key.pem
+    healthcheck:
+      # El certificado es autofirmado y el dispositivo lo fija por huella al emparejar; aca solo
+      # se comprueba que el proceso responde, no la identidad, que no es lo que mide una sonda.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import ssl, sys, urllib.request; sys.exit(0 if urllib.request.urlopen('https://127.0.0.1:8765/api/health', timeout=3, context=ssl._create_unverified_context()).status == 200 else 1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  lexidex-personal:

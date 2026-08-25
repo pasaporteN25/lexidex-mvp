@@ -311,6 +311,25 @@ class SyncAuthorizationTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(document["error"]["code"], "invalid_json")
 
+    def test_the_health_probe_answers_without_a_credential(self):
+        status, document = self.send("/api/health", method="GET")
+
+        # Es la sonda del contenedor: tiene que contestar antes de que exista ningun
+        # emparejamiento, y no puede filtrar nada del catalogo.
+        self.assertEqual(status, 200)
+        self.assertEqual(document["status"], "ok")
+        self.assertEqual(document["paired_devices"], 0)
+        self.assertNotIn("devices", document)
+
+    def test_the_health_probe_counts_only_devices_that_still_have_access(self):
+        self.pair(DEVICE)
+        self.pair(OTHER_DEVICE)
+        self.send(f"/api/sync/v1/devices/{DEVICE}", method="DELETE")
+
+        _, document = self.send("/api/health", method="GET")
+
+        self.assertEqual(document["paired_devices"], 1)
+
     def test_the_device_list_is_not_reachable_from_another_origin(self):
         self.pair()
 

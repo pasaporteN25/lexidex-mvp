@@ -877,16 +877,38 @@ el flujo funcione.
       motor. Sin esto el hub publica solo lo que recibe por el exchange y lo
       creado desde la web nunca llega al telefono. Conviene que las dos puntas
       compartan la funcion de aplicar, y no que cada una escriba su version.
-- [ ] **9.6** _(Opus 5 · L)_ Seguridad y emparejamiento antes de exponer la
-      LAN: TLS con identidad fijada mediante QR, token de un solo uso con
-      vencimiento, credencial distinta por dispositivo guardada hasheada en el
-      hub y protegida por Android Keystore, revocacion, rate limit, limites de
-      cuerpo y logs sin contenido privado. `127.0.0.1` sigue siendo el default.
-- [ ] **9.7** _(Sonnet 5 · M)_ Dockerizar frontend + API. `Dockerfile` y
-      `compose.yaml`, paquete montado de solo lectura, volumen persistente para
-      datos personales e identidad, usuario no-root y healthcheck. Publicar
-      loopback por defecto; un perfil LAN separado recibe la interfaz/IP y no
-      usa el inseguro `8765:8765` abierto en todas las interfaces por accidente.
+- [x] **9.6** ✅ Seguridad y emparejamiento, mitad del hub.
+      `backend/local_sync_security.py`: token de un solo uso que vence a los
+      cinco minutos y viaja por el QR, canjeado una vez por una credencial
+      propia del dispositivo que el hub guarda solo hasheada. Revocar corta uno
+      sin tocar a los demas y conserva su registro 30 dias, porque la
+      idempotencia del journal se indexa por `device_id`. Limite de 60 pedidos
+      por minuto **antes** de comprobar la credencial, para que probar claves no
+      salga gratis. Los logs del intercambio registran forma y tamano del lote,
+      nunca su contenido. La identidad sale de la credencial y no del cuerpo,
+      asi que un documento ilegible se contesta por lo que de verdad tiene.
+      TLS entra por `--tls-cert`/`--tls-key` y el payload del QR lleva la huella
+      sha256 del certificado para que el dispositivo la fije; `127.0.0.1` sigue
+      siendo el default y el hub avisa si escucha fuera de loopback sin TLS.
+
+      **Falta la mitad del telefono**: guardar la credencial en Android Keystore
+      y fijar la huella del certificado. Va con 9.8, que es donde aparece la
+      capa de red. Y **generar el certificado sigue siendo un paso manual con
+      `openssl`**: automatizarlo pide `cryptography`, la primera dependencia de
+      terceros del proyecto, y esa decision es de Lucas.
+- [x] **9.7** ✅ `Dockerfile` y `compose.yaml`, con `/api/health` como sonda.
+      Imagen sin etapa de instalacion porque el backend es solo biblioteca
+      estandar; usuario no-root, raiz de solo lectura, `cap_drop: ALL` y
+      `no-new-privileges`. El paquete entra montado `:ro` -el ADR 0001 lo pide y
+      el montaje lo hace cumplir aunque el codigo se equivoque- y los datos
+      personales mas la identidad del hub viven en un volumen. El servicio por
+      default publica en `127.0.0.1:8765`; el perfil `lan` no tiene valores por
+      default y exige `LEXIDEX_BIND` y `LEXIDEX_TLS_DIR`, de modo que no exista
+      la forma de publicar en todas las interfaces sin haberlo decidido.
+
+      **Sin verificar**: en esta maquina no hay Docker, asi que los dos archivos
+      estan escritos pero nunca se construyeron ni se levantaron. Antes de
+      confiar en ellos hay que correr `docker compose up` una vez.
 - [ ] **9.8** _(Opus 5 · L)_ Cliente Android: capa de red y repositorio como
       frontera de errores, QR/URL manual, credencial segura, outbox, cursor,
       aplicacion transaccional y accion `Sincronizar ahora`. Sin hub disponible

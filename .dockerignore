@@ -1,0 +1,18 @@
+# El contexto de build no necesita nada de esto, y varios pesan mucho mas que la imagen.
+.git/
+.gitignore
+mobile/
+data/
+work/
+graphify-out/
+docs/
+tests/
+tools/
+__pycache__/
+*.pyc
+*.sqlite
+*.md
+Dockerfile
+compose.yaml
+start-lexidex.cmd
+start-lexidex.ps1

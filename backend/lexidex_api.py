@@ -2125,6 +2125,42 @@ class LexidexHandler(BaseHTTPRequestHandler):
             return None
         return candidate if isinstance(candidate, str) else None
 
+    def handle_health(self):
+        """
+        Sonda para el healthcheck del contenedor. No expone nada del catalogo.
+
+        Abre las dos bases porque un contenedor que responde pero perdio el volumen de datos
+        personales esta roto de la peor manera: parece sano y sincroniza contra un catalogo
+        vacio. Devolver 503 en ese caso hace que el orquestador no lo declare listo.
+        """
+        try:
+            package_conn, user_conn = self.store.connections()
+        except sqlite3.Error:
+            self.send_json(503, {"status": "unavailable", "package": False, "personal": False})
+            return
+        try:
+            user_conn.execute("SELECT 1 FROM user_terms LIMIT 1").fetchone()
+            self.send_json(
+                200,
+                {
+                    "status": "ok",
+                    "package": self.store.canonical,
+                    "personal": True,
+                    "paired_devices": len(
+                        [
+                            device
+                            for device in self.store.security.device_list()
+                            if device["revoked_at"] is None
+                        ]
+                    ),
+                },
+            )
+        except sqlite3.Error:
+            self.send_json(503, {"status": "unavailable", "package": self.store.canonical, "personal": False})
+        finally:
+            package_conn.close()
+            user_conn.close()
+
     def handle_sync_pairing(self):
         """
         Emite el codigo de emparejamiento. Sale de la web, que ya esta del lado del duenio del hub.
@@ -2271,6 +2307,10 @@ class LexidexHandler(BaseHTTPRequestHandler):
         # Los dispositivos emparejados viven en el archivo lateral del hub, no en el catalogo.
         if path == "/api/sync/v1/devices":
             self.handle_sync_devices()
+            return
+
+        if path == "/api/health":
+            self.handle_health()
             return
 
         package_conn, user_conn = self.store.connections()
