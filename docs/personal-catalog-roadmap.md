@@ -896,7 +896,13 @@ mano.
 - En el mismo lugar aparecio que `package_meta.package_version` dice
   `0.2.0-seed.1` dentro del paquete v0.4.0: el enriquecimiento no actualizo esa
   fila. La pantalla de opciones muestra la version correcta porque la lee del
-  manifiesto, no de ahi.
+  manifiesto, no de ahi. **Resuelto el 2026-08-25**, en las dos puntas:
+  `finalize_package` ahora sella `package_meta.package_version` antes del
+  `VACUUM`, asi que todo paquete cortado de aca en adelante sale coherente; y
+  `package_identity` en `backend/lexidex_api.py` hace mandar al manifiesto sobre
+  la base, que es lo que arregla el v0.4.0 ya publicado sin reescribirlo. Un
+  `.sqlite` publicado no se corrige en el lugar: cambiaria su checksum y dejaria
+  dos artefactos distintos diciendo ser la misma version (ADR 0001).
 
 **Donde viven las copias.** El paquete es de solo lectura y se reemplaza entero
 cuando llega una version nueva (ADR 0002), asi que las copias adicionales de un
@@ -910,8 +916,9 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
       `tools/enrich_corpus.py` escriba `sources.retrieved_at` y
       `sources.content_sha256`, que ya existen en el esquema y estan vacias.
       Implica volver a correr el enriquecimiento y cortar un paquete nuevo. Sin
-      esto no hay fecha que mostrar. De paso, corregir `package_meta` para que
-      la version que guarda el paquete sea la del paquete.
+      esto no hay fecha que mostrar. La parte de `package_meta` que estaba
+      anotada aca ya se hizo (ver arriba); lo que queda es la fecha por
+      articulo.
 - [ ] **10.2** _(Haiku 4.5 · S)_ Mostrar esa fecha en la ficha ("Copia del
       19/08/2026") en Android y en la web. Es leer un campo que ya viaja.
 - [ ] **10.3** _(Opus 5 · L)_ Tabla de versiones en la base de usuario:

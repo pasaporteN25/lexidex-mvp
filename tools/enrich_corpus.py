@@ -477,6 +477,29 @@ def enrich(database, limit=0, dry_run=False, sleep_seconds=DEFAULT_SLEEP_SECONDS
 
 
 SEED_LIMITATION = "This is a seed catalog; article bodies and summaries were not fetched."
+EXTRACT_LIMITATION = (
+    "Los extractos provienen de Wikipedia (CC BY-SA); cada termino conserva su URL de origen "
+    "como atribucion. Se guarda solo la introduccion, recortada en limite de oracion."
+)
+
+
+def stamp_package_version(conn, package_version):
+    """
+    Re-sella `package_meta.package_version` dentro de la base.
+
+    `build_corpus.py` escribe esa fila al construir y el enriquecimiento nunca la tocaba: solo
+    reescribia el manifiesto. El paquete v0.4.0-enriched.1 quedo por eso diciendo adentro
+    `0.2.0-seed.1`, que es la version desde la que se enriquecio. Android nunca lo noto porque
+    lee la identidad del manifiesto, pero `/api/stats` sirve `package_meta` tal cual, y el
+    descriptor de paquete del contrato de sincronizacion (ADR 0004) compara version entre
+    replicas: dos lados leyendo distinta fuente para el mismo dato no pueden coincidir.
+    """
+    conn.execute(
+        "INSERT INTO package_meta (key, value) VALUES ('package_version', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (package_version,),
+    )
+    conn.commit()
 
 
 def finalize_package(database, package_version=None):
@@ -490,6 +513,10 @@ def finalize_package(database, package_version=None):
     database = Path(database)
     conn = sqlite3.connect(database)
     try:
+        # Antes del VACUUM: la fila nueva tiene que entrar en los mismos bytes que despues se
+        # resumen en el manifiesto, o el checksum describiria una base que ya no es la del disco.
+        if package_version:
+            stamp_package_version(conn, package_version)
         enriched = conn.execute("SELECT COUNT(*) FROM terms WHERE content <> ''").fetchone()[0]
         conn.execute("VACUUM")
     finally:
@@ -507,11 +534,14 @@ def finalize_package(database, package_version=None):
         "sha256": hashlib.sha256(payload).hexdigest(),
     }
     manifest["capabilities"]["rag_ready_terms"] = enriched
-    manifest["limitations"] = [l for l in manifest.get("limitations", []) if l != SEED_LIMITATION]
-    manifest["limitations"].append(
-        "Los extractos provienen de Wikipedia (CC BY-SA); cada termino conserva su URL de origen "
-        "como atribucion. Se guarda solo la introduccion, recortada en limite de oracion."
-    )
+    # La nota de extractos se saca antes de volver a ponerla: cerrar dos veces el mismo paquete
+    # (extractos y despues `--categories`) la duplicaba en la lista.
+    manifest["limitations"] = [
+        limitation
+        for limitation in manifest.get("limitations", [])
+        if limitation not in (SEED_LIMITATION, EXTRACT_LIMITATION)
+    ]
+    manifest["limitations"].append(EXTRACT_LIMITATION)
     if package_version:
         manifest["package_version"] = package_version
     manifest_path.write_text(

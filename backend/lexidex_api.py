@@ -1263,6 +1263,37 @@ def random_term(conn, canonical):
     return enrich_term(conn, row, canonical) if row else None
 
 
+def package_identity(conn):
+    """
+    Identidad del paquete: `package_meta`, con el manifiesto mandando sobre `package_id` y
+    `package_version`.
+
+    Los paquetes construidos antes de la correccion de `tools/enrich_corpus.py` traen adentro la
+    version desde la que se enriquecieron y no la propia: v0.4.0-enriched.1 dice `0.2.0-seed.1`.
+    Reescribir ese `.sqlite` para corregirlo cambiaria el checksum de una version ya publicada y
+    dejaria dos artefactos distintos diciendo ser el mismo, que es justo lo que prohibe el ADR
+    0001. El manifiesto es el que se verifica al abrir y el que Android ya muestra, asi que se
+    lee de ahi y el paquete queda intacto.
+    """
+    meta = dict(conn.execute("SELECT key, value FROM package_meta"))
+    row = conn.execute("PRAGMA database_list").fetchone()
+    database_path = Path(row[2]) if row and row[2] else None
+    if database_path is None:
+        return meta
+
+    manifest_path = database_path.parent / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return meta
+
+    for key in ("package_id", "package_version"):
+        value = manifest.get(key)
+        if isinstance(value, str) and value:
+            meta[key] = value
+    return meta
+
+
 def corpus_stats(conn, canonical):
     payload = {
         "terms": conn.execute("SELECT COUNT(*) FROM terms").fetchone()[0],
@@ -1284,7 +1315,7 @@ def corpus_stats(conn, canonical):
                 "seed_terms": conn.execute(
                     "SELECT COUNT(*) FROM terms WHERE status = 'seed'"
                 ).fetchone()[0],
-                "package": dict(conn.execute("SELECT key, value FROM package_meta")),
+                "package": package_identity(conn),
             }
         )
     return payload

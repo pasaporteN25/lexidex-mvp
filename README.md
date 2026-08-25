@@ -17,6 +17,8 @@ web/desktop en la misma red esta en
 [`docs/local-network-sync-plan.md`](docs/local-network-sync-plan.md).
 El contrato ejecutable de esa sincronizacion esta en
 [`contracts/local-sync/v1/`](contracts/local-sync/v1/README.md).
+Lo que fue cambiando, fecha por fecha, esta en
+[`CHANGELOG.md`](CHANGELOG.md).
 
 ## Estado actual
 
@@ -41,7 +43,7 @@ lexidex-mvp/
   contracts/                Contratos y fixtures compartidos entre plataformas
   data/
     raw/palabras.txt        Entrada original preservada byte a byte
-    packages/               Paquetes de conocimiento versionados
+    packages/               Paquete de conocimiento vigente (solo el vigente)
     user/                   Terminos y notas personales editables
     terms.csv               Dataset pequeno del MVP anterior
   docs/
@@ -56,7 +58,9 @@ lexidex-mvp/
   tests/                    Pruebas del importador y del paquete
   tools/
     build_corpus.py         Importador reproducible TXT -> SQLite + JSONL
+    enrich_corpus.py        Extractos y categorias de Wikipedia sobre el paquete
     import_terms.py         Importador CSV legado
+  CHANGELOG.md              Cambios notables, por fecha
   start-lexidex.cmd         Launcher compatible con la politica de Windows
   start-lexidex.ps1         Deteccion de Python y puerto libre
 ```

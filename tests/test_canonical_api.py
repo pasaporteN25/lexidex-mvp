@@ -94,6 +94,30 @@ class CanonicalApiTest(PackageFixture, unittest.TestCase):
         self.assertEqual(stats["occurrences"], 5)
         self.assertEqual(stats["package"]["schema_version"], "2")
 
+    def test_manifest_wins_over_a_stale_version_stamped_in_the_database(self):
+        # Es la situacion de palabras-v0.4.0-enriched.1: se enriquecio desde la v0.2.0 y el
+        # enriquecimiento re-sellaba el manifiesto pero no `package_meta`. Corregir el .sqlite
+        # publicado cambiaria su checksum (ADR 0001), asi que manda el manifiesto.
+        stale = sqlite3.connect(self.database)
+        try:
+            stale.execute(
+                "UPDATE package_meta SET value = '0.2.0-seed.1' WHERE key = 'package_version'"
+            )
+            stale.commit()
+        finally:
+            stale.close()
+
+        connection = api.connect(self.database, readonly=True)
+        try:
+            stats = api.corpus_stats(connection, canonical=True)
+        finally:
+            connection.close()
+
+        self.assertEqual(stats["package"]["package_version"], "0.1.0-seed.1")
+        self.assertEqual(stats["package"]["package_id"], "lexidex.palabras")
+        # Lo que el manifiesto no describe se sigue leyendo de la base.
+        self.assertEqual(stats["package"]["source_sha256"], sha256(self.temp / "palabras.txt"))
+
     def test_exposes_provenance_and_reverse_bidirectional_relation(self):
         connection = api.connect(self.database, readonly=True)
         try:
