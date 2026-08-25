@@ -985,23 +985,90 @@ el flujo funcione.
       **Falta ademas una dependencia para el QR**: el modulo no tiene camara ni
       escaner. Sin eso, el emparejamiento entra pegando el codigo a mano, que ya
       funciona; escanearlo pide agregar CameraX + ML Kit o ZXing.
-- [ ] **9.9** _(Sonnet 5 · M)_ UX en ambos lados: dispositivo conectado, ultima
-      sincronizacion, conteos antes de la primera mezcla, progreso, errores
-      reintentables y conflictos. Terminos/colecciones concurrentes permiten
-      elegir mobile, desktop o conservar ambos; borrados no resucitan solos.
+- [x] **9.9** ✅ UX de la sincronizacion en los dos lados.
+      En el telefono: hub emparejado, ultima sincronizacion, cambios sin enviar,
+      progreso, y un boton de reintentar que aparece **solo** cuando reintentar
+      puede cambiar el resultado -red caida, hub ocupado- y nunca ante un
+      certificado distinto, donde insistir seria insistir contra algo que no es
+      el hub. En la web: mostrar el codigo de emparejamiento, listar los
+      dispositivos con cuando se los vio por ultima vez, y revocar uno.
+
+      **Los conflictos se pueden decidir.** Un cambio rechazado conserva el
+      payload local que el hub no acepto, porque su version se aplica encima en
+      el mismo intercambio y si no "conservar lo mio" no tendria de donde sacar
+      "lo mio". Conservarlo lo vuelve a guardar por el camino normal de edicion,
+      o sea que sale como un cambio nuevo encadenado contra la revision del hub;
+      escribirlo directo ganaria una vez y volveria a chocar. "Los dos" guarda
+      la version local como termino aparte, con un sufijo en el titulo porque
+      titulo normalizado mas idioma son la identidad de un termino personal.
+
+      Solo `stale_revision`, `identity_conflict` y `duplicate_name` ofrecen
+      eleccion. `parent_deleted` o `invalid_change` no: volverian a fallar igual,
+      asi que se informan y se dejan. Un borrado tampoco se revierte solo, que
+      es lo que pedia la tarea.
+
+      Los conteos previos a la primera mezcla ya los daba la vista previa de
+      importacion (9.2), que es el bootstrap segun el ADR 0004.
 - [ ] **9.10** _(Sonnet 5 · M)_ Descubrimiento opcional con `_lexidex-sync._tcp`
       y `NsdManager`, validando siempre la identidad emparejada y conservando QR
       como fallback. Preparar el selector de servicio de Android 17 para evitar
       pedir acceso amplio a toda la LAN cuando alcance.
+
+      **Necesita una decision antes de empezar.** El lado Android es
+      `NsdManager`, que viene con la plataforma. El del hub no: publicar un
+      servicio mDNS desde Python pide `zeroconf`, porque la biblioteca estandar
+      no habla mDNS e implementarlo a mano seria escribir un protocolo entero
+      para ahorrarle al usuario tipear una direccion. Es la misma decision que
+      `cryptography`: la primera dependencia de terceros del backend.
+
 - [ ] **9.11** _(Sonnet 5 · M)_ Solo despues de estabilizar el modo manual,
       evaluar sync al abrir la app y WorkManager con opt-in. Nunca hacer que la
       consulta normal dependa del hub ni escanear la red indefinidamente en
       segundo plano.
+
+      **Necesita `androidx.work`**, que no esta en `libs.versions.toml`. Sin eso
+      lo unico posible seria sincronizar al abrir la app, que no sobrevive a que
+      el sistema mate el proceso y no es lo que pide la tarea.
+
 - [ ] **9.12** _(Opus 5 · L)_ Verificacion de punta a punta con dos replicas y
       Docker real: cambios en ambos sentidos, edicion concurrente, borrado
       offline, lote repetido, corte a mitad, paquetes distintos, revocacion,
       recreacion del contenedor y restauracion del volumen. Correr tambien el
       checklist actualizado del modelo de amenazas antes de declarar LAN lista.
+
+      **Es tambien donde se cubre lo que hoy no tiene test**: `RoomSyncStore` y
+      el SQL que Room genera. El resto de la ruta de sincronizacion se prueba
+      sin base -`SyncCoordinator` decide contra la interfaz `SyncStore`- pero la
+      escritura real sobre Room no, porque Room no se puede instanciar en un
+      test JVM en este proyecto.
+
+      Si conviene cubrirla antes de 9.12, hay dos caminos y ninguno es gratis:
+
+      1. **Test instrumentado** (`app/src/androidTest`) con `androidx.test` y un
+         emulador. Es el lugar canonico para probar Room y no miente sobre el
+         entorno; a cambio hace falta un emulador corriendo, que no hay en la
+         maquina donde se escribio esto.
+      2. **Robolectric** como dependencia de test. Corre en la JVM y da un
+         `Context`, asi que `RoomSyncStore` se probaria en el mismo `./gradlew
+         test` que todo lo demas. A cambio simula el framework en vez de
+         ejecutarlo, y es una dependencia de terceros mas.
+
+      Mientras tanto lo que queda descubierto es una llamada a DAO por
+      operacion, que es donde menos se esconde un error.
+
+- [ ] **9.13** _(Sonnet 5 · M)_ Escanear el codigo de emparejamiento con la
+      camara en vez de pegarlo. Hoy el hub lo muestra como texto y el telefono
+      lo recibe pegado, que funciona y no le cuesta nada al proyecto; escanearlo
+      pide CameraX mas ML Kit o ZXing, la primera dependencia de camara del
+      modulo, y el permiso correspondiente. El formato del payload ya es el
+      definitivo, asi que esto es cambiar como entra, no que entra.
+
+- [ ] **9.14** _(Sonnet 5 · S)_ Generar el certificado TLS del hub sin salir a
+      buscar `openssl`. Hoy es un comando documentado en
+      `contracts/local-sync/v1/README.md` y el hub lo consume con
+      `--tls-cert`/`--tls-key`. Automatizarlo pide `cryptography`: el modulo
+      `ssl` de la biblioteca estandar sabe **usar** un certificado pero no
+      emitirlo.
 
 ## 10. Copias fechadas del articulo, y mas de una ⬜
 

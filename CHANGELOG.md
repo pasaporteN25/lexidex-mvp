@@ -19,6 +19,13 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Agregado
 
+- Cuando los dos lados editaron lo mismo, ahora se puede elegir (tarea 9.9). El
+  telefono conserva la version que el hub rechazo y ofrece quedarse con la suya,
+  con la del hub, o con las dos; elegir la propia la vuelve a guardar como un
+  cambio nuevo, encadenado contra lo que trajo el hub. Un borrado no se revierte
+  solo. El boton de reintentar aparece solo cuando reintentar puede cambiar algo,
+  nunca ante un certificado distinto. En la web aparece el codigo de
+  emparejamiento, la lista de dispositivos con cuando se los vio, y revocar uno.
 - El telefono sincroniza con el hub (tarea 9.8). En Opciones aparece
   SINCRONIZACION: cuantos cambios estan sin enviar -tambien antes de emparejar,
   que es lo que muestra que no se pierden-, emparejar pegando el codigo del hub,
