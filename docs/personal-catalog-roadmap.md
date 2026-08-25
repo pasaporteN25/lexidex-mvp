@@ -869,14 +869,16 @@ el flujo funcione.
       termino no viaja. Es una tarea propia: pasar los caminos de escritura de
       `lexidex_api.py` por el motor con un `device_id` interno estable para la
       web, que es lo que el contrato ya preve.
-- [ ] **9.5b** _(Opus 5 · M)_ Publicar en el journal las ediciones locales de la
-      web. Cada camino de escritura de `backend/lexidex_api.py` -crear, editar y
-      borrar terminos, favoritos, historial, colecciones y miembros- tiene que
-      dejar su fila con un `device_id` interno estable, la misma derivacion de
-      borrados dependientes y el mismo encadenado de revisiones que ya hace el
-      motor. Sin esto el hub publica solo lo que recibe por el exchange y lo
-      creado desde la web nunca llega al telefono. Conviene que las dos puntas
-      compartan la funcion de aplicar, y no que cada una escriba su version.
+- [x] **9.5b** ✅ Las ediciones locales de la web se publican en el journal.
+      Toda escritura del catalogo personal pasa por `publish_local_change`, que
+      aplica y anota en la misma transaccion con un `device_id` interno estable.
+      La cascada de borrados dejo de estar escrita dos veces -a mano en
+      `delete_personal_term` y derivada en el motor- y quedo solo en el motor.
+      Cayeron dos cambios de comportamiento: agregar a una coleccion un termino
+      que ya estaba dejo de ser una escritura, y los cambios de miembro ya no
+      suben la revision de la coleccion padre, que habria hecho divergir a dos
+      replicas justo en el token con el que se resuelve un conflicto de
+      renombre.
 - [x] **9.6** ✅ Seguridad y emparejamiento, mitad del hub.
       `backend/local_sync_security.py`: token de un solo uso que vence a los
       cinco minutos y viaja por el QR, canjeado una vez por una credencial
