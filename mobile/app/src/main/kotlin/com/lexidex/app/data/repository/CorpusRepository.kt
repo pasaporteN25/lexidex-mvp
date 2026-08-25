@@ -32,6 +32,10 @@ import com.lexidex.app.domain.games.CincoQuestionBuilder
 import com.lexidex.app.domain.games.DistractorPicker
 import com.lexidex.app.domain.games.GameTerm
 import androidx.room3.withWriteTransaction
+import com.lexidex.app.data.sync.DependentDelete
+import com.lexidex.app.data.sync.FixedSyncDeviceIdentity
+import com.lexidex.app.data.sync.SyncChangeRecorder
+import com.lexidex.app.data.sync.SyncDeviceIdentity
 import java.net.URI
 import java.time.Instant
 import java.util.UUID
@@ -47,6 +51,15 @@ private const val DEFAULT_CATALOG_PAGE = 100
 
 /** Sin paginado: la categoria mas grande del paquete tiene 15 miembros. */
 private const val DEFAULT_LABEL_LIMIT = 200
+
+/**
+ * Identidad de reserva para cuando nadie inyecto una.
+ *
+ * Solo la usan las pruebas y las vistas previas. En la aplicacion real la pone
+ * [com.lexidex.app.LexidexApplication] desde preferencias, porque un `device_id` que cambia entre
+ * sesiones rompe la idempotencia del hub, que se indexa por `(device_id, change_id)`.
+ */
+const val UNPAIRED_DEVICE_ID = "dev_00000000000000000000000000000000"
 private const val MAX_COLLECTION_NAME = 80
 
 /** Three times what a round needs: candidates that cannot become a question are walked past. */
@@ -67,7 +80,25 @@ private const val PYTHON_ORDINAL_EPOCH_OFFSET = 719_163L
 class CorpusRepository(
     private val databaseProvider: CorpusDatabaseProvider,
     private val userDatabaseProvider: UserDatabaseProvider,
+    private val deviceIdentity: SyncDeviceIdentity = FixedSyncDeviceIdentity(UNPAIRED_DEVICE_ID),
 ) {
+
+    /**
+     * Toda escritura del catalogo personal pasa por aca: aplica y anota en el journal dentro de la
+     * misma transaccion.
+     *
+     * Es lo que le da al telefono algo para mandarle al hub. Una fila aplicada sin anotar se
+     * pierde -nada la vuelve a mirar- y una anotada sin aplicar le contaria al otro lado un cambio
+     * que no ocurrio, asi que las dos cosas van juntas o no van.
+     */
+    private suspend fun <T> journaling(
+        block: suspend (LexidexUserDatabase, SyncChangeRecorder) -> T,
+    ): T {
+        val database = userDatabaseProvider.get()
+        return database.withWriteTransaction {
+            block(database, SyncChangeRecorder(database.syncStorageDao(), deviceIdentity.deviceId()))
+        }
+    }
 
     /** Forces (or joins) the verify-and-open of the bundled package without running a query. */
     suspend fun ensureReady(): Result<Unit> = corpusResult {
@@ -312,14 +343,13 @@ class CorpusRepository(
             // The package is immutable and lives in another database. Resolve it before holding
             // the personal database's writer transaction.
             val installedPackage = installedPackageSnapshot(incoming)
-            val userDatabase = userDatabaseProvider.get()
-            userDatabase.withWriteTransaction {
+            journaling { userDatabase, recorder ->
                 val plan = planPersonalCatalogImport(
                     incoming = incoming,
                     current = personalCatalogSnapshot(userDatabase, nowIso()),
                     installedPackage = installedPackage,
                 )
-                applyPersonalCatalogImport(userDatabase, plan)
+                applyPersonalCatalogImport(userDatabase, plan, recorder)
                 plan.summary
             }
         }
@@ -397,21 +427,46 @@ class CorpusRepository(
         return InstalledPackageSnapshot(installedSlugs, titleSlugs)
     }
 
+    /**
+     * Escribe el plan y lo anota, fila por fila.
+     *
+     * Es el bootstrap del ADR 0004: no hay un segundo formato de mezcla, el plan confirmado se
+     * convierte en cambios normales del contrato. Por eso lo importado se anota igual que lo que
+     * el usuario escribe a mano; si no, un catalogo entero traido de otro telefono quedaria
+     * invisible para el hub.
+     *
+     * Cada revision se relee despues de escribir en vez de asumirla: la fila pudo existir ya, y
+     * anotar una revision que no es la que quedo en la tabla le contaria al hub un encadenado que
+     * no existe.
+     */
     private suspend fun applyPersonalCatalogImport(
         database: LexidexUserDatabase,
         plan: PersonalCatalogImportPlan,
+        recorder: SyncChangeRecorder,
     ) {
         val termDao = database.userTermDao()
-        plan.termsToAdd.forEach { termDao.insert(it.toEntity()) }
-        plan.termsToUpdate.forEach { imported ->
+        (plan.termsToAdd + plan.termsToUpdate).forEach { imported ->
             val local = termDao.getByUid(imported.uid)
+            if (local == null) {
+                termDao.insert(imported.toEntity())
+            } else {
+                termDao.update(imported.toEntity(id = local.id))
+            }
+            val stored = termDao.getByUid(imported.uid)
                 ?: throw CorpusError.PersonalTermNotFound(imported.slug)
-            termDao.update(imported.toEntity(id = local.id))
+            recorder.termUpserted(stored, stored.updatedAt)
         }
 
         val collectionDao = database.collectionDao()
         plan.collectionsToAdd.forEach { collection ->
             collectionDao.insert(collection.toEntity())
+            recorder.collectionUpserted(
+                uid = collection.uid,
+                name = collection.name,
+                createdAt = collection.createdAt,
+                updatedAt = collection.updatedAt,
+                revision = collectionDao.findByUid(collection.uid)?.revision ?: 1,
+            )
         }
         plan.collectionsToUpdate.forEach { collection ->
             collectionDao.rename(
@@ -420,30 +475,58 @@ class CorpusRepository(
                 normalizedName = normalizedKey(collection.name),
                 updatedAt = collection.updatedAt,
             )
+            recorder.collectionUpserted(
+                uid = collection.uid,
+                name = collection.name,
+                createdAt = collection.createdAt,
+                updatedAt = collection.updatedAt,
+                revision = collectionDao.findByUid(collection.uid)?.revision ?: 1,
+            )
         }
 
         plan.favoritesToAdd.forEach { reference ->
-            database.favoriteDao().add(
-                reference.slug,
-                reference.origin.toTermOrigin(),
-                reference.at,
+            val origin = reference.origin.toTermOrigin()
+            database.favoriteDao().add(reference.slug, origin, reference.at)
+            recorder.favoriteChanged(
+                slug = reference.slug,
+                origin = origin,
+                present = true,
+                revision = database.favoriteDao().row(reference.slug, origin)?.revision ?: 1,
+                changedAt = reference.at,
             )
         }
         plan.historyToAdd.forEach { reference ->
-            database.historyDao().record(
+            val origin = reference.origin.toTermOrigin()
+            database.historyDao().record(reference.slug, origin, reference.at)
+            recorder.historyChanged(
                 slug = reference.slug,
-                origin = reference.origin.toTermOrigin(),
-                viewedAt = reference.at,
+                origin = origin,
+                present = true,
+                revision = database.historyDao().row(reference.slug, origin)?.revision ?: 1,
+                changedAt = reference.at,
             )
         }
         plan.membersToAdd.forEach { member ->
             collectionDao.findByUid(member.collectionUid)
                 ?: throw CorpusError.CollectionNotFound(member.collectionUid)
+            val origin = member.reference.origin.toTermOrigin()
             collectionDao.addMember(
                 collectionUid = member.collectionUid,
                 slug = member.reference.slug,
-                origin = member.reference.origin.toTermOrigin(),
+                origin = origin,
                 addedAt = member.reference.at,
+            )
+            recorder.memberChanged(
+                collectionUid = member.collectionUid,
+                slug = member.reference.slug,
+                origin = origin,
+                present = true,
+                revision = collectionDao.memberRow(
+                    member.collectionUid,
+                    member.reference.slug,
+                    origin,
+                )?.revision ?: 1,
+                changedAt = member.reference.at,
             )
         }
     }
@@ -474,7 +557,10 @@ class CorpusRepository(
             createdAt = now,
             updatedAt = now,
         )
-        userTermDao().insert(term)
+        journaling { database, recorder ->
+            database.userTermDao().insert(term)
+            recorder.termUpserted(term, now)
+        }
         buildPersonalDetail(term)
     }
 
@@ -497,23 +583,76 @@ class CorpusRepository(
             revision = current.revision + 1,
             updatedAt = nowIso(),
         )
-        userTermDao().update(updated)
+        journaling { database, recorder ->
+            database.userTermDao().update(updated)
+            recorder.termUpserted(updated, updated.updatedAt)
+        }
         buildPersonalDetail(updated)
     }
 
     suspend fun deletePersonalTerm(slug: String): Result<Unit> = corpusResult {
-        val database = userDatabaseProvider.get()
-        database.withWriteTransaction {
+        journaling { database, recorder ->
             val now = nowIso()
-            val collections = database.collectionDao()
-                .uidsContaining(slug, TermOrigin.PERSONAL)
-            if (database.userTermDao().deleteBySlug(slug) == 0) {
-                throw CorpusError.PersonalTermNotFound(slug)
-            }
+            val term = database.userTermDao().getBySlug(slug)
+                ?: throw CorpusError.PersonalTermNotFound(slug)
+            // Se enumeran los dependientes antes de apagarlos, porque despues ya no se distinguen
+            // de los que estaban ausentes desde antes y no corresponde volver a anunciarlos.
+            val dependents = dependentsOf(database, slug)
+
+            database.userTermDao().deleteBySlug(slug)
             database.favoriteDao().remove(slug, TermOrigin.PERSONAL, now)
             database.historyDao().deleteByTerm(slug, TermOrigin.PERSONAL, now)
             database.collectionDao().removeTermEverywhere(slug, TermOrigin.PERSONAL, now)
-            collections.forEach { database.collectionDao().touch(it, now) }
+
+            recorder.termDeleted(term.uid, slug, term.revision + 1, now, dependents)
+        }
+    }
+
+    /**
+     * Lo que se apaga al borrar un termino personal: su favorito, su historial y cada pertenencia.
+     *
+     * Es la misma cascada que `_dependent_deletes` deriva en el hub. Cada uno viaja como un cambio
+     * propio para que las dos puntas apliquen exactamente lo mismo, en vez de que una deduzca de
+     * un borrado a secas lo que la otra escribio fila por fila.
+     */
+    private suspend fun dependentsOf(
+        database: LexidexUserDatabase,
+        slug: String,
+    ): List<DependentDelete> = buildList {
+        database.favoriteDao().row(slug, TermOrigin.PERSONAL)
+            ?.takeIf { it.isPresent }
+            ?.let {
+                add(
+                    DependentDelete(
+                        SyncChangeRecorder.ENTITY_FAVORITE,
+                        SyncChangeRecorder.referenceIdentity(TermOrigin.PERSONAL, slug),
+                        it.revision + 1,
+                    ),
+                )
+            }
+        database.historyDao().row(slug, TermOrigin.PERSONAL)
+            ?.takeIf { it.isPresent }
+            ?.let {
+                add(
+                    DependentDelete(
+                        SyncChangeRecorder.ENTITY_HISTORY,
+                        SyncChangeRecorder.referenceIdentity(TermOrigin.PERSONAL, slug),
+                        it.revision + 1,
+                    ),
+                )
+            }
+        database.collectionDao().membershipsOf(slug, TermOrigin.PERSONAL).forEach { member ->
+            add(
+                DependentDelete(
+                    SyncChangeRecorder.ENTITY_MEMBER,
+                    SyncChangeRecorder.memberIdentity(
+                        member.collectionUid,
+                        TermOrigin.PERSONAL,
+                        slug,
+                    ),
+                    member.revision + 1,
+                ),
+            )
         }
     }
 
@@ -608,13 +747,14 @@ class CorpusRepository(
 
     /** Returns the new state: true if it's now a favorite, false if it was just removed. */
     suspend fun toggleFavorite(slug: String, origin: TermOrigin): Result<Boolean> = corpusResult {
-        val dao = favoriteDao()
-        if (dao.find(slug, origin) != null) {
-            dao.remove(slug, origin, nowIso())
-            false
-        } else {
-            dao.add(slug, origin, nowIso())
-            true
+        journaling { database, recorder ->
+            val dao = database.favoriteDao()
+            val now = nowIso()
+            val current = dao.row(slug, origin)
+            val present = current?.isPresent != true
+            if (present) dao.add(slug, origin, now) else dao.remove(slug, origin, now)
+            recorder.favoriteChanged(slug, origin, present, (current?.revision ?: 0) + 1, now)
+            present
         }
     }
 
@@ -644,15 +784,18 @@ class CorpusRepository(
         }
         val now = nowIso()
         val uid = "col_${UUID.randomUUID().toString().replace("-", "")}"
-        collectionDao().insert(
-            CollectionEntity(
-                uid = uid,
-                name = clean,
-                normalizedName = normalized,
-                createdAt = now,
-                updatedAt = now,
-            ),
-        )
+        journaling { database, recorder ->
+            database.collectionDao().insert(
+                CollectionEntity(
+                    uid = uid,
+                    name = clean,
+                    normalizedName = normalized,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
+            recorder.collectionUpserted(uid, clean, now, now, revision = 1)
+        }
         TermCollection(uid, clean, 0)
     }
 
@@ -665,13 +808,32 @@ class CorpusRepository(
         if (collectionDao().findDuplicateName(normalized, uid) != null) {
             throw CorpusError.DuplicateCollection(clean)
         }
-        collectionDao().rename(uid, clean, normalized, nowIso())
+        journaling { database, recorder ->
+            val dao = database.collectionDao()
+            val current = dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
+            val now = nowIso()
+            dao.rename(uid, clean, normalized, now)
+            recorder.collectionUpserted(uid, clean, current.createdAt, now, current.revision + 1)
+        }
     }
 
     suspend fun deleteCollection(uid: String): Result<Unit> = corpusResult {
-        val dao = collectionDao()
-        dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
-        dao.deleteByUid(uid)
+        journaling { database, recorder ->
+            val dao = database.collectionDao()
+            val collection = dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
+            // Los miembros se leen antes del DELETE: el ON DELETE CASCADE se los lleva, y una vez
+            // que no estan ya no hay como anunciarlos.
+            val members = dao.members(uid).map { member ->
+                DependentDelete(
+                    SyncChangeRecorder.ENTITY_MEMBER,
+                    SyncChangeRecorder.memberIdentity(uid, member.termOrigin, member.termSlug),
+                    member.revision + 1,
+                )
+            }
+            val now = nowIso()
+            dao.deleteByUid(uid)
+            recorder.collectionDeleted(uid, collection.revision + 1, now, members)
+        }
     }
 
     /**
@@ -695,18 +857,21 @@ class CorpusRepository(
         origin: TermOrigin,
         member: Boolean,
     ): Result<Unit> = corpusResult {
-        val database = userDatabaseProvider.get()
-        database.withWriteTransaction {
+        journaling { database, recorder ->
             val dao = database.collectionDao()
             dao.findByUid(uid) ?: throw CorpusError.CollectionNotFound(uid)
-            if (dao.isMember(uid, slug, origin) != member) {
+            val current = dao.memberRow(uid, slug, origin)
+            if ((current?.isPresent == true) != member) {
                 val now = nowIso()
                 if (member) {
                     dao.addMember(uid, slug, origin, now)
                 } else {
                     dao.removeMember(uid, slug, origin, now)
                 }
-                dao.touch(uid, now)
+                // La coleccion ya no se toca al cambiar un miembro. Su `revision` es el token con
+                // el que se resuelve un conflicto de renombre, y subirla por algo que el otro lado
+                // no sube dejaria a las dos replicas discutiendo por un cambio que nadie hizo.
+                recorder.memberChanged(uid, slug, origin, member, (current?.revision ?: 0) + 1, now)
             }
         }
     }
@@ -716,7 +881,12 @@ class CorpusRepository(
     // region History
 
     suspend fun recordHistoryView(slug: String, origin: TermOrigin): Result<Unit> = corpusResult {
-        historyDao().record(slug, origin, nowIso())
+        journaling { database, recorder ->
+            val now = nowIso()
+            val current = database.historyDao().row(slug, origin)
+            database.historyDao().record(slug, origin, now)
+            recorder.historyChanged(slug, origin, true, (current?.revision ?: 0) + 1, now)
+        }
     }
 
     suspend fun listRecentHistory(limit: Int = DEFAULT_HISTORY_LIMIT): Result<List<HistoryItem>> = corpusResult {

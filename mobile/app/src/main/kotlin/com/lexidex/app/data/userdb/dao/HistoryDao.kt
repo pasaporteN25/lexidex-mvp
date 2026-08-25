@@ -3,6 +3,7 @@ package com.lexidex.app.data.userdb.dao
 import androidx.room3.ColumnInfo
 import androidx.room3.Dao
 import androidx.room3.Query
+import com.lexidex.app.data.userdb.entity.HistoryEntryEntity
 import com.lexidex.app.domain.TermOrigin
 
 data class RecentHistoryRow(
@@ -26,6 +27,10 @@ interface HistoryDao {
         """,
     )
     suspend fun record(slug: String, origin: TermOrigin, viewedAt: String)
+
+    /** La fila exista o no, presente o ausente: el journal necesita su revision. */
+    @Query("SELECT * FROM history_entries WHERE term_slug = :slug AND term_origin = :origin LIMIT 1")
+    suspend fun row(slug: String, origin: TermOrigin): HistoryEntryEntity?
 
     /** One row per term, collapsed to its latest view, most recent first. */
     @Query(

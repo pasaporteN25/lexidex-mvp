@@ -5,6 +5,7 @@ import com.lexidex.app.data.corpus.CorpusDatabaseProvider
 import com.lexidex.app.data.knowledge.KnowledgeSource
 import com.lexidex.app.data.knowledge.WikipediaKnowledgeSource
 import com.lexidex.app.data.repository.CorpusRepository
+import com.lexidex.app.data.sync.PreferencesSyncDeviceIdentity
 import com.lexidex.app.data.userdb.UserDatabaseProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +16,13 @@ class LexidexApplication : Application() {
     private val corpusDatabaseProvider by lazy { CorpusDatabaseProvider(this, applicationScope) }
     private val userDatabaseProvider by lazy { UserDatabaseProvider(this, applicationScope) }
 
-    val corpusRepository by lazy { CorpusRepository(corpusDatabaseProvider, userDatabaseProvider) }
+    val corpusRepository by lazy {
+        CorpusRepository(
+            corpusDatabaseProvider,
+            userDatabaseProvider,
+            PreferencesSyncDeviceIdentity(this),
+        )
+    }
 
     /**
      * The knowledge sources available when creating a term (ADR 0003). A list rather than a single

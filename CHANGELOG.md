@@ -19,6 +19,12 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Agregado
 
+- El telefono anota en el journal lo que se edita en la app (parte de 9.8). Las
+  once escrituras del catalogo personal aplican y anotan en la misma
+  transaccion, incluida la importacion de un respaldo, que es el bootstrap del
+  ADR 0004 y por eso tambien viaja como cambios normales. Borrar un termino o
+  una coleccion arrastra sus dependientes uno por uno, igual que hace el hub. Es
+  la bandeja de salida de la que va a sacar lo que mandar.
 - Emparejamiento y credenciales de la sincronizacion (tarea 9.6). Un token de
   un solo uso que vence a los cinco minutos y viaja por el QR se canjea por una
   credencial propia del dispositivo, que el hub guarda solo hasheada y el

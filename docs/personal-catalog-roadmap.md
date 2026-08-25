@@ -926,24 +926,36 @@ el flujo funcione.
       toda la app sigue funcionando offline y el error no bloquea la consulta.
 
       **Ya esta**: red, emparejamiento, credencial en Keystore y `SyncError`
-      como frontera de errores (ver 9.6). Nada de eso esta cableado todavia en
-      `LexidexApplication`, a proposito: se cablea cuando exista quien lo use.
+      como frontera de errores (ver 9.6).
 
-      **Lo que falta primero**: el equivalente Kotlin de 9.5b.
-      `CorpusRepository` sube revisiones pero no escribe filas de journal, asi
-      que el telefono no tiene outbox del cual sacar lo que mandar. Son ~10
-      caminos de escritura: termino, favorito, historial, coleccion, miembro y
-      la importacion.
+      **Y ya esta el journal.** `SyncChangeRecorder` anota cada edicion, y las
+      once escrituras del catalogo personal pasan por `journaling { }`, que
+      aplica y anota en la misma transaccion: crear, editar y borrar terminos,
+      favorito, historial, crear/renombrar/borrar coleccion, miembros y las
+      cinco partes de la importacion. Borrar un termino o una coleccion arrastra
+      sus dependientes uno por uno, igual que deriva el hub, y deja tombstone.
+      Un test arma un lote con lo anotado y lo pasa por
+      `parseSyncExchangeRequest`: si el journal guardara algo que el lector
+      estricto rechaza, la app lo descubriria recien al sincronizar, con el
+      cambio ya escrito. El `device_id` sale de preferencias y es estable entre
+      sesiones, porque la idempotencia del hub se indexa por
+      `(device_id, change_id)`.
 
-      **No hay que portar el motor de conflictos**, y conviene no hacerlo. Los
-      dos lados no hacen lo mismo: el telefono aplica sus propias ediciones de
-      manera optimista -son la verdad local, siempre encadenan contra su propia
-      revision y no pueden entrar en conflicto consigo mismas- y despues aplica
-      la pagina del servidor tal cual, que es autoritativa y tampoco se evalua.
-      Quien decide conflictos es unicamente el hub. Asi que en Kotlin hace falta
-      aplicar y anotar en el journal, no reimplementar `stale_revision` ni la
-      derivacion de borrados. Duplicar esa logica en dos idiomas es exactamente
-      donde las dos implementaciones empezarian a diferir.
+      No se porto el motor de conflictos, y conviene no portarlo: el telefono
+      aplica sus propias ediciones de manera optimista -son la verdad local y
+      encadenan contra su propia revision- y aplica la pagina del hub tal cual,
+      que es autoritativa. Quien decide conflictos es unicamente el hub.
+
+      En una replica el journal hace de **bandeja de salida**: una fila vive
+      hasta que el hub la reconoce (`applied` o `duplicate`) y despues se borra.
+      En el hub la misma tabla es el registro autoritativo y no se vacia. El
+      `cursor` local solo ordena la salida; el del hub viaja aparte, en
+      `sync_replica_cursors`.
+
+      **Lo que queda**: el coordinador que junta las piezas -mandar la bandeja,
+      aplicar la pagina del hub en una transaccion, avanzar el cursor y borrar
+      lo reconocido-, la accion `Sincronizar ahora` y la pantalla para pegar el
+      codigo de emparejamiento.
 
       **Falta ademas una dependencia para el QR**: el modulo no tiene camara ni
       escaner. Sin eso, el emparejamiento entra pegando el codigo a mano, que ya

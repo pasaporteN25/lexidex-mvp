@@ -10,6 +10,14 @@ interface FavoriteDao {
     @Query("SELECT * FROM favorites WHERE term_slug = :slug AND term_origin = :origin AND is_present = 1 LIMIT 1")
     suspend fun find(slug: String, origin: TermOrigin): FavoriteEntity?
 
+    /**
+     * La fila exista o no, presente o ausente. [find] solo devuelve las presentes; el journal
+     * necesita la revision incluso de un favorito apagado, porque volver a agregarlo encadena
+     * contra ella en vez de empezar de cero.
+     */
+    @Query("SELECT * FROM favorites WHERE term_slug = :slug AND term_origin = :origin LIMIT 1")
+    suspend fun row(slug: String, origin: TermOrigin): FavoriteEntity?
+
     @Query("SELECT * FROM favorites WHERE is_present = 1 ORDER BY created_at DESC")
     suspend fun listAll(): List<FavoriteEntity>
 

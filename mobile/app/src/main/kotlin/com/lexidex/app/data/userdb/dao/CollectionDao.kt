@@ -124,6 +124,26 @@ interface CollectionDao {
     )
     suspend fun isMember(collectionUid: String, slug: String, origin: TermOrigin): Boolean
 
+    /** La fila exista o no, presente o ausente: el journal necesita su revision. */
+    @Query(
+        """
+        SELECT * FROM collection_terms
+        WHERE collection_uid = :collectionUid AND term_slug = :slug AND term_origin = :origin
+        LIMIT 1
+        """,
+    )
+    suspend fun memberRow(
+        collectionUid: String,
+        slug: String,
+        origin: TermOrigin,
+    ): CollectionTermEntity?
+
+    /** Las pertenencias vivas de un termino, con su revision, para derivar sus borrados. */
+    @Query(
+        "SELECT * FROM collection_terms WHERE term_slug = :slug AND term_origin = :origin AND is_present = 1",
+    )
+    suspend fun membershipsOf(slug: String, origin: TermOrigin): List<CollectionTermEntity>
+
     /** Colecciones que ya contienen este termino, para marcarlas en el dialogo de la ficha. */
     @Query("SELECT c.uid FROM collections c JOIN collection_terms ct ON ct.collection_uid = c.uid WHERE ct.term_slug = :slug AND ct.term_origin = :origin AND ct.is_present = 1")
     suspend fun uidsContaining(slug: String, origin: TermOrigin): List<String>
