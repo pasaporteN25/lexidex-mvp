@@ -134,3 +134,16 @@ pagina el catalogo y usa `terms_fts` para las busquedas.
 
 Cada cambio de datos produce una version nueva del paquete. No se modifica una
 version publicada en el lugar ni se edita directamente su SQLite generado.
+
+## Retencion de versiones
+
+En este repo solo vive la version vigente del paquete, la que apunta
+`DEFAULT_PACKAGE_DB` en `backend/lexidex_api.py`. Las versiones anteriores no se
+guardan indefinidamente: cada reconstruccion agrega un `lexidex.sqlite` de
+varios MB como blob binario nuevo, que no diffea contra el anterior y engorda el
+historial de git para siempre.
+
+Si hace falta volver a ver una version vieja, se regenera con
+`tools/build_corpus.py` y `tools/enrich_corpus.py` a partir de `data/raw/`,
+pasando el `--package-version` correspondiente. La entrada original y las
+herramientas son la fuente de verdad; el paquete construido es un artefacto.
