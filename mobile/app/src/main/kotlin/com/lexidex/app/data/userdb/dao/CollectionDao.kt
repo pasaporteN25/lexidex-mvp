@@ -161,6 +161,66 @@ interface CollectionDao {
     @Query("UPDATE collections SET updated_at = :updatedAt, revision = revision + 1 WHERE uid = :uid")
     suspend fun touch(uid: String, updatedAt: String)
 
+    /** Copia lo que dice el hub, revision incluida; ver [FavoriteDao.applyRemoteUpsert]. */
+    @Query(
+        """
+        INSERT INTO collections(uid, name, normalized_name, created_at, updated_at, revision)
+        VALUES (:uid, :name, :normalizedName, :createdAt, :updatedAt, :revision)
+        ON CONFLICT(uid) DO UPDATE SET
+          name = excluded.name,
+          normalized_name = excluded.normalized_name,
+          updated_at = excluded.updated_at,
+          revision = excluded.revision
+        """,
+    )
+    suspend fun applyRemoteCollection(
+        uid: String,
+        name: String,
+        normalizedName: String,
+        createdAt: String,
+        updatedAt: String,
+        revision: Long,
+    )
+
+    @Query(
+        """
+        INSERT INTO collection_terms(
+          collection_uid, term_slug, term_origin, added_at, updated_at, is_present, revision
+        ) VALUES (:collectionUid, :slug, :origin, :at, :at, 1, :revision)
+        ON CONFLICT(collection_uid, term_slug, term_origin) DO UPDATE SET
+          added_at = excluded.added_at,
+          updated_at = excluded.updated_at,
+          is_present = 1,
+          revision = excluded.revision
+        """,
+    )
+    suspend fun applyRemoteMemberUpsert(
+        collectionUid: String,
+        slug: String,
+        origin: TermOrigin,
+        at: String,
+        revision: Long,
+    )
+
+    @Query(
+        """
+        INSERT INTO collection_terms(
+          collection_uid, term_slug, term_origin, added_at, updated_at, is_present, revision
+        ) VALUES (:collectionUid, :slug, :origin, :at, :at, 0, :revision)
+        ON CONFLICT(collection_uid, term_slug, term_origin) DO UPDATE SET
+          updated_at = excluded.updated_at,
+          is_present = 0,
+          revision = excluded.revision
+        """,
+    )
+    suspend fun applyRemoteMemberDelete(
+        collectionUid: String,
+        slug: String,
+        origin: TermOrigin,
+        at: String,
+        revision: Long,
+    )
+
     @Query("SELECT COUNT(*) FROM collections")
     suspend fun countAll(): Long
 }

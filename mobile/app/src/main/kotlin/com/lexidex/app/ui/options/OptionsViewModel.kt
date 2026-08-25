@@ -10,6 +10,8 @@ import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.data.repository.InvalidPersonalCatalogBackupException
 import com.lexidex.app.data.repository.MAX_BACKUP_BYTES
 import com.lexidex.app.data.repository.PersonalCatalogImportSummary
+import com.lexidex.app.data.sync.SyncOutcome
+import com.lexidex.app.data.sync.SyncRepository
 import com.lexidex.app.domain.StorageInfo
 import com.lexidex.app.domain.backup.toJson
 import com.lexidex.app.ui.toUserMessage
@@ -41,15 +43,51 @@ data class OptionsUiState(
     val importPreview: PersonalCatalogImportSummary? = null,
     val importMessage: String? = null,
     val importFailed: Boolean = false,
+    val sync: SyncUiState = SyncUiState(),
 )
+
+/**
+ * La sincronizacion como la ve la pantalla.
+ *
+ * [pendingChanges] se muestra tambien sin hub emparejado: es lo que hace visible que las ediciones
+ * no se pierden mientras no haya con quien sincronizar.
+ */
+data class SyncUiState(
+    val hubId: String? = null,
+    val exchangeUrl: String? = null,
+    val isPinned: Boolean = false,
+    val pendingChanges: Long = 0,
+    val isPairing: Boolean = false,
+    val isSyncing: Boolean = false,
+    val message: String? = null,
+    val failed: Boolean = false,
+) {
+    val isPaired: Boolean get() = hubId != null
+}
 
 /** Nombre propuesto al elegir donde guardar: la fecha es lo que distingue un respaldo de otro. */
 fun defaultBackupFileName(today: LocalDate = LocalDate.now()): String =
     "lexidex-personal-$today.json"
 
+/**
+ * Cuenta lo que paso, no lo celebra.
+ *
+ * Un intercambio en el que no se movio nada es el caso normal cuando ya esta todo al dia, y decir
+ * "listo" sin numeros dejaria al usuario sin saber si de verdad se conecto.
+ */
+fun outcomeMessage(outcome: SyncOutcome): String {
+    val parts = buildList {
+        if (outcome.accepted > 0) add("${outcome.accepted} enviados")
+        if (outcome.received > 0) add("${outcome.received} recibidos")
+        if (outcome.refused.isNotEmpty()) add("${outcome.refused.size} no se pudieron aplicar")
+    }
+    return if (parts.isEmpty()) "Ya estaba todo al dia." else parts.joinToString(", ")
+}
+
 class OptionsViewModel(
     private val repository: CorpusRepository,
     private val knowledgeSources: List<KnowledgeSource>,
+    private val syncRepository: SyncRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(OptionsUiState())
     val uiState: StateFlow<OptionsUiState> = _uiState.asStateFlow()
@@ -57,6 +95,93 @@ class OptionsViewModel(
 
     init {
         refresh()
+        refreshSync()
+    }
+
+    private fun refreshSync() {
+        viewModelScope.launch {
+            val binding = syncRepository.binding()
+            val pending = syncRepository.pendingChanges()
+            _uiState.update { state ->
+                state.copy(
+                    sync = state.sync.copy(
+                        hubId = binding?.hubId,
+                        exchangeUrl = binding?.exchangeUrl,
+                        isPinned = binding?.certificateSha256 != null,
+                        pendingChanges = pending,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun onPair(code: String, label: String) {
+        if (_uiState.value.sync.isPairing || code.isBlank()) return
+        viewModelScope.launch {
+            updateSync { it.copy(isPairing = true, message = null, failed = false) }
+            syncRepository.pair(code, label).fold(
+                onSuccess = { binding ->
+                    updateSync {
+                        it.copy(
+                            isPairing = false,
+                            hubId = binding.hubId,
+                            exchangeUrl = binding.exchangeUrl,
+                            isPinned = binding.certificateSha256 != null,
+                            message = "Emparejado con el hub.",
+                            failed = false,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    updateSync {
+                        it.copy(isPairing = false, message = error.toUserMessage(), failed = true)
+                    }
+                },
+            )
+        }
+    }
+
+    fun onSyncNow() {
+        if (_uiState.value.sync.isSyncing) return
+        viewModelScope.launch {
+            updateSync { it.copy(isSyncing = true, message = null, failed = false) }
+            syncRepository.sync().fold(
+                onSuccess = { outcome ->
+                    updateSync {
+                        it.copy(
+                            isSyncing = false,
+                            message = outcomeMessage(outcome),
+                            // Un cambio rechazado no es un fallo de la sincronizacion: el resto
+                            // viajo. Se marca igual para que no pase desapercibido.
+                            failed = outcome.refused.isNotEmpty(),
+                        )
+                    }
+                    refresh()
+                    refreshSync()
+                },
+                onFailure = { error ->
+                    updateSync {
+                        it.copy(isSyncing = false, message = error.toUserMessage(), failed = true)
+                    }
+                },
+            )
+        }
+    }
+
+    fun onUnpair() {
+        viewModelScope.launch {
+            syncRepository.unpair()
+            updateSync {
+                SyncUiState(
+                    pendingChanges = it.pendingChanges,
+                    message = "El hub quedo desvinculado de este telefono.",
+                )
+            }
+        }
+    }
+
+    private fun updateSync(block: (SyncUiState) -> SyncUiState) {
+        _uiState.update { state -> state.copy(sync = block(state.sync)) }
     }
 
     fun refresh() {
@@ -227,8 +352,9 @@ class OptionsViewModel(
         fun factory(
             repository: CorpusRepository,
             knowledgeSources: List<KnowledgeSource>,
+            syncRepository: SyncRepository,
         ): ViewModelProvider.Factory =
-            viewModelFactoryOf { OptionsViewModel(repository, knowledgeSources) }
+            viewModelFactoryOf { OptionsViewModel(repository, knowledgeSources, syncRepository) }
     }
 }
 

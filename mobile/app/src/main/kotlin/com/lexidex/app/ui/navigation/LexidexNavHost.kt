@@ -9,6 +9,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.lexidex.app.data.knowledge.KnowledgeSource
 import com.lexidex.app.data.repository.CorpusRepository
+import com.lexidex.app.data.sync.SyncRepository
 import com.lexidex.app.domain.TermLabelKind
 import com.lexidex.app.ui.games.CincoScreen
 import com.lexidex.app.ui.games.CincoViewModel
@@ -34,7 +35,11 @@ import com.lexidex.app.ui.search.SearchScreen
 import com.lexidex.app.ui.search.SearchViewModel
 
 @Composable
-fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<KnowledgeSource> = emptyList()) {
+fun LexidexNavHost(
+    repository: CorpusRepository,
+    knowledgeSources: List<KnowledgeSource> = emptyList(),
+    syncRepository: SyncRepository,
+) {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = SearchRoute) {
         composable<SearchRoute> {
@@ -99,7 +104,7 @@ fun LexidexNavHost(repository: CorpusRepository, knowledgeSources: List<Knowledg
         }
         composable<OptionsRoute> {
             val viewModel = viewModel<OptionsViewModel>(
-                factory = OptionsViewModel.factory(repository, knowledgeSources),
+                factory = OptionsViewModel.factory(repository, knowledgeSources, syncRepository),
             )
             OptionsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }

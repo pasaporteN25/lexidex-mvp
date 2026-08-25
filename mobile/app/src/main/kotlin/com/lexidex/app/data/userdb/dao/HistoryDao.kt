@@ -67,6 +67,32 @@ interface HistoryDao {
     )
     suspend fun deleteByTerm(slug: String, origin: TermOrigin, updatedAt: String): Int
 
+    /** Copia la revision del hub, que es autoritativa; ver [FavoriteDao.applyRemoteUpsert]. */
+    @Query(
+        """
+        INSERT INTO history_entries(term_slug, term_origin, viewed_at, updated_at, is_present, revision)
+        VALUES (:slug, :origin, :at, :at, 1, :revision)
+        ON CONFLICT(term_slug, term_origin) DO UPDATE SET
+          viewed_at = excluded.viewed_at,
+          updated_at = excluded.updated_at,
+          is_present = 1,
+          revision = excluded.revision
+        """,
+    )
+    suspend fun applyRemoteUpsert(slug: String, origin: TermOrigin, at: String, revision: Long)
+
+    @Query(
+        """
+        INSERT INTO history_entries(term_slug, term_origin, viewed_at, updated_at, is_present, revision)
+        VALUES (:slug, :origin, :at, :at, 0, :revision)
+        ON CONFLICT(term_slug, term_origin) DO UPDATE SET
+          updated_at = excluded.updated_at,
+          is_present = 0,
+          revision = excluded.revision
+        """,
+    )
+    suspend fun applyRemoteDelete(slug: String, origin: TermOrigin, at: String, revision: Long)
+
     /** Terminos distintos vistos, no visitas: es lo que la pantalla de historial muestra. */
     @Query("SELECT COUNT(*) FROM history_entries WHERE is_present = 1")
     suspend fun countDistinctTerms(): Long

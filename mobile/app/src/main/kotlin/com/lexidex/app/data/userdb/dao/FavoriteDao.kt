@@ -47,4 +47,39 @@ interface FavoriteDao {
         """,
     )
     suspend fun remove(slug: String, origin: TermOrigin, updatedAt: String): Int
+
+    /**
+     * Escribe la revision que dice el hub en vez de sumarle uno a la local.
+     *
+     * Lo que baja del hub es autoritativo: no se evalua ni se encadena, se copia. Sumar uno aca
+     * dejaria al telefono una revision adelantada que ninguna otra replica conoce.
+     */
+    @Query(
+        """
+        INSERT INTO favorites(term_slug, term_origin, created_at, updated_at, is_present, revision)
+        VALUES (:slug, :origin, :at, :at, 1, :revision)
+        ON CONFLICT(term_slug, term_origin) DO UPDATE SET
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          is_present = 1,
+          revision = excluded.revision
+        """,
+    )
+    suspend fun applyRemoteUpsert(slug: String, origin: TermOrigin, at: String, revision: Long)
+
+    /**
+     * La ausencia se inserta si la fila no existia: un borrado puede llegar de algo que este
+     * telefono nunca vio, y anotarlo es lo que conserva la cadena de revisiones.
+     */
+    @Query(
+        """
+        INSERT INTO favorites(term_slug, term_origin, created_at, updated_at, is_present, revision)
+        VALUES (:slug, :origin, :at, :at, 0, :revision)
+        ON CONFLICT(term_slug, term_origin) DO UPDATE SET
+          updated_at = excluded.updated_at,
+          is_present = 0,
+          revision = excluded.revision
+        """,
+    )
+    suspend fun applyRemoteDelete(slug: String, origin: TermOrigin, at: String, revision: Long)
 }

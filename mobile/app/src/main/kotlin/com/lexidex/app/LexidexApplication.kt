@@ -5,7 +5,9 @@ import com.lexidex.app.data.corpus.CorpusDatabaseProvider
 import com.lexidex.app.data.knowledge.KnowledgeSource
 import com.lexidex.app.data.knowledge.WikipediaKnowledgeSource
 import com.lexidex.app.data.repository.CorpusRepository
+import com.lexidex.app.data.sync.KeystoreSyncBindingStore
 import com.lexidex.app.data.sync.PreferencesSyncDeviceIdentity
+import com.lexidex.app.data.sync.SyncRepository
 import com.lexidex.app.data.userdb.UserDatabaseProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,11 +18,22 @@ class LexidexApplication : Application() {
     private val corpusDatabaseProvider by lazy { CorpusDatabaseProvider(this, applicationScope) }
     private val userDatabaseProvider by lazy { UserDatabaseProvider(this, applicationScope) }
 
+    private val deviceIdentity by lazy { PreferencesSyncDeviceIdentity(this) }
+
     val corpusRepository by lazy {
-        CorpusRepository(
-            corpusDatabaseProvider,
-            userDatabaseProvider,
-            PreferencesSyncDeviceIdentity(this),
+        CorpusRepository(corpusDatabaseProvider, userDatabaseProvider, deviceIdentity)
+    }
+
+    /**
+     * Aparte de [corpusRepository] a proposito: la aplicacion funciona entera sin hub, y que la
+     * consulta dependiera de algo que sabe de red seria mezclar dos cosas independientes.
+     */
+    val syncRepository by lazy {
+        SyncRepository(
+            userDatabaseProvider = userDatabaseProvider,
+            corpusDatabaseProvider = corpusDatabaseProvider,
+            bindingStore = KeystoreSyncBindingStore(this),
+            deviceIdentity = deviceIdentity,
         )
     }
 

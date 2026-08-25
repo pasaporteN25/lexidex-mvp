@@ -19,6 +19,14 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Agregado
 
+- El telefono sincroniza con el hub (tarea 9.8). En Opciones aparece
+  SINCRONIZACION: cuantos cambios estan sin enviar -tambien antes de emparejar,
+  que es lo que muestra que no se pierden-, emparejar pegando el codigo del hub,
+  `Sincronizar ahora` y desvincular. Mandar la bandeja, aplicar lo que baja y
+  guardar el cursor ocurren en una transaccion, asi que un corte a la mitad
+  repite el intercambio en vez de dejarlo por la mitad. Lo que el hub rechaza
+  sale igual de la bandeja y se cuenta en pantalla: reintentarlo no podria
+  mejorar, y quedarse chocando seria no avanzar nunca.
 - El telefono anota en el journal lo que se edita en la app (parte de 9.8). Las
   once escrituras del catalogo personal aplican y anotan en la misma
   transaccion, incluida la importacion de un respaldo, que es el bootstrap del

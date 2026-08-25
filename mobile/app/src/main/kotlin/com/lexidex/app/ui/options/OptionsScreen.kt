@@ -2,6 +2,7 @@ package com.lexidex.app.ui.options
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -24,12 +25,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -88,6 +94,12 @@ fun OptionsScreen(viewModel: OptionsViewModel, onBack: () -> Unit) {
                     uiState = uiState,
                     onExportTo = viewModel::onExportTo,
                     onImportFrom = viewModel::onImportFrom,
+                )
+                SyncSection(
+                    sync = uiState.sync,
+                    onPair = viewModel::onPair,
+                    onSyncNow = viewModel::onSyncNow,
+                    onUnpair = viewModel::onUnpair,
                 )
                 SourcesSection(storage)
             }
@@ -210,6 +222,96 @@ private fun BackupSection(
                 message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (uiState.importFailed) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                modifier = Modifier.padding(
+                    horizontal = LexidexSpacing.panel,
+                    vertical = LexidexSpacing.tight,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SyncSection(
+    sync: SyncUiState,
+    onPair: (String, String) -> Unit,
+    onSyncNow: () -> Unit,
+    onUnpair: () -> Unit,
+) {
+    var code by rememberSaveable { mutableStateOf("") }
+    val deviceLabel = remember { "${Build.MANUFACTURER} ${Build.MODEL}".trim() }
+
+    Section("SINCRONIZACION") {
+        Explanation(
+            "Podes sincronizar lo tuyo con Lexidex abierto en la computadora, por la red local. " +
+                "El paquete no viaja: solo tus terminos, favoritos, historial y colecciones.",
+        )
+        // Se muestra siempre, tambien sin hub: es lo que hace visible que lo editado no se pierde
+        // mientras no haya con quien sincronizar.
+        Field("Cambios sin enviar", sync.pendingChanges.toString())
+
+        if (sync.isPaired) {
+            Field("Hub", sync.hubId.orEmpty().take(16) + "...")
+            Field("Direccion", sync.exchangeUrl.orEmpty())
+            Field(
+                "Certificado",
+                if (sync.isPinned) "fijado al emparejar" else "sin TLS (solo red de confianza)",
+            )
+            Button(
+                onClick = onSyncNow,
+                enabled = !sync.isSyncing,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+            ) {
+                Text(if (sync.isSyncing) "Sincronizando..." else "Sincronizar ahora")
+            }
+            OutlinedButton(
+                onClick = onUnpair,
+                enabled = !sync.isSyncing,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+            ) {
+                Text("Desvincular este hub")
+            }
+        } else {
+            Explanation(
+                "En la computadora, abri Lexidex y pedi el codigo de emparejamiento. Pegalo aca.",
+            )
+            OutlinedTextField(
+                value = code,
+                onValueChange = { code = it },
+                label = { Text("Codigo de emparejamiento") },
+                minLines = 3,
+                enabled = !sync.isPairing,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+            )
+            Button(
+                onClick = {
+                    onPair(code, deviceLabel)
+                    code = ""
+                },
+                enabled = !sync.isPairing && code.isNotBlank(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+            ) {
+                Text(if (sync.isPairing) "Emparejando..." else "Emparejar")
+            }
+        }
+
+        sync.message?.let { message ->
+            Text(
+                message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (sync.failed) {
                     MaterialTheme.colorScheme.error
                 } else {
                     MaterialTheme.colorScheme.primary

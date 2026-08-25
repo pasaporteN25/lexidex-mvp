@@ -15,6 +15,7 @@ class MainActivity : ComponentActivity() {
             LexidexApp(
                 repository = application.corpusRepository,
                 knowledgeSources = application.knowledgeSources,
+                syncRepository = application.syncRepository,
             )
         }
     }

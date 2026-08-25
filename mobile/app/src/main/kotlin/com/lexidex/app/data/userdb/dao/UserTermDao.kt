@@ -97,6 +97,9 @@ interface UserTermDao {
     @Insert
     suspend fun insert(term: UserTermEntity): Long
 
+    @Query("DELETE FROM user_terms WHERE uid = :uid")
+    suspend fun deleteByUid(uid: String): Int
+
     @Update
     suspend fun update(term: UserTermEntity)
 

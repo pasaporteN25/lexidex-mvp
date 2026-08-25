@@ -920,10 +920,7 @@ el flujo funcione.
       **Sin verificar**: en esta maquina no hay Docker, asi que los dos archivos
       estan escritos pero nunca se construyeron ni se levantaron. Antes de
       confiar en ellos hay que correr `docker compose up` una vez.
-- [ ] **9.8** _(Opus 5 · L)_ Cliente Android: capa de red y repositorio como
-      frontera de errores, QR/URL manual, credencial segura, outbox, cursor,
-      aplicacion transaccional y accion `Sincronizar ahora`. Sin hub disponible
-      toda la app sigue funcionando offline y el error no bloquea la consulta.
+- [x] **9.8** ✅ Cliente Android completo, de la edicion al intercambio.
 
       **Ya esta**: red, emparejamiento, credencial en Keystore y `SyncError`
       como frontera de errores (ver 9.6).
@@ -952,10 +949,38 @@ el flujo funcione.
       `cursor` local solo ordena la salida; el del hub viaja aparte, en
       `sync_replica_cursors`.
 
-      **Lo que queda**: el coordinador que junta las piezas -mandar la bandeja,
-      aplicar la pagina del hub en una transaccion, avanzar el cursor y borrar
-      lo reconocido-, la accion `Sincronizar ahora` y la pantalla para pegar el
-      codigo de emparejamiento.
+      **El coordinador** (`SyncCoordinator`) manda la bandeja, aplica la pagina
+      del hub, olvida lo reconocido y guarda el cursor, todo en una transaccion:
+      si el proceso muere en el medio, la replica repite la misma pagina y el
+      mismo lote, que es para lo que existe la idempotencia por
+      `(device_id, change_id)`. Lo que baja se aplica **tal cual**, revision
+      incluida, y **sin anotarlo en el journal**: anotarlo lo devolveria al hub
+      en el proximo intercambio y no pararia nunca.
+
+      Se saca de la bandeja **todo lo que el hub evaluo, incluido lo que
+      rechazo**. Un cambio en conflicto no mejora reintentandolo -su
+      `base_revision` quedo vieja para siempre- y dejarlo ahi lo haria chocar en
+      cada intercambio sin avanzar jamas; la version del hub baja en la misma
+      respuesta y es la que queda. La pantalla lo cuenta ("2 enviados, 1 no se
+      pudo aplicar"); elegir cual gana es 9.9.
+
+      `SyncRepository` es la frontera de errores y vive **aparte** de
+      `CorpusRepository`: la app funciona entera sin hub, y que la consulta
+      dependiera de algo que sabe de red seria mezclar dos cosas independientes.
+      En Opciones hay una seccion SINCRONIZACION que muestra los cambios sin
+      enviar -tambien sin hub, que es lo que hace visible que no se pierden-,
+      empareja pegando el codigo, sincroniza y desvincula.
+
+      **Sin cubrir por tests**: aplicar la pagina del hub sobre Room. Room no se
+      puede instanciar en un test JVM en este proyecto (no hay Robolectric y los
+      tests de base usan `BundledSQLiteDriver` a mano), asi que esa mitad se
+      ejercita recien en 9.12, con dos replicas de verdad. Lo que si tiene test
+      es todo lo que decide algo sin base: el resumen de acknowledgements, el
+      mapeo de la bandeja al contrato y el texto del resultado.
+
+      **El codigo se pega a mano.** Escanear el QR pide CameraX + ML Kit o
+      ZXing, la primera dependencia de camara del modulo, y esa decision es de
+      Lucas.
 
       **Falta ademas una dependencia para el QR**: el modulo no tiene camara ni
       escaner. Sin eso, el emparejamiento entra pegando el codigo a mano, que ya
