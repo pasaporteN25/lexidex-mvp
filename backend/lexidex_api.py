@@ -1281,8 +1281,7 @@ def package_identity(conn):
     lee de ahi y el paquete queda intacto.
     """
     meta = dict(conn.execute("SELECT key, value FROM package_meta"))
-    row = conn.execute("PRAGMA database_list").fetchone()
-    database_path = Path(row[2]) if row and row[2] else None
+    database_path = connection_path(conn)
     if database_path is None:
         return meta
 
@@ -1337,7 +1336,46 @@ def catalog_stats(package_conn, user_conn, canonical):
     payload["terms"] += personal
     payload["sources"] = payload.get("sources", 0) + personal_sources
     payload["occurrences"] = payload.get("occurrences", payload["package_terms"]) + personal
+    payload["storage"] = storage_info(package_conn, user_conn, canonical)
     return payload
+
+
+def storage_info(package_conn, user_conn, canonical):
+    """
+    De donde sale y donde se guarda lo que muestra la web.
+
+    Es el equivalente de la pantalla de opciones de Android: la separacion entre el paquete de
+    solo lectura y la base personal (ADR 0001 y 0002) es lo que hace que actualizar el catalogo no
+    borre nada del usuario, y hasta ahora en la web eso solo estaba escrito en documentos.
+    """
+    package_path = connection_path(package_conn)
+    user_path = connection_path(user_conn)
+    info = {
+        "package_path": str(package_path) if package_path else "",
+        "package_bytes": package_path.stat().st_size if package_path and package_path.exists() else 0,
+        "package_sha256": sha256_file(package_path) if canonical and package_path else "",
+        "enriched_terms": (
+            package_conn.execute("SELECT COUNT(*) FROM terms WHERE content <> ''").fetchone()[0]
+            if canonical
+            else 0
+        ),
+        "personal_path": str(user_path) if user_path else "",
+        "favorites": user_conn.execute(
+            "SELECT COUNT(*) FROM favorites WHERE is_present = 1"
+        ).fetchone()[0],
+        "history_entries": user_conn.execute(
+            "SELECT COUNT(*) FROM history_entries WHERE is_present = 1"
+        ).fetchone()[0],
+        # Solo se consultan cuando alguien busca explicitamente (ADR 0003); decirlo es la mitad
+        # del punto de mostrarlas.
+        "knowledge_sources": ["Wikipedia"],
+    }
+    return info
+
+
+def connection_path(conn):
+    row = conn.execute("PRAGMA database_list").fetchone()
+    return Path(row[2]) if row and row[2] else None
 
 
 def merge_group_counts(*groups):

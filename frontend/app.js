@@ -23,6 +23,7 @@ const elements = {
   packageLabel: document.querySelector("#packageLabel"),
   personalCount: document.querySelector("#personalCount"),
   stats: document.querySelector("#stats"),
+  storagePanel: document.querySelector("#storagePanel"),
   pairButton: document.querySelector("#pairButton"),
   pairingCode: document.querySelector("#pairingCode"),
   pairingHint: document.querySelector("#pairingHint"),
@@ -165,6 +166,62 @@ function renderStats(data) {
     <div><dt>Personales</dt><dd>${formatNumber(data.personal_terms)}</dd></div>
     <div><dt>Fuentes</dt><dd>${formatNumber(data.sources)}</dd></div>
     <div><dt>Relaciones</dt><dd>${formatNumber(data.relations)}</dd></div>
+  `;
+  renderStorage(data);
+}
+
+function formatBytes(bytes = 0) {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exponent;
+  return `${value >= 10 || exponent === 0 ? Math.round(value) : value.toFixed(1)} ${units[exponent]}`;
+}
+
+/**
+ * La misma explicacion que da la pantalla de opciones de Android.
+ *
+ * El punto no son los numeros sino la separacion: el paquete se reemplaza entero al actualizar y
+ * lo personal vive aparte, que es lo unico que hace que actualizar el catalogo no borre nada tuyo.
+ * Estaba escrito en los documentos y no se veia desde la aplicacion.
+ */
+function renderStorage(data) {
+  const storage = data.storage;
+  if (!storage) {
+    elements.storagePanel.innerHTML = "";
+    return;
+  }
+  const checksum = storage.package_sha256
+    ? `${escapeHtml(storage.package_sha256.slice(0, 16))}...`
+    : "sin verificar";
+  const enriched = data.package_terms
+    ? `${formatNumber(storage.enriched_terms)} (${Math.round((storage.enriched_terms * 100) / data.package_terms)}%)`
+    : "0";
+  elements.storagePanel.innerHTML = `
+    <p class="quiet">
+      El paquete viene con la aplicacion, se abre en modo solo lectura y se reemplaza entero
+      cuando llega una version nueva.
+    </p>
+    <dl class="storage-fields">
+      <div><dt>Version</dt><dd>${escapeHtml(data.package?.package_version || "sin identificar")}</dd></div>
+      <div><dt>Checksum</dt><dd>${checksum}</dd></div>
+      <div><dt>Con contenido</dt><dd>${enriched}</dd></div>
+      <div><dt>Tamano</dt><dd>${formatBytes(storage.package_bytes)}</dd></div>
+      <div><dt>Archivo</dt><dd class="path">${escapeHtml(storage.package_path)}</dd></div>
+    </dl>
+    <p class="quiet">
+      Lo tuyo vive en una base aparte y sobrevive a que el paquete se actualice.
+    </p>
+    <dl class="storage-fields">
+      <div><dt>Terminos propios</dt><dd>${formatNumber(data.personal_terms)}</dd></div>
+      <div><dt>Favoritos</dt><dd>${formatNumber(storage.favorites)}</dd></div>
+      <div><dt>En el historial</dt><dd>${formatNumber(storage.history_entries)}</dd></div>
+      <div><dt>Archivo</dt><dd class="path">${escapeHtml(storage.personal_path)}</dd></div>
+    </dl>
+    <p class="quiet">
+      Fuentes externas habilitadas: ${escapeHtml(storage.knowledge_sources.join(", "))}. Solo se
+      consultan cuando buscas un articulo a proposito.
+    </p>
   `;
 }
 

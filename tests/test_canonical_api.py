@@ -118,6 +118,25 @@ class CanonicalApiTest(PackageFixture, unittest.TestCase):
         # Lo que el manifiesto no describe se sigue leyendo de la base.
         self.assertEqual(stats["package"]["source_sha256"], sha256(self.temp / "palabras.txt"))
 
+    def test_stats_say_where_each_database_lives(self):
+        # Es lo que la web necesita para explicar la separacion del ADR 0002, que hasta ahora solo
+        # estaba en los documentos: el paquete se reemplaza entero y lo personal sobrevive.
+        package_conn = api.connect(self.database, readonly=True)
+        user_conn = api.connect_user(self.user_database)
+        try:
+            stats = api.catalog_stats(package_conn, user_conn, canonical=True)
+        finally:
+            package_conn.close()
+            user_conn.close()
+
+        storage = stats["storage"]
+        self.assertEqual(storage["package_path"], str(self.database))
+        self.assertEqual(storage["personal_path"], str(self.user_database))
+        self.assertEqual(storage["package_sha256"], sha256(self.database))
+        self.assertEqual(storage["package_bytes"], self.database.stat().st_size)
+        self.assertEqual(storage["knowledge_sources"], ["Wikipedia"])
+        self.assertEqual((storage["favorites"], storage["history_entries"]), (0, 0))
+
     def test_exposes_provenance_and_reverse_bidirectional_relation(self):
         connection = api.connect(self.database, readonly=True)
         try:

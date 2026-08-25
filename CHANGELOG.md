@@ -19,6 +19,13 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Agregado
 
+- La web tambien dice de donde salen y donde se guardan los datos (tarea 6.4,
+  que cierra la epica 6). `/api/stats` gana un bloque `storage` con las rutas
+  reales de las dos bases, el checksum y el tamano del paquete, cuantos terminos
+  tienen contenido y que fuentes externas estan habilitadas. Es la misma
+  explicacion que ya daba Android: el paquete se reemplaza entero al actualizar
+  y lo personal vive aparte, que es lo unico que hace que actualizar no borre
+  nada tuyo.
 - Cuando los dos lados editaron lo mismo, ahora se puede elegir (tarea 9.9). El
   telefono conserva la version que el hub rechazo y ofrece quedarse con la suya,
   con la del hub, o con las dos; elegir la propia la vuelve a guardar como un

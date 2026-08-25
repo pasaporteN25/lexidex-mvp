@@ -1624,3 +1624,38 @@ dialog::backdrop {
 .link-action:hover {
   color: var(--rail-ink);
 }
+
+.storage-fields {
+  margin: 0 0 4px;
+  display: grid;
+}
+
+.storage-fields div {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #263632;
+}
+
+.storage-fields dt {
+  color: var(--rail-muted);
+  font-size: var(--text-compact);
+  white-space: nowrap;
+}
+
+.storage-fields dd {
+  margin: 0;
+  color: var(--rail-ink);
+  font-size: var(--text-compact);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* La ruta importa entera, asi que se parte en vez de recortarse con puntos suspensivos. */
+.storage-fields dd.path {
+  font-size: 11px;
+  word-break: break-all;
+  text-align: right;
+}

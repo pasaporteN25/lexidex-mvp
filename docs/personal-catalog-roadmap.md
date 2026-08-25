@@ -462,11 +462,12 @@ la razon de que el encabezado haya vuelto a 🔶.
       concurrencia y pedidos, cancelacion, latencia esperable y una indicacion
       visible del consumo de datos; no debe convertirse en la opcion por defecto.
 
-## 6. Pantalla de opciones: de donde sale y donde se guarda la informacion 🔶
+## 6. Pantalla de opciones: de donde sale y donde se guarda la informacion ✅
 
-Pedido del 2026-08-19. Hoy la respuesta existe pero solo en documentos, no en
-la aplicacion: no hay forma de ver desde el telefono que paquete esta
-instalado, ni donde vive lo que uno guarda.
+Pedido del 2026-08-19, cerrado el 2026-08-25. La respuesta existia solo en los
+documentos: no habia forma de ver desde la aplicacion que paquete estaba
+instalado ni donde vivia lo que uno guarda. Ahora esta en las dos superficies,
+Android y web, con la misma explicacion.
 
 - [x] **6.1** ✅ Android: pantalla "Opciones"/"Acerca de" que muestre
       el paquete instalado (`package_id`, `package_version`, sha256 abreviado y
@@ -479,12 +480,14 @@ instalado, ni donde vive lo que uno guarda.
 - [x] **6.3** ✅ Mostrar tambien que fuentes externas estan
       habilitadas (hoy solo Wikipedia) y aclarar que solo se consultan cuando
       uno busca explicitamente.
-- [ ] **6.4** _(Sonnet 5)_ Equivalente en la web, reusando `/api/stats`, que ya
-      devuelve los conteos. **Es lo unico que falta de esta epica**: 6.1 a 6.3
-      viajaron en `ui/options/OptionsScreen.kt` el 2026-08-20 y los casilleros
-      habian quedado sin marcar. El panel de la web muestra hoy los conteos de
-      `renderStats`, pero no el paquete instalado, ni la separacion entre las
-      dos bases, ni que fuentes externas estan habilitadas.
+- [x] **6.4** ✅ Equivalente en la web, en la barra lateral. `/api/stats` gana un
+      bloque `storage` con las rutas reales de las dos bases, el checksum y el
+      tamano del paquete, cuantos terminos tienen contenido, y que fuentes
+      externas estan habilitadas; las rutas salen de `PRAGMA database_list`, de
+      la conexion que ya estaba abierta. La web lo dibuja con la misma
+      explicacion que da Android: el paquete se reemplaza entero al actualizar y
+      lo tuyo vive aparte, que es lo unico que hace que actualizar no borre
+      nada. **Con esto la epica 6 queda cerrada.**
 
 El boton de exportar el catalogo personal que se anoto aca como candidato
 natural termino existiendo: vive en esa misma pantalla, en la seccion RESPALDO
@@ -1016,21 +1019,24 @@ el flujo funcione.
       como fallback. Preparar el selector de servicio de Android 17 para evitar
       pedir acceso amplio a toda la LAN cuando alcance.
 
-      **Necesita una decision antes de empezar.** El lado Android es
-      `NsdManager`, que viene con la plataforma. El del hub no: publicar un
-      servicio mDNS desde Python pide `zeroconf`, porque la biblioteca estandar
-      no habla mDNS e implementarlo a mano seria escribir un protocolo entero
-      para ahorrarle al usuario tipear una direccion. Es la misma decision que
-      `cryptography`: la primera dependencia de terceros del backend.
+      **Congelada por decision del 2026-08-25.** Publicar el servicio mDNS desde
+      Python pide `zeroconf` y se decidio que el backend sigue siendo solo
+      biblioteca estandar: es lo que deja correrlo con cualquier Python 3.11+
+      sin instalar nada y mantiene la imagen de Docker sin etapa de instalacion.
+      Mientras tanto la direccion del hub se tipea, que ya funciona. El lado
+      Android (`NsdManager`) viene con la plataforma, pero solo no alcanza: sin
+      alguien que anuncie el servicio no hay nada que descubrir.
 
 - [ ] **9.11** _(Sonnet 5 · M)_ Solo despues de estabilizar el modo manual,
       evaluar sync al abrir la app y WorkManager con opt-in. Nunca hacer que la
       consulta normal dependa del hub ni escanear la red indefinidamente en
       segundo plano.
 
-      **Necesita `androidx.work`**, que no esta en `libs.versions.toml`. Sin eso
-      lo unico posible seria sincronizar al abrir la app, que no sobrevive a que
-      el sistema mate el proceso y no es lo que pide la tarea.
+      **Congelada por decision del 2026-08-25.** Necesita `androidx.work`, que no
+      se agrego. Sincronizar al abrir la app es lo unico posible sin eso, y no
+      sobrevive a que el sistema mate el proceso, asi que seria prometer algo que
+      no se cumple. Hoy se sincroniza apretando el boton, que es explicito y
+      funciona.
 
 - [ ] **9.12** _(Opus 5 · L)_ Verificacion de punta a punta con dos replicas y
       Docker real: cambios en ambos sentidos, edicion concurrente, borrado
@@ -1044,33 +1050,32 @@ el flujo funcione.
       escritura real sobre Room no, porque Room no se puede instanciar en un
       test JVM en este proyecto.
 
-      Si conviene cubrirla antes de 9.12, hay dos caminos y ninguno es gratis:
+      **Alcance decidido el 2026-08-25**: hay emulador Android pero no Docker en
+      esta maquina, asi que se hace la mitad que prueba la sincronizacion -hub
+      corriendo con `python backend/lexidex_api.py`, emparejado contra el
+      emulador, y el checklist entero de intercambio- y queda sin verificar la
+      parte de contenedor: volumen persistente, healthcheck y recreacion. Eso
+      espera a una maquina con Docker.
 
-      1. **Test instrumentado** (`app/src/androidTest`) con `androidx.test` y un
-         emulador. Es el lugar canonico para probar Room y no miente sobre el
-         entorno; a cambio hace falta un emulador corriendo, que no hay en la
-         maquina donde se escribio esto.
-      2. **Robolectric** como dependencia de test. Corre en la JVM y da un
-         `Context`, asi que `RoomSyncStore` se probaria en el mismo `./gradlew
-         test` que todo lo demas. A cambio simula el framework en vez de
-         ejecutarlo, y es una dependencia de terceros mas.
-
-      Mientras tanto lo que queda descubierto es una llamada a DAO por
-      operacion, que es donde menos se esconde un error.
+      Se descarto Robolectric, asi que `RoomSyncStore` se cubre aca, con un test
+      instrumentado en `app/src/androidTest` sobre el emulador. Es el lugar
+      canonico para probar Room y no miente sobre el entorno. Mientras tanto lo
+      que queda descubierto es una llamada a DAO por operacion.
 
 - [ ] **9.13** _(Sonnet 5 · M)_ Escanear el codigo de emparejamiento con la
-      camara en vez de pegarlo. Hoy el hub lo muestra como texto y el telefono
-      lo recibe pegado, que funciona y no le cuesta nada al proyecto; escanearlo
-      pide CameraX mas ML Kit o ZXing, la primera dependencia de camara del
-      modulo, y el permiso correspondiente. El formato del payload ya es el
-      definitivo, asi que esto es cambiar como entra, no que entra.
+      camara en vez de pegarlo. **Aprobada el 2026-08-25**: se puede agregar la
+      dependencia de camara al modulo Android. Falta elegir entre CameraX + ML
+      Kit y ZXing, agregar el permiso, y dibujar el QR del lado del hub, que hoy
+      muestra el codigo como texto. El formato del payload ya es el definitivo,
+      asi que esto cambia **como** entra, no que entra: pegar el codigo tiene que
+      seguir funcionando como alternativa cuando la camara no este disponible.
 
 - [ ] **9.14** _(Sonnet 5 · S)_ Generar el certificado TLS del hub sin salir a
-      buscar `openssl`. Hoy es un comando documentado en
-      `contracts/local-sync/v1/README.md` y el hub lo consume con
-      `--tls-cert`/`--tls-key`. Automatizarlo pide `cryptography`: el modulo
-      `ssl` de la biblioteca estandar sabe **usar** un certificado pero no
-      emitirlo.
+      buscar `openssl`. **Congelada por decision del 2026-08-25**: pide
+      `cryptography` y el backend sigue siendo solo biblioteca estandar. El
+      modulo `ssl` sabe **usar** un certificado pero no emitirlo. Queda el
+      comando documentado en `contracts/local-sync/v1/README.md`, que funciona y
+      no le cuesta nada al proyecto.
 
 ## 10. Copias fechadas del articulo, y mas de una ⬜
 
