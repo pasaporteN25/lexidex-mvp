@@ -19,6 +19,15 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Agregado
 
+- Motor y API de intercambio de la sincronizacion local, solo en localhost
+  (tarea 9.5): `POST /api/sync/v1/exchange` aplica el lote de una replica y
+  devuelve la pagina del journal que le falta, todo en una transaccion. Repetir
+  un lote no escribe dos veces, una edicion contra una revision vieja vuelve
+  como conflicto sin pisar, borrar un termino arrastra en la misma transaccion
+  lo que dependia de el, y una referencia a un termino de paquete que el
+  paquete local no resuelve se conserva pendiente en vez de perderse. Todavia
+  falta que las ediciones hechas en la web se publiquen en el journal: hasta
+  entonces el hub solo reparte lo que recibe por el propio exchange.
 - Contrato ejecutable de sincronizacion local v1 (ADR 0004): alcance,
   versionado, identidades estructuradas, `change_id` idempotente, `device_id`,
   cursor decimal del servidor, lotes de 200 / 1 MiB y errores. Los lectores

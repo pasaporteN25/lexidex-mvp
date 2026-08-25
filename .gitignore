@@ -6,6 +6,10 @@ node_modules/
 data/user/*.sqlite
 /lexidex.sqlite
 
+# Identidad del hub de sincronizacion. Es de esta instalacion, como el device_id de un telefono:
+# versionarla haria que dos copias del repo se presenten como el mismo hub.
+data/user/*.hub.json
+
 # Salida de Graphify, herramienta de desarrollo opcional (ver docs/graphify-evaluation.md)
 graphify-out/
 

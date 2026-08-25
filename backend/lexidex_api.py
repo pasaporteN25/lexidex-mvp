@@ -16,6 +16,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
 
+import local_sync_engine
+from local_sync_contract import MAX_SYNC_REQUEST_BYTES
+
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
@@ -1640,6 +1643,10 @@ class CatalogStore:
             connect_user(self.user_path),
         )
 
+    def hub_id(self):
+        """Se resuelve recien cuando alguien sincroniza, para no crear identidad sin uso."""
+        return local_sync_engine.hub_identity(self.user_path)
+
 
 MAX_COLLECTION_NAME = 80
 ALLOWED_ORIGINS = {"package", "personal"}
@@ -2007,6 +2014,80 @@ class LexidexHandler(BaseHTTPRequestHandler):
             raise ApiError(400, "invalid_json", "El cuerpo debe ser un objeto JSON.")
         return payload
 
+    def handle_sync_exchange(self):
+        """
+        `POST /api/sync/v1/exchange`, la unica operacion del contrato v1 (ADR 0004).
+
+        Los errores no salen con la forma del resto de la API: el cliente de sincronizacion lee
+        documentos de protocolo, con `code`, `retryable` y `details`, asi que un fallo aca tiene
+        que ser tan interpretable como una respuesta buena.
+
+        Hasta que 9.6 traiga TLS, emparejamiento por QR y una credencial revocable por
+        dispositivo, la unica barrera es la misma verificacion de `Origin` que protege el resto de
+        las escrituras, y el endpoint solo tiene sentido en localhost.
+        """
+        request_id = None
+        try:
+            body = self.read_sync_body()
+            request_id = self.peek_request_id(body)
+            self.enforce_sync_origin()
+            user_conn = connect_user(self.store.user_path)
+            try:
+                document = local_sync_engine.exchange_document(
+                    user_conn, body, self.store.hub_id()
+                )
+            finally:
+                user_conn.close()
+            self.send_json(200, document)
+        except local_sync_engine.SyncEngineError as error:
+            self.send_json(error.status, local_sync_engine.error_document(error, request_id))
+
+    def read_sync_body(self):
+        """El limite del protocolo es 1 MiB, mas alto que el del resto de la API."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as exc:
+            raise local_sync_engine.SyncEngineError(
+                "invalid_request", "Content-Length no es valido.", 400
+            ) from exc
+        if length <= 0:
+            raise local_sync_engine.SyncEngineError(
+                "invalid_json", "El cuerpo esta vacio.", 400
+            )
+        if length > MAX_SYNC_REQUEST_BYTES:
+            raise local_sync_engine.SyncEngineError(
+                "request_too_large", "El request supera 1 MiB.", 413
+            )
+        try:
+            return self.rfile.read(length).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise local_sync_engine.SyncEngineError(
+                "invalid_json", "El cuerpo no es UTF-8 valido.", 400
+            ) from exc
+
+    def peek_request_id(self, body):
+        """
+        `request_id` se lee antes de validar para poder devolverlo incluso en un error.
+
+        El contrato lo permite ausente si el JSON fallo antes de leerse; devolverlo cuando se
+        pudo leer es lo que deja rastrear un intento fallido en los dos lados.
+        """
+        try:
+            candidate = json.loads(body).get("request_id")
+        except (json.JSONDecodeError, AttributeError):
+            return None
+        return candidate if isinstance(candidate, str) else None
+
+    def enforce_sync_origin(self):
+        origin = self.headers.get("Origin")
+        host = self.headers.get("Host", "")
+        if not is_allowed_write_origin(origin, host):
+            raise local_sync_engine.SyncEngineError(
+                "unauthorized_device",
+                "El origen no esta autorizado a sincronizar con este hub.",
+                401,
+            )
+
     def enforce_write_origin(self):
         origin = self.headers.get("Origin")
         host = self.headers.get("Host", "")
@@ -2151,6 +2232,9 @@ class LexidexHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path.rstrip("/")
+        if path == "/api/sync/v1/exchange":
+            self.handle_sync_exchange()
+            return
         if path not in ("/api/terms", "/api/collections") and not (
             path.startswith("/api/collections/") and path.endswith("/terms")
         ):

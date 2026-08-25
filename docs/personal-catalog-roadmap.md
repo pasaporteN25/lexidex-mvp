@@ -841,11 +841,42 @@ el flujo funcione.
       invalidos y valida `foreign_key_check` + `integrity_check` antes de
       confirmar. `contracts/local-sync/v1/storage-schema.json` fija la paridad;
       las fechas quedan como metadata y nunca ordenan conflictos.
-- [ ] **9.5** _(Opus 5 · L)_ Motor y API de intercambio, inicialmente solo en
-      localhost: push + pull transaccional, secuencia monotona del hub,
-      idempotencia al repetir un lote, paginado, validacion y referencias a
-      terminos de paquete conservadas aunque el paquete local no las resuelva.
-      Una edicion contra una `base_revision` vieja devuelve conflicto; no pisa.
+- [x] **9.5** ✅ Motor y API de intercambio, solo en localhost.
+      `backend/local_sync_engine.py` aplica el lote y arma la pagina del journal
+      en una sola transaccion, y `POST /api/sync/v1/exchange` la expone. La
+      pagina se arma **despues** de aplicar, asi que la replica recibe el eco de
+      sus propios cambios con el cursor definitivo. La idempotencia sale de
+      `(device_id, change_id)` mas un digest recalculado desde la fila de
+      journal: mismo par y mismo contenido responde `duplicate` con la revision
+      y el cursor originales, mismo par y distinto contenido responde
+      `change_id_reused` sin escribir. Una `base_revision` vieja devuelve
+      `stale_revision` y no pisa. Borrar un termino o una coleccion deja
+      tombstone y deriva en la misma transaccion los borrados de lo que
+      dependia, cada uno como un cambio normal del servidor. Una referencia
+      `package` que el paquete local no resuelve se guarda igual; una
+      `personal` sin termino vivo se rechaza con `parent_deleted`. Un cursor que
+      el journal no puede explicar -compactado o adelantado, o sea de otro hub-
+      responde `cursor_expired` en vez de adivinar un delta incompleto.
+      Diecinueve tests en `tests/test_local_sync_engine.py`, cinco de ellos
+      contra un servidor HTTP real; toda respuesta que devuelve el motor pasa
+      antes por el lector estricto del contrato.
+
+      **Lo que falta para que esto sirva de punta a punta:** las escrituras
+      locales de la web todavia no escriben en el journal. Suben la `revision`
+      -eso lo dejo 9.4- pero no dejan fila, asi que hoy el hub solo publica lo
+      que le llega por el propio exchange. Mientras el telefono sea el unico que
+      edita, converge; en cuanto alguien crea un termino desde la web, ese
+      termino no viaja. Es una tarea propia: pasar los caminos de escritura de
+      `lexidex_api.py` por el motor con un `device_id` interno estable para la
+      web, que es lo que el contrato ya preve.
+- [ ] **9.5b** _(Opus 5 · M)_ Publicar en el journal las ediciones locales de la
+      web. Cada camino de escritura de `backend/lexidex_api.py` -crear, editar y
+      borrar terminos, favoritos, historial, colecciones y miembros- tiene que
+      dejar su fila con un `device_id` interno estable, la misma derivacion de
+      borrados dependientes y el mismo encadenado de revisiones que ya hace el
+      motor. Sin esto el hub publica solo lo que recibe por el exchange y lo
+      creado desde la web nunca llega al telefono. Conviene que las dos puntas
+      compartan la funcion de aplicar, y no que cada una escriba su version.
 - [ ] **9.6** _(Opus 5 · L)_ Seguridad y emparejamiento antes de exponer la
       LAN: TLS con identidad fijada mediante QR, token de un solo uso con
       vencimiento, credencial distinta por dispositivo guardada hasheada en el

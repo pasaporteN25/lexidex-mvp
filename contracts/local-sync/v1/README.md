@@ -1,8 +1,12 @@
 # Lexidex local sync v1
 
 Este directorio es el contrato normativo de datos para la sincronizacion local
-entre Android y desktop/web. Describe el JSON que implementaran 9.4 y 9.5; no
-habilita por si solo el endpoint ni la exposicion LAN.
+entre Android y desktop/web. Describe el JSON que implementan 9.4 y 9.5; el
+contrato por si solo no habilita la exposicion LAN.
+
+El hub de escritorio ya sirve esta operacion: el motor esta en
+`backend/local_sync_engine.py` y el endpoint en `POST /api/sync/v1/exchange`,
+atado a localhost hasta que 9.6 traiga TLS, emparejamiento y credenciales.
 
 Las palabras **debe**, **no debe** y **puede** son normativas.
 
