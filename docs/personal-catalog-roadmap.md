@@ -929,14 +929,21 @@ el flujo funcione.
       como frontera de errores (ver 9.6). Nada de eso esta cableado todavia en
       `LexidexApplication`, a proposito: se cablea cuando exista quien lo use.
 
-      **Bloqueante**: falta el equivalente Kotlin de 9.5b. `CorpusRepository`
-      sube revisiones pero no escribe filas de journal, asi que el telefono no
-      tiene outbox del cual sacar lo que mandar. Son ~10 caminos de escritura
-      -termino, favorito, historial, coleccion, miembro, mas la importacion- y
-      la regla de cada uno ya esta resuelta en `backend/local_sync_engine.py`;
-      lo que hay que decidir es si se porta a Kotlin o si el telefono delega y
-      solo el hub aplica. Portarlo duplica la logica de conflictos en dos
-      idiomas y es donde las dos implementaciones empiezan a diferir.
+      **Lo que falta primero**: el equivalente Kotlin de 9.5b.
+      `CorpusRepository` sube revisiones pero no escribe filas de journal, asi
+      que el telefono no tiene outbox del cual sacar lo que mandar. Son ~10
+      caminos de escritura: termino, favorito, historial, coleccion, miembro y
+      la importacion.
+
+      **No hay que portar el motor de conflictos**, y conviene no hacerlo. Los
+      dos lados no hacen lo mismo: el telefono aplica sus propias ediciones de
+      manera optimista -son la verdad local, siempre encadenan contra su propia
+      revision y no pueden entrar en conflicto consigo mismas- y despues aplica
+      la pagina del servidor tal cual, que es autoritativa y tampoco se evalua.
+      Quien decide conflictos es unicamente el hub. Asi que en Kotlin hace falta
+      aplicar y anotar en el journal, no reimplementar `stale_revision` ni la
+      derivacion de borrados. Duplicar esa logica en dos idiomas es exactamente
+      donde las dos implementaciones empezarian a diferir.
 
       **Falta ademas una dependencia para el QR**: el modulo no tiene camara ni
       escaner. Sin eso, el emparejamiento entra pegando el codigo a mano, que ya
