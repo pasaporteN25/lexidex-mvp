@@ -891,11 +891,22 @@ el flujo funcione.
       sha256 del certificado para que el dispositivo la fije; `127.0.0.1` sigue
       siendo el default y el hub avisa si escucha fuera de loopback sin TLS.
 
-      **Falta la mitad del telefono**: guardar la credencial en Android Keystore
-      y fijar la huella del certificado. Va con 9.8, que es donde aparece la
-      capa de red. Y **generar el certificado sigue siendo un paso manual con
-      `openssl`**: automatizarlo pide `cryptography`, la primera dependencia de
-      terceros del proyecto, y esa decision es de Lucas.
+      La mitad del telefono tambien esta, en `data/sync/`: `SyncBindingStore`
+      guarda el vinculo cifrado con una clave que no sale del Android Keystore
+      -y lo descarta si la clave desaparecio, que es lo unico honesto cuando el
+      texto cifrado ya no significa nada-, `PinnedCertificateTrust` fija la
+      huella en vez de confiar en una CA, y `SyncHttpClient` empareja y hace el
+      POST sobre esa conexion fijada. Un test cruzado comprueba que Kotlin y
+      Python calculan la misma huella sobre el mismo certificado, que es de lo
+      que depende que el QR sirva. La clave del Keystore **no** pide
+      autenticacion del usuario: 9.11 tiene que poder sincronizar en segundo
+      plano, y exigir huella por intercambio protegeria solo contra alguien que
+      ya tiene el telefono desbloqueado.
+
+      **Falta la pantalla** para pegar o escanear el codigo, que va con 9.8/9.9.
+      Y **generar el certificado sigue siendo un paso manual con `openssl`**:
+      automatizarlo pide `cryptography`, la primera dependencia de terceros del
+      proyecto, y esa decision es de Lucas.
 - [x] **9.7** ✅ `Dockerfile` y `compose.yaml`, con `/api/health` como sonda.
       Imagen sin etapa de instalacion porque el backend es solo biblioteca
       estandar; usuario no-root, raiz de solo lectura, `cap_drop: ALL` y
@@ -913,6 +924,23 @@ el flujo funcione.
       frontera de errores, QR/URL manual, credencial segura, outbox, cursor,
       aplicacion transaccional y accion `Sincronizar ahora`. Sin hub disponible
       toda la app sigue funcionando offline y el error no bloquea la consulta.
+
+      **Ya esta**: red, emparejamiento, credencial en Keystore y `SyncError`
+      como frontera de errores (ver 9.6). Nada de eso esta cableado todavia en
+      `LexidexApplication`, a proposito: se cablea cuando exista quien lo use.
+
+      **Bloqueante**: falta el equivalente Kotlin de 9.5b. `CorpusRepository`
+      sube revisiones pero no escribe filas de journal, asi que el telefono no
+      tiene outbox del cual sacar lo que mandar. Son ~10 caminos de escritura
+      -termino, favorito, historial, coleccion, miembro, mas la importacion- y
+      la regla de cada uno ya esta resuelta en `backend/local_sync_engine.py`;
+      lo que hay que decidir es si se porta a Kotlin o si el telefono delega y
+      solo el hub aplica. Portarlo duplica la logica de conflictos en dos
+      idiomas y es donde las dos implementaciones empiezan a diferir.
+
+      **Falta ademas una dependencia para el QR**: el modulo no tiene camara ni
+      escaner. Sin eso, el emparejamiento entra pegando el codigo a mano, que ya
+      funciona; escanearlo pide agregar CameraX + ML Kit o ZXing.
 - [ ] **9.9** _(Sonnet 5 · M)_ UX en ambos lados: dispositivo conectado, ultima
       sincronizacion, conteos antes de la primera mezcla, progreso, errores
       reintentables y conflictos. Terminos/colecciones concurrentes permiten

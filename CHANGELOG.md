@@ -19,6 +19,23 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Agregado
 
+- Emparejamiento y credenciales de la sincronizacion (tarea 9.6). Un token de
+  un solo uso que vence a los cinco minutos y viaja por el QR se canjea por una
+  credencial propia del dispositivo, que el hub guarda solo hasheada y el
+  telefono cifrada con una clave que no sale del Android Keystore. Revocar
+  corta un dispositivo sin tocar a los demas. Hay limite de pedidos por minuto
+  antes de comprobar la credencial, y los logs registran la forma del lote y
+  nunca su contenido. TLS entra por `--tls-cert`/`--tls-key`: el certificado es
+  autofirmado y el telefono fija su huella al emparejar, porque en una IP de
+  LAN no hay nombre que una CA pueda avalar.
+- El hub corre en contenedor (tarea 9.7): `Dockerfile`, `compose.yaml` y
+  `GET /api/health`. Publica en `127.0.0.1` por default; el perfil `lan` exige
+  que le nombren la interfaz y el certificado, de modo que no exista la forma de
+  publicar en todas las interfaces sin haberlo decidido. Sin verificar todavia:
+  no hay Docker en la maquina donde se escribio.
+- Las ediciones hechas en la web ahora se publican en el journal (tarea 9.5b).
+  Antes subian la revision pero no dejaban fila, asi que un termino creado en la
+  web no llegaba nunca al telefono.
 - Motor y API de intercambio de la sincronizacion local, solo en localhost
   (tarea 9.5): `POST /api/sync/v1/exchange` aplica el lote de una replica y
   devuelve la pagina del journal que le falta, todo en una transaccion. Repetir
