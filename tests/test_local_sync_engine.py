@@ -515,6 +515,167 @@ class SyncEngineTest(unittest.TestCase):
         self.assertEqual([row["device_id"] for row in cursors], [DEVICE, OTHER_DEVICE])
 
 
+class LocalEditsTest(unittest.TestCase):
+    """
+    Lo que se edita en la web tiene que salir publicado igual que lo que llega por la red.
+
+    Es la mitad que faltaba: el esquema ya subia la revision, pero sin fila de journal el hub
+    repartia unicamente lo que le habian mandado y un termino creado desde la web no llegaba a
+    ninguna replica.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        temp = Path(self.temp_dir.name)
+        self.database = temp / "lexidex-user.sqlite"
+        api.initialize_user_database(self.database)
+        self.conn = api.connect_user(self.database)
+        # Un paquete vacio alcanza: estas rutas solo lo consultan para detectar titulos repetidos.
+        self.package_conn = api.connect_user(temp / "package.sqlite")
+
+    def tearDown(self):
+        self.package_conn.close()
+        self.conn.close()
+        self.temp_dir.cleanup()
+
+    def pull(self, since_cursor="0", number=1):
+        return engine.exchange(
+            self.conn, request([], since_cursor=since_cursor, number=number), HUB
+        )
+
+    def create_term(self, title="Redes locales"):
+        return api.create_personal_term(
+            self.package_conn, self.conn, {"title": title, "language": "es"}
+        )
+
+    def test_a_term_created_in_the_web_reaches_a_replica(self):
+        created = self.create_term()
+
+        page = self.pull()
+
+        self.assertEqual(len(page["changes"]), 1)
+        change_row = page["changes"][0]
+        self.assertEqual(change_row["entity_type"], "personal_term")
+        self.assertEqual(change_row["operation"], "upsert")
+        self.assertEqual(change_row["revision"], 1)
+        self.assertEqual(change_row["payload"]["title"], "Redes locales")
+        self.assertEqual(change_row["payload"]["slug"], created["slug"])
+        # Firmado con el device_id del hub, estable entre requests.
+        self.assertTrue(change_row["source_device_id"].startswith("dev_"))
+        parse_exchange_response(json.dumps(page, ensure_ascii=False))
+
+    def test_editing_and_deleting_in_the_web_chains_revisions(self):
+        created = self.create_term()
+        api.update_personal_term(
+            self.package_conn,
+            self.conn,
+            created["slug"],
+            {"title": "Redes locales revisadas", "language": "es"},
+        )
+        api.delete_personal_term(self.conn, created["slug"])
+
+        page = self.pull()
+
+        self.assertEqual(
+            [(item["operation"], item["revision"]) for item in page["changes"]],
+            [("upsert", 1), ("upsert", 2), ("delete", 3)],
+        )
+
+    def test_deleting_a_term_in_the_web_publishes_the_derived_deletes(self):
+        created = self.create_term()
+        collection = api.create_collection(self.conn, {"name": "Para estudiar"})
+        api.add_term_to_collection(
+            self.package_conn,
+            self.conn,
+            collection["uid"],
+            {"slug": created["slug"], "origin": "personal"},
+            canonical=False,
+        )
+
+        api.delete_personal_term(self.conn, created["slug"])
+        page = self.pull()
+
+        derived = [
+            (item["entity_type"], item["operation"])
+            for item in page["changes"]
+            if item["revision"] > 1 or item["entity_type"] == "collection_member"
+        ]
+        self.assertIn(("collection_member", "delete"), derived)
+        self.assertIn(("personal_term", "delete"), derived)
+
+    def test_adding_the_same_term_twice_publishes_one_change(self):
+        created = self.create_term()
+        collection = api.create_collection(self.conn, {"name": "Para estudiar"})
+        for _ in range(3):
+            api.add_term_to_collection(
+                self.package_conn,
+                self.conn,
+                collection["uid"],
+                {"slug": created["slug"], "origin": "personal"},
+                canonical=False,
+            )
+
+        members = [
+            item
+            for item in self.pull()["changes"]
+            if item["entity_type"] == "collection_member"
+        ]
+        self.assertEqual(len(members), 1)
+
+    def test_deleting_a_collection_in_the_web_publishes_its_member_deletes(self):
+        created = self.create_term()
+        collection = api.create_collection(self.conn, {"name": "Para estudiar"})
+        api.add_term_to_collection(
+            self.package_conn,
+            self.conn,
+            collection["uid"],
+            {"slug": created["slug"], "origin": "personal"},
+            canonical=False,
+        )
+
+        api.delete_collection(self.conn, collection["uid"])
+        page = self.pull()
+
+        operations = [(item["entity_type"], item["operation"]) for item in page["changes"]]
+        self.assertIn(("collection_member", "delete"), operations)
+        self.assertIn(("collection", "delete"), operations)
+
+    def test_a_replica_editing_a_term_the_web_created_chains_from_its_revision(self):
+        created = self.create_term()
+        uid = self.conn.execute(
+            "SELECT uid FROM user_terms WHERE slug = ?", (created["slug"],)
+        ).fetchone()["uid"]
+
+        response = engine.exchange(
+            self.conn,
+            request(
+                [
+                    change(
+                        change_id("a"),
+                        "personal_term",
+                        {"uid": uid},
+                        base_revision=1,
+                        payload=term_payload(
+                            slug=created["slug"], title="Redes locales desde el telefono"
+                        ),
+                    )
+                ],
+                since_cursor="1",
+                number=2,
+            ),
+            HUB,
+        )
+
+        self.assertEqual(response["acknowledgements"][0]["status"], "applied")
+        self.assertEqual(response["acknowledgements"][0]["revision"], 2)
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT title FROM user_terms WHERE uid = ?", (uid,)
+            ).fetchone()["title"],
+            "Redes locales desde el telefono",
+        )
+
+
 class SilentHandler(api.LexidexHandler):
     def log_message(self, *args):
         """El servidor de pruebas no ensucia la salida del test."""

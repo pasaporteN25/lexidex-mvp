@@ -38,6 +38,7 @@ from local_sync_contract import (
     SYNC_PROTOCOL_VERSION,
     SyncContractError,
     parse_exchange_request,
+    validate_client_change,
 )
 
 
@@ -84,27 +85,114 @@ def normalized_key(value):
     return " ".join(unicodedata.normalize("NFKC", value or "").split()).casefold()
 
 
-def hub_identity(user_db_path):
+def _sidecar_identity(user_db_path, key, prefix):
     """
-    Identidad estable del hub, guardada al lado de la base personal y no adentro.
+    Identidades estables del hub, guardadas al lado de la base personal y no adentro.
 
-    No es un dato personal ni se sincroniza, y el esquema v3 fija ocho tablas que Room y SQLite
+    No son datos personales ni se sincronizan, y el esquema v3 fija ocho tablas que Room y SQLite
     tienen que exponer igual: meterle una novena solo para esto rompería esa paridad. Cuando 9.6
     agregue credenciales por dispositivo, van a vivir en este mismo archivo lateral.
     """
     path = Path(f"{user_db_path}{HUB_IDENTITY_SUFFIX}")
     try:
         stored = json.loads(path.read_text(encoding="utf-8"))
-        hub_id = stored.get("hub_id", "")
-    except (OSError, json.JSONDecodeError, AttributeError):
-        hub_id = ""
-    if not isinstance(hub_id, str) or not hub_id.startswith("hub_") or len(hub_id) != 36:
-        hub_id = f"hub_{uuid.uuid4().hex}"
+    except (OSError, json.JSONDecodeError):
+        stored = {}
+    if not isinstance(stored, dict):
+        stored = {}
+
+    value = stored.get(key)
+    if not isinstance(value, str) or not value.startswith(f"{prefix}_") or len(value) != 36:
+        value = f"{prefix}_{uuid.uuid4().hex}"
+        stored[key] = value
+        stored.setdefault("created_at", now_timestamp())
         path.write_text(
-            json.dumps({"hub_id": hub_id, "created_at": now_timestamp()}, indent=2) + "\n",
-            encoding="utf-8",
+            json.dumps(stored, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
-    return hub_id
+    return value
+
+
+def hub_identity(user_db_path):
+    """Identidad del hub, la que viaja en cada respuesta del exchange."""
+    return _sidecar_identity(user_db_path, "hub_id", "hub")
+
+
+def local_device_id(user_db_path):
+    """
+    `device_id` con el que el propio hub firma lo que se edita desde la web.
+
+    El contrato lo pide explicitamente: las ediciones locales tienen que entrar al journal como
+    las de cualquier otra replica, con un editor identificable y estable. Sin esto el hub reparte
+    solo lo que le llega de afuera y un termino creado en la web no llega nunca al telefono.
+    """
+    return _sidecar_identity(user_db_path, "device_id", "dev")
+
+
+def connection_device_id(conn):
+    """El `device_id` local sale del archivo lateral de la base que tiene abierta la conexion."""
+    row = conn.execute("PRAGMA database_list").fetchone()
+    return local_device_id(row[2])
+
+
+class LocalChangeRejected(Exception):
+    """
+    Una edicion local que el motor no acepto.
+
+    Que esto pueda pasar es el punto: la web ya no escribe por un camino propio con reglas
+    propias, asi que una colision de titulo o una revision vieja se resuelven igual vengan de
+    donde vengan.
+    """
+
+    def __init__(self, acknowledgement):
+        problem = acknowledgement.get("problem", {})
+        super().__init__(problem.get("message", "El cambio local no se pudo aplicar."))
+        self.acknowledgement = acknowledgement
+        self.code = problem.get("code", "invalid_change")
+        self.details = problem.get("details", {})
+
+
+def apply_local_change(
+    conn,
+    device_id,
+    entity_type,
+    entity_id,
+    operation,
+    payload=None,
+    base_revision=0,
+    changed_at=None,
+):
+    """
+    Aplica una edicion hecha en el hub por el mismo camino que una que llega por la red.
+
+    Pasa por la validacion del contrato antes de tocar nada: una fila de journal escrita aca la
+    va a leer despues una replica con el lector estricto, asi que si no es valida tiene que
+    fallar en el hub y no en el telefono.
+    """
+    change = validate_client_change(
+        {
+            "change_id": f"chg_{uuid.uuid4().hex}",
+            "device_id": device_id,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "operation": operation,
+            "base_revision": base_revision,
+            "payload_version": 1,
+            "changed_at": changed_at or now_timestamp(),
+            "payload": payload,
+        }
+    )
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        acknowledgement, derived = _evaluate_change(conn, device_id, change)
+    except sqlite3.Error:
+        conn.execute("ROLLBACK")
+        raise
+    if acknowledgement["status"] != "applied":
+        conn.execute("ROLLBACK")
+        raise LocalChangeRejected(acknowledgement)
+    conn.execute("COMMIT")
+    return acknowledgement, derived
 
 
 def entity_key(entity_id):
@@ -436,14 +524,14 @@ def _apply_reference_delete(conn, entity_type, entity_id, revision, deleted_at):
     )
 
 
-def _derive_dependent_deletes(conn, source_device_id, entity_type, entity_id, slug, changed_at):
+def _dependent_deletes(conn, entity_type, entity_id, slug):
     """
-    Borra en la misma transaccion lo que dependia de la entidad borrada.
+    Lo que va a quedar colgando si se borra esta entidad, **antes** de borrarla.
 
-    Un termino personal se lleva sus favoritos, su historial y su pertenencia a colecciones; una
-    coleccion se lleva sus miembros. Cada derivado sale como un cambio normal del servidor, con su
-    propio `change_id`, para que la replica lo aplique por el mismo camino que cualquier otro y no
-    tenga que deducir la cascada por su cuenta.
+    Se lee antes a proposito: `collection_terms` tiene `ON DELETE CASCADE` contra `collections`,
+    asi que apenas desaparece la coleccion sus miembros ya no estan para enumerarlos. Cuando eso
+    pasaba, la replica no recibia ningun borrado de miembro y se quedaba con la coleccion vacia
+    pero con los terminos adentro.
     """
     derived = []
     if entity_type == TERM_ENTITY:
@@ -495,6 +583,16 @@ def _derive_dependent_deletes(conn, source_device_id, entity_type, entity_id, sl
                 )
             )
 
+    return derived
+
+
+def _publish_dependent_deletes(conn, source_device_id, derived, changed_at):
+    """
+    Publica cada derivado como un cambio normal del servidor, con su propio `change_id`.
+
+    La replica lo aplica por el mismo camino que cualquier otro cambio en vez de tener que
+    deducir la cascada por su cuenta, que es donde dos implementaciones empiezan a diferir.
+    """
     applied = []
     for dependent_type, dependent_id, revision in derived:
         _apply_reference_delete(conn, dependent_type, dependent_id, revision, changed_at)
@@ -615,15 +713,14 @@ def _evaluate_change(conn, source_device_id, change):
         return _applied(change_id, revision, cursor), []
 
     slug = state["slug"]
+    pending = _dependent_deletes(conn, entity_type, entity_id, slug)
     if entity_type == TERM_ENTITY:
         conn.execute("DELETE FROM user_terms WHERE uid = ?", (entity_id["uid"],))
     else:
         conn.execute("DELETE FROM collections WHERE uid = ?", (entity_id["uid"],))
     cursor = _append_journal(conn, source_device_id, change_id, change, revision)
     _write_tombstone(conn, entity_type, key, revision, cursor, changed_at)
-    derived = _derive_dependent_deletes(
-        conn, source_device_id, entity_type, entity_id, slug, changed_at
-    )
+    derived = _publish_dependent_deletes(conn, source_device_id, pending, changed_at)
     return _applied(change_id, revision, cursor), derived
 
 

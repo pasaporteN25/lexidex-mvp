@@ -1500,6 +1500,63 @@ def find_existing_term(package_conn, user_conn, normalized_title, language, excl
     return None
 
 
+def publish_local_change(
+    user_conn,
+    entity_type,
+    entity_id,
+    operation,
+    payload=None,
+    base_revision=0,
+    changed_at=None,
+):
+    """
+    Escribe una edicion local pasando por el motor de sincronizacion.
+
+    Es el unico camino de escritura del catalogo personal en el hub. Aplicar y publicar en el
+    journal son el mismo acto: si fueran dos, cualquier ruta que se agregue despues podria
+    escribir sin publicar y la replica no se enteraria nunca de ese cambio.
+    """
+    device_id = local_sync_engine.connection_device_id(user_conn)
+    try:
+        return local_sync_engine.apply_local_change(
+            user_conn,
+            device_id,
+            entity_type,
+            entity_id,
+            operation,
+            payload,
+            base_revision,
+            changed_at,
+        )
+    except local_sync_engine.LocalChangeRejected as rejected:
+        raise ApiError(409, rejected.code, str(rejected), rejected.details) from rejected
+
+
+def apply_local_term_change(user_conn, entity_id, operation, payload, base_revision, changed_at=None):
+    return publish_local_change(
+        user_conn, "personal_term", entity_id, operation, payload, base_revision, changed_at
+    )
+
+
+def term_change_payload(values, slug, created_at, updated_at):
+    """Pasa lo que valido la API a la forma exacta que fija el contrato v1."""
+    return {
+        "slug": slug,
+        "title": values["title"],
+        "language": values["language"],
+        "kind": values["kind"],
+        "status": values["status"],
+        "summary": values["summary"],
+        "content": values["content"],
+        "source_url": values["source_url"],
+        "categories": json.loads(values["categories_json"]),
+        "tags": json.loads(values["tags_json"]),
+        "notes": values["notes"],
+        "created_at": created_at,
+        "updated_at": updated_at,
+    }
+
+
 def create_personal_term(package_conn, user_conn, payload):
     values = validate_term_payload(payload)
     existing = find_existing_term(
@@ -1514,32 +1571,15 @@ def create_personal_term(package_conn, user_conn, payload):
         )
     uid = f"usr_{uuid.uuid4().hex}"
     slug = f"personal-{values['language']}-{slugify(values['title'])}--{uid[4:12]}"
-    now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace(
-        "+00:00", "Z"
+    now = utc_now()
+    apply_local_term_change(
+        user_conn,
+        {"uid": uid},
+        "upsert",
+        term_change_payload(values, slug, created_at=now, updated_at=now),
+        base_revision=0,
+        changed_at=now,
     )
-    columns = [
-        "uid",
-        "slug",
-        "title",
-        "normalized_title",
-        "language",
-        "kind",
-        "status",
-        "summary",
-        "content",
-        "source_url",
-        "categories_json",
-        "tags_json",
-        "notes",
-        "created_at",
-        "updated_at",
-    ]
-    params = [uid, slug, *[values[name] for name in columns[2:-2]], now, now]
-    user_conn.execute(
-        f"INSERT INTO user_terms ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
-        params,
-    )
-    user_conn.commit()
     row = user_conn.execute("SELECT * FROM user_terms WHERE uid = ?", (uid,)).fetchone()
     return personal_term_from_row(row)
 
@@ -1565,16 +1605,20 @@ def update_personal_term(package_conn, user_conn, slug, payload):
             "Ya existe un termino con ese titulo e idioma.",
             {"existing_slug": existing},
         )
-    now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace(
-        "+00:00", "Z"
+    now = utc_now()
+    apply_local_term_change(
+        user_conn,
+        {"uid": current["uid"]},
+        "upsert",
+        term_change_payload(
+            values,
+            current["slug"],
+            created_at=current["created_at"],
+            updated_at=now,
+        ),
+        base_revision=current["revision"],
+        changed_at=now,
     )
-    assignments = ", ".join(f"{name} = ?" for name in values)
-    user_conn.execute(
-        f"UPDATE user_terms SET {assignments}, revision = revision + 1, "
-        "updated_at = ? WHERE uid = ?",
-        [*values.values(), now, current["uid"]],
-    )
-    user_conn.commit()
     row = user_conn.execute(
         "SELECT * FROM user_terms WHERE uid = ?", (current["uid"],)
     ).fetchone()
@@ -1582,53 +1626,26 @@ def update_personal_term(package_conn, user_conn, slug, payload):
 
 
 def delete_personal_term(user_conn, slug):
-    now = utc_now()
-    with user_conn:
-        term = user_conn.execute(
-            "SELECT uid FROM user_terms WHERE slug = ?", (slug,)
-        ).fetchone()
-        if term is None:
-            raise ApiError(404, "not_found", "El termino personal no existe.")
-        affected_collections = user_conn.execute(
-            """
-            SELECT collection_uid FROM collection_terms
-            WHERE term_slug = ? AND term_origin = 'personal' AND is_present = 1
-            """,
-            (slug,),
-        ).fetchall()
-        user_conn.execute("DELETE FROM user_terms WHERE uid = ?", (term["uid"],))
-        user_conn.execute(
-            """
-            UPDATE favorites
-            SET is_present = 0, updated_at = ?, revision = revision + 1
-            WHERE term_slug = ? AND term_origin = 'personal' AND is_present = 1
-            """,
-            (now, slug),
-        )
-        user_conn.execute(
-            """
-            UPDATE history_entries
-            SET is_present = 0, updated_at = ?, revision = revision + 1
-            WHERE term_slug = ? AND term_origin = 'personal' AND is_present = 1
-            """,
-            (now, slug),
-        )
-        user_conn.execute(
-            """
-            UPDATE collection_terms
-            SET is_present = 0, updated_at = ?, revision = revision + 1
-            WHERE term_slug = ? AND term_origin = 'personal' AND is_present = 1
-            """,
-            (now, slug),
-        )
-        user_conn.executemany(
-            """
-            UPDATE collections
-            SET updated_at = ?, revision = revision + 1
-            WHERE uid = ?
-            """,
-            [(now, row["collection_uid"]) for row in affected_collections],
-        )
+    """
+    Borra el termino y deja que el motor derive la cascada.
+
+    Antes esta funcion apagaba a mano el favorito, el historial y la pertenencia a colecciones.
+    Ahora eso lo hace `local_sync_engine`, que ademas escribe una fila de journal por cada
+    derivado: si la cascada viviera en dos lugares, la replica recibiria la del hub y la del
+    telefono con reglas distintas.
+    """
+    term = user_conn.execute(
+        "SELECT uid, revision FROM user_terms WHERE slug = ?", (slug,)
+    ).fetchone()
+    if term is None:
+        raise ApiError(404, "not_found", "El termino personal no existe.")
+    apply_local_term_change(
+        user_conn,
+        {"uid": term["uid"]},
+        "delete",
+        None,
+        base_revision=term["revision"],
+    )
 
 
 class CatalogStore:
@@ -1706,32 +1723,34 @@ def validate_collection_name(payload, user_conn, exclude_uid=None):
 
 
 def create_collection(user_conn, payload):
-    name, normalized = validate_collection_name(payload, user_conn)
+    name, _ = validate_collection_name(payload, user_conn)
     now = utc_now()
     uid = f"col_{uuid.uuid4().hex}"
-    user_conn.execute(
-        """
-        INSERT INTO collections(uid, name, normalized_name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (uid, name, normalized, now, now),
+    publish_local_change(
+        user_conn,
+        "collection",
+        {"uid": uid},
+        "upsert",
+        {"name": name, "created_at": now, "updated_at": now},
+        base_revision=0,
+        changed_at=now,
     )
-    user_conn.commit()
     return collection_from_row(find_collection(user_conn, uid))
 
 
 def rename_collection(user_conn, uid, payload):
-    find_collection(user_conn, uid)
-    name, normalized = validate_collection_name(payload, user_conn, exclude_uid=uid)
-    user_conn.execute(
-        """
-        UPDATE collections
-        SET name = ?, normalized_name = ?, updated_at = ?, revision = revision + 1
-        WHERE uid = ?
-        """,
-        (name, normalized, utc_now(), uid),
+    current = find_collection(user_conn, uid)
+    name, _ = validate_collection_name(payload, user_conn, exclude_uid=uid)
+    now = utc_now()
+    publish_local_change(
+        user_conn,
+        "collection",
+        {"uid": uid},
+        "upsert",
+        {"name": name, "created_at": current["created_at"], "updated_at": now},
+        base_revision=current["revision"],
+        changed_at=now,
     )
-    user_conn.commit()
     row = find_collection(user_conn, uid)
     count = user_conn.execute(
         "SELECT COUNT(*) FROM collection_terms WHERE collection_uid = ? AND is_present = 1",
@@ -1742,8 +1761,11 @@ def rename_collection(user_conn, uid, payload):
 
 def delete_collection(user_conn, uid):
     row = find_collection(user_conn, uid)
-    user_conn.execute("DELETE FROM collections WHERE id = ?", (row["id"],))
-    user_conn.commit()
+    # Los miembros salen como borrados derivados, cada uno con su fila de journal. Antes se los
+    # llevaba el ON DELETE CASCADE en silencio y la replica no tenia como enterarse.
+    publish_local_change(
+        user_conn, "collection", {"uid": uid}, "delete", None, base_revision=row["revision"]
+    )
 
 
 def collection_detail(package_conn, user_conn, uid, canonical):
@@ -1777,46 +1799,44 @@ def add_term_to_collection(package_conn, user_conn, uid, payload, canonical):
     if term is None or term.get("origin") != origin:
         raise ApiError(404, "not_found", "El termino no existe en el catalogo.")
     changed_at = utc_now()
-    change = user_conn.execute(
-        """
-        INSERT INTO collection_terms(
-          collection_uid, term_slug, term_origin, added_at, updated_at, is_present, revision
-        ) VALUES (?, ?, ?, ?, ?, 1, 1)
-        ON CONFLICT(collection_uid, term_slug, term_origin) DO UPDATE SET
-          added_at = excluded.added_at,
-          updated_at = excluded.updated_at,
-          is_present = 1,
-          revision = collection_terms.revision + 1
-        WHERE collection_terms.is_present = 0
-        """,
-        (row["uid"], slug, origin, changed_at, changed_at),
-    )
-    if change.rowcount:
-        user_conn.execute(
-            "UPDATE collections SET updated_at = ?, revision = revision + 1 WHERE id = ?",
-            (changed_at, row["id"]),
+    member = find_collection_member(user_conn, row["uid"], slug, origin)
+    # Agregar dos veces el mismo termino no es un cambio: sin este corte cada click volveria a
+    # subir la revision del miembro y a publicar una fila de journal identica a la anterior.
+    if member is None or not member["is_present"]:
+        publish_local_change(
+            user_conn,
+            "collection_member",
+            {"collection_uid": row["uid"], "origin": origin, "slug": slug},
+            "upsert",
+            {"at": changed_at},
+            base_revision=member["revision"] if member else 0,
+            changed_at=changed_at,
         )
-    user_conn.commit()
     return collection_detail(package_conn, user_conn, uid, canonical)
+
+
+def find_collection_member(user_conn, collection_uid, slug, origin):
+    return user_conn.execute(
+        """
+        SELECT revision, is_present FROM collection_terms
+        WHERE collection_uid = ? AND term_slug = ? AND term_origin = ?
+        """,
+        (collection_uid, slug, origin),
+    ).fetchone()
 
 
 def remove_term_from_collection(package_conn, user_conn, uid, slug, origin, canonical):
     row = find_collection(user_conn, uid)
-    changed_at = utc_now()
-    change = user_conn.execute(
-        """
-        UPDATE collection_terms
-        SET is_present = 0, updated_at = ?, revision = revision + 1
-        WHERE collection_uid = ? AND term_slug = ? AND term_origin = ? AND is_present = 1
-        """,
-        (changed_at, row["uid"], slug, origin),
-    )
-    if change.rowcount:
-        user_conn.execute(
-            "UPDATE collections SET updated_at = ?, revision = revision + 1 WHERE id = ?",
-            (changed_at, row["id"]),
+    member = find_collection_member(user_conn, row["uid"], slug, origin)
+    if member is not None and member["is_present"]:
+        publish_local_change(
+            user_conn,
+            "collection_member",
+            {"collection_uid": row["uid"], "origin": origin, "slug": slug},
+            "delete",
+            None,
+            base_revision=member["revision"],
         )
-    user_conn.commit()
     return collection_detail(package_conn, user_conn, uid, canonical)
 
 

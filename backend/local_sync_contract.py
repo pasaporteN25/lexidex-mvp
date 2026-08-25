@@ -203,6 +203,18 @@ def _validate_protocol(protocol, version):
         _invalid("unsupported_version", f"La version {version} del protocolo no esta soportada.")
 
 
+def validate_client_change(change):
+    """
+    Valida una mutacion suelta, fuera de un exchange.
+
+    Lo usa el hub para sus propias ediciones: una fila de journal escrita localmente tiene que
+    pasar exactamente los mismos controles que una que llego por la red, porque despues viaja a
+    una replica que la va a leer con el lector estricto.
+    """
+    _validate_client_change(change)
+    return change
+
+
 def _validate_client_change(change):
     _require_exact_keys(
         change,
