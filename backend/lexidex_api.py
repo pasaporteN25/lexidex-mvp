@@ -7,6 +7,7 @@ import mimetypes
 import random
 import re
 import sqlite3
+import ssl
 import unicodedata
 import urllib.error
 import urllib.request
@@ -17,7 +18,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
 
 import local_sync_engine
-from local_sync_contract import MAX_SYNC_REQUEST_BYTES
+import local_sync_security
+from local_sync_contract import DEVICE_ID_PATTERN, MAX_SYNC_REQUEST_BYTES
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1649,10 +1651,11 @@ def delete_personal_term(user_conn, slug):
 
 
 class CatalogStore:
-    def __init__(self, package_path, user_path):
+    def __init__(self, package_path, user_path, certificate_path=None):
         self.package_path = Path(package_path).resolve()
         self.user_path = Path(user_path).resolve()
         self.canonical = is_canonical_database(self.package_path)
+        self.security = local_sync_security.HubSecurity(self.user_path, certificate_path)
 
     def connections(self):
         return (
@@ -2051,6 +2054,21 @@ class LexidexHandler(BaseHTTPRequestHandler):
             body = self.read_sync_body()
             request_id = self.peek_request_id(body)
             self.enforce_sync_origin()
+            credential = self.headers.get("Authorization")
+            # El limite va antes de autenticar: si no, probar credenciales sale gratis.
+            self.store.security.limiter.check(
+                self.store.security.credential_device_id(credential) or self.client_address[0]
+            )
+            authenticated = self.store.security.authenticate(credential)
+            claimed = self.peek_field(body, "device_id")
+            if claimed is not None and claimed != authenticated:
+                # Firmar el lote de un dispositivo con la llave de otro romperia la idempotencia,
+                # que se indexa por device_id.
+                raise local_sync_engine.SyncEngineError(
+                    "unauthorized_device",
+                    "La credencial no corresponde al device_id del lote.",
+                    401,
+                )
             user_conn = connect_user(self.store.user_path)
             try:
                 document = local_sync_engine.exchange_document(
@@ -2058,6 +2076,11 @@ class LexidexHandler(BaseHTTPRequestHandler):
                 )
             finally:
                 user_conn.close()
+            # Se registra el tamano y la forma del lote, nunca su contenido: un cambio trae
+            # titulos, notas y texto personal que no tienen por que quedar en un log.
+            self.log_message(
+                "sync exchange %s", json.dumps(local_sync_security.redacted(body))
+            )
             self.send_json(200, document)
         except local_sync_engine.SyncEngineError as error:
             self.send_json(error.status, local_sync_engine.error_document(error, request_id))
@@ -2092,11 +2115,81 @@ class LexidexHandler(BaseHTTPRequestHandler):
         El contrato lo permite ausente si el JSON fallo antes de leerse; devolverlo cuando se
         pudo leer es lo que deja rastrear un intento fallido en los dos lados.
         """
+        return self.peek_field(body, "request_id")
+
+    def peek_field(self, body, field):
+        """Mira un campo del cuerpo antes de validarlo, para decidir a quien limitar y autenticar."""
         try:
-            candidate = json.loads(body).get("request_id")
+            candidate = json.loads(body).get(field)
         except (json.JSONDecodeError, AttributeError):
             return None
         return candidate if isinstance(candidate, str) else None
+
+    def handle_sync_pairing(self):
+        """
+        Emite el codigo de emparejamiento. Sale de la web, que ya esta del lado del duenio del hub.
+
+        El payload es lo que se dibuja como QR: identidad del hub, direccion, huella del
+        certificado y un token que vale una sola vez y por cinco minutos. El token no viaja por la
+        red hacia el telefono; cruza por la pantalla, que es un canal que el usuario ve.
+        """
+        try:
+            self.enforce_sync_origin()
+            self.store.security.limiter.check(f"pairing:{self.client_address[0]}")
+            scheme = "https" if self.server_uses_tls() else "http"
+            host = self.headers.get("Host", "")
+            payload = self.store.security.start_pairing(
+                f"{scheme}://{host}/api/sync/v1/exchange"
+            )
+            self.send_json(200, payload)
+        except local_sync_engine.SyncEngineError as error:
+            self.send_json(error.status, local_sync_engine.error_document(error))
+
+    def handle_sync_pair(self):
+        """Canje del token por una credencial propia del dispositivo."""
+        try:
+            body = self.read_sync_body()
+            self.store.security.limiter.check(f"pair:{self.client_address[0]}")
+            payload = json.loads(body) if body else {}
+            if not isinstance(payload, dict):
+                raise local_sync_engine.SyncEngineError(
+                    "invalid_request", "El cuerpo debe ser un objeto JSON.", 400
+                )
+            device_id = payload.get("device_id", "")
+            if not isinstance(device_id, str) or not DEVICE_ID_PATTERN.fullmatch(device_id):
+                raise local_sync_engine.SyncEngineError(
+                    "invalid_request", "device_id no tiene la forma del protocolo v1.", 400
+                )
+            token = payload.get("token", "")
+            label = payload.get("label", "")
+            self.send_json(
+                200,
+                self.store.security.redeem_pairing(
+                    token if isinstance(token, str) else "",
+                    device_id,
+                    label if isinstance(label, str) else "",
+                ),
+            )
+        except json.JSONDecodeError:
+            error = local_sync_engine.SyncEngineError("invalid_json", "El JSON no es valido.", 400)
+            self.send_json(error.status, local_sync_engine.error_document(error))
+        except local_sync_engine.SyncEngineError as error:
+            self.send_json(error.status, local_sync_engine.error_document(error))
+
+    def handle_sync_devices(self, device_id=None):
+        """Lista los dispositivos emparejados, o revoca uno. Nunca devuelve el hash de nadie."""
+        try:
+            self.enforce_sync_origin()
+            if device_id is None:
+                self.send_json(200, {"items": self.store.security.device_list()})
+                return
+            self.store.security.revoke(device_id)
+            self.send_json(200, {"revoked": True, "device_id": device_id})
+        except local_sync_engine.SyncEngineError as error:
+            self.send_json(error.status, local_sync_engine.error_document(error))
+
+    def server_uses_tls(self):
+        return isinstance(getattr(self.connection, "context", None), ssl.SSLContext)
 
     def enforce_sync_origin(self):
         origin = self.headers.get("Origin")
@@ -2173,6 +2266,11 @@ class LexidexHandler(BaseHTTPRequestHandler):
                 self.handle_knowledge_get(path, query)
             except ApiError as error:
                 self.send_api_error(error)
+            return
+
+        # Los dispositivos emparejados viven en el archivo lateral del hub, no en el catalogo.
+        if path == "/api/sync/v1/devices":
+            self.handle_sync_devices()
             return
 
         package_conn, user_conn = self.store.connections()
@@ -2255,6 +2353,12 @@ class LexidexHandler(BaseHTTPRequestHandler):
         if path == "/api/sync/v1/exchange":
             self.handle_sync_exchange()
             return
+        if path == "/api/sync/v1/pairing":
+            self.handle_sync_pairing()
+            return
+        if path == "/api/sync/v1/pair":
+            self.handle_sync_pair()
+            return
         if path not in ("/api/terms", "/api/collections") and not (
             path.startswith("/api/collections/") and path.endswith("/terms")
         ):
@@ -2306,6 +2410,9 @@ class LexidexHandler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
+        if path.startswith("/api/sync/v1/devices/"):
+            self.handle_sync_devices(unquote(path.removeprefix("/api/sync/v1/devices/")))
+            return
         if not path.startswith(("/api/terms/", "/api/collections/")):
             self.send_json(404, {"error": "not_found"})
             return
@@ -2352,7 +2459,15 @@ def main():
     parser.add_argument("--user-db", default=str(DEFAULT_USER_DB))
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument(
+        "--tls-cert",
+        default=None,
+        help="certificado PEM del hub; su huella viaja en el QR y el telefono la fija",
+    )
+    parser.add_argument("--tls-key", default=None, help="clave privada PEM del certificado")
     args = parser.parse_args()
+    if bool(args.tls_cert) != bool(args.tls_key):
+        raise SystemExit("Lexidex: --tls-cert y --tls-key van juntos o no van.")
 
     package_path = Path(args.db).resolve()
     user_path = Path(args.user_db).resolve()
@@ -2362,10 +2477,28 @@ def main():
         raise SystemExit(f"Lexidex: {exc}")
     import_seed_if_empty(package_path)
     initialize_user_database(user_path)
-    LexidexHandler.store = CatalogStore(package_path, user_path)
+    LexidexHandler.store = CatalogStore(package_path, user_path, args.tls_cert)
 
     server = ThreadingHTTPServer((args.host, args.port), LexidexHandler)
-    print(f"Lexidex running at http://{args.host}:{args.port}")
+    scheme = "http"
+    if args.tls_cert:
+        # Un certificado autofirmado alcanza porque el telefono no confia en una CA sino en la
+        # huella que fijo al emparejar: en una IP de LAN no hay nombre que una CA pueda avalar.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(args.tls_cert, args.tls_key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        scheme = "https"
+        print(
+            "TLS fingerprint (sha256): "
+            f"{local_sync_security.certificate_fingerprint(args.tls_cert)}"
+        )
+    if args.host not in ("127.0.0.1", "localhost", "::1") and not args.tls_cert:
+        print(
+            "Lexidex: atencion, escuchando fuera de loopback sin TLS. "
+            "La sincronizacion viajaria en claro por la red local."
+        )
+    print(f"Lexidex running at {scheme}://{args.host}:{args.port}")
     print(f"Knowledge package: {package_path}")
     print(f"Personal data: {user_path}")
     print(

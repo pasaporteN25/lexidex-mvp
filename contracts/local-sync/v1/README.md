@@ -5,8 +5,9 @@ entre Android y desktop/web. Describe el JSON que implementan 9.4 y 9.5; el
 contrato por si solo no habilita la exposicion LAN.
 
 El hub de escritorio ya sirve esta operacion: el motor esta en
-`backend/local_sync_engine.py` y el endpoint en `POST /api/sync/v1/exchange`,
-atado a localhost hasta que 9.6 traiga TLS, emparejamiento y credenciales.
+`backend/local_sync_engine.py` y el endpoint en `POST /api/sync/v1/exchange`.
+La autorizacion, el emparejamiento y los limites estan en
+`backend/local_sync_security.py`; ver "Emparejar un dispositivo" mas abajo.
 
 Las palabras **debe**, **no debe** y **puede** son normativas.
 
@@ -20,9 +21,10 @@ Las palabras **debe**, **no debe** y **puede** son normativas.
 - Los documentos v1 no admiten campos desconocidos.
 - Request y response no pueden superar 1 MiB en UTF-8.
 
-El endpoint queda en localhost hasta que 9.6 incorpore TLS, pairing y una
-credencial revocable por dispositivo. Ningun campo de este JSON es una
-credencial.
+El endpoint escucha en localhost por default. TLS, emparejamiento y credencial
+revocable por dispositivo ya existen (9.6) y son requisito para exponerlo en la
+LAN. Ningun campo de este JSON es una credencial: la autorizacion viaja en la
+cabecera.
 
 ## Persistencia compatible
 
@@ -207,3 +209,46 @@ cd mobile && ./gradlew :app:testDebugUnitTest --tests com.lexidex.app.domain.syn
 
 El fixture invalido fija que un `change_id` duplicado dentro del mismo lote se
 rechaza con `duplicate_change_id` tanto en Kotlin como en Python.
+
+## Emparejar un dispositivo
+
+La credencial nunca viaja dentro del JSON de intercambio. Va en la cabecera
+`Authorization: Bearer <device_id>.<secreto>`, y sale de un emparejamiento de
+tres pasos:
+
+1. `POST /api/sync/v1/pairing` desde la web devuelve el payload que se dibuja
+   como QR: `hub_id`, la URL del exchange, la huella del certificado y un token
+   de un solo uso que vence en cinco minutos.
+2. El dispositivo lo canja con `POST /api/sync/v1/pair`, mandando `token`,
+   `device_id` y una etiqueta. Recibe una credencial propia. El token se
+   consume tanto si el canje sale bien como si falla.
+3. Desde ahi, cada exchange presenta esa credencial.
+
+El hub guarda solo el `sha256` del secreto, asi que el archivo lateral robado no
+alcanza para hacerse pasar por el dispositivo. No se usa una derivacion lenta
+tipo PBKDF2 a proposito: el secreto lo genera la maquina con 256 bits de
+entropia, no es una contrasena que alguien pueda adivinar.
+
+`GET /api/sync/v1/devices` lista lo emparejado sin exponer ningun hash y
+`DELETE /api/sync/v1/devices/<device_id>` revoca uno solo, sin tocar a los
+demas ni rotar nada. El registro del dispositivo revocado se conserva 30 dias:
+la idempotencia del journal se indexa por `device_id` y borrarlo de inmediato
+haria que un lote repetido se aplicara dos veces.
+
+Hay un limite de 60 pedidos por minuto por dispositivo, que se aplica **antes**
+de comprobar la credencial para que probar claves no salga gratis.
+
+## TLS y la huella del certificado
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -days 825 -keyout hub-key.pem -out hub-cert.pem -subj "/CN=lexidex-hub"
+python backend/lexidex_api.py --tls-cert hub-cert.pem --tls-key hub-key.pem
+```
+
+Un certificado autofirmado alcanza porque el dispositivo no confia en una CA:
+fija la huella que recibio en el QR y despues rechaza cualquier otra. En una IP
+de LAN no hay nombre que una CA pueda avalar, asi que fijar la huella es mas
+fuerte que la cadena de confianza habitual.
+
+`127.0.0.1` sigue siendo el default. Si se escucha fuera de loopback sin
+`--tls-cert`, el hub lo avisa al arrancar: la sincronizacion viajaria en claro.

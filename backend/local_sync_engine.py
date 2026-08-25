@@ -27,6 +27,7 @@ import datetime as dt
 import hashlib
 import json
 import sqlite3
+import threading
 import unicodedata
 import uuid
 from pathlib import Path
@@ -85,31 +86,59 @@ def normalized_key(value):
     return " ".join(unicodedata.normalize("NFKC", value or "").split()).casefold()
 
 
-def _sidecar_identity(user_db_path, key, prefix):
-    """
-    Identidades estables del hub, guardadas al lado de la base personal y no adentro.
+_SIDECAR_LOCK = threading.Lock()
 
-    No son datos personales ni se sincronizan, y el esquema v3 fija ocho tablas que Room y SQLite
-    tienen que exponer igual: meterle una novena solo para esto rompería esa paridad. Cuando 9.6
-    agregue credenciales por dispositivo, van a vivir en este mismo archivo lateral.
+
+def sidecar_path(user_db_path):
+    return Path(f"{user_db_path}{HUB_IDENTITY_SUFFIX}")
+
+
+def read_sidecar(user_db_path):
     """
-    path = Path(f"{user_db_path}{HUB_IDENTITY_SUFFIX}")
+    Estado local del hub: sus identidades y, desde 9.6, las credenciales por dispositivo.
+
+    Vive al lado de la base personal y no adentro. No es un dato personal ni se sincroniza, y el
+    esquema v3 fija ocho tablas que Room y SQLite tienen que exponer igual: meterle una novena
+    solo para esto romperia esa paridad.
+    """
     try:
-        stored = json.loads(path.read_text(encoding="utf-8"))
+        stored = json.loads(sidecar_path(user_db_path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        stored = {}
-    if not isinstance(stored, dict):
-        stored = {}
+        return {}
+    return stored if isinstance(stored, dict) else {}
 
-    value = stored.get(key)
-    if not isinstance(value, str) or not value.startswith(f"{prefix}_") or len(value) != 36:
-        value = f"{prefix}_{uuid.uuid4().hex}"
-        stored[key] = value
+
+def update_sidecar(user_db_path, mutate):
+    """
+    Lee, deja mutar y reescribe el archivo entero bajo lock.
+
+    El servidor es multihilo y el archivo se reescribe completo, asi que dos actualizaciones
+    simultaneas -emparejar un dispositivo mientras otro sincroniza- perderian una de las dos sin
+    esta serializacion.
+    """
+    with _SIDECAR_LOCK:
+        stored = read_sidecar(user_db_path)
+        result = mutate(stored)
         stored.setdefault("created_at", now_timestamp())
-        path.write_text(
+        sidecar_path(user_db_path).write_text(
             json.dumps(stored, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
-    return value
+        return result
+
+
+def _sidecar_identity(user_db_path, key, prefix):
+    value = read_sidecar(user_db_path).get(key)
+    if isinstance(value, str) and value.startswith(f"{prefix}_") and len(value) == 36:
+        return value
+
+    def mutate(stored):
+        existing = stored.get(key)
+        if isinstance(existing, str) and existing.startswith(f"{prefix}_") and len(existing) == 36:
+            return existing
+        stored[key] = f"{prefix}_{uuid.uuid4().hex}"
+        return stored[key]
+
+    return update_sidecar(user_db_path, mutate)
 
 
 def hub_identity(user_db_path):

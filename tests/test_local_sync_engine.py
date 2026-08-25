@@ -696,9 +696,11 @@ class SyncEndpointTest(unittest.TestCase):
         api.initialize_user_database(self.database)
         SilentHandler.store = api.CatalogStore(temp / "no-package.sqlite", self.database)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), SilentHandler)
-        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/api/sync/v1/exchange"
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+        self.url = f"{self.base}/api/sync/v1/exchange"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
+        _, self.credential = self.pair()
 
     def tearDown(self):
         self.server.shutdown()
@@ -706,12 +708,17 @@ class SyncEndpointTest(unittest.TestCase):
         self.thread.join(timeout=5)
         self.temp_dir.cleanup()
 
-    def post(self, body, origin=None):
+    def send(self, path, body=None, origin=None, credential=None, method="POST"):
         headers = {"Content-Type": "application/json; charset=utf-8"}
         if origin:
             headers["Origin"] = origin
+        if credential:
+            headers["Authorization"] = f"Bearer {credential}"
         post = urllib.request.Request(
-            self.url, data=body.encode("utf-8"), headers=headers, method="POST"
+            f"{self.base}{path}",
+            data=body.encode("utf-8") if body is not None else None,
+            headers=headers,
+            method=method,
         )
         try:
             with urllib.request.urlopen(post, timeout=10) as response:
@@ -719,6 +726,20 @@ class SyncEndpointTest(unittest.TestCase):
         except urllib.error.HTTPError as error:
             with error:
                 return error.code, json.loads(error.read().decode("utf-8"))
+
+    def pair(self, device_id=DEVICE):
+        """Empareja como lo haria el telefono: pide el QR y canjea el token una sola vez."""
+        _, offer = self.send("/api/sync/v1/pairing")
+        _, granted = self.send(
+            "/api/sync/v1/pair",
+            json.dumps({"token": offer["token"], "device_id": device_id, "label": "Moto G41"}),
+        )
+        return offer, granted["credential"]
+
+    def post(self, body, origin=None, credential=None):
+        if credential is None:
+            credential = self.credential
+        return self.send("/api/sync/v1/exchange", body, origin=origin, credential=credential)
 
     def test_exchanges_over_http_and_answers_a_contract_response(self):
         status, document = self.post(
