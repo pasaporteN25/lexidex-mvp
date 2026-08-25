@@ -15,6 +15,8 @@ de localhost esta en
 La propuesta priorizada para sincronizar la capa personal entre Android y la
 web/desktop en la misma red esta en
 [`docs/local-network-sync-plan.md`](docs/local-network-sync-plan.md).
+El contrato ejecutable de esa sincronizacion esta en
+[`contracts/local-sync/v1/`](contracts/local-sync/v1/README.md).
 
 ## Estado actual
 
@@ -36,6 +38,7 @@ contadores `rag_ready_terms` y `training_ready_terms` son cero.
 ```text
 lexidex-mvp/
   backend/                  API HTTP del prototipo web
+  contracts/                Contratos y fixtures compartidos entre plataformas
   data/
     raw/palabras.txt        Entrada original preservada byte a byte
     packages/               Paquetes de conocimiento versionados

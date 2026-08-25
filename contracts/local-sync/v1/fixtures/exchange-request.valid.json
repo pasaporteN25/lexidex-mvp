@@ -1,0 +1,105 @@
+{
+  "protocol": "lexidex-local-sync",
+  "version": 1,
+  "request_id": "req_00000000000000000000000000000001",
+  "device_id": "dev_11111111111111111111111111111111",
+  "package": {
+    "package_id": "lexidex-core",
+    "package_version": "0.4.0"
+  },
+  "since_cursor": "103",
+  "limit": 100,
+  "changes": [
+    {
+      "change_id": "chg_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "device_id": "dev_11111111111111111111111111111111",
+      "entity_type": "personal_term",
+      "entity_id": {
+        "uid": "usr_33333333333333333333333333333333"
+      },
+      "operation": "upsert",
+      "base_revision": 2,
+      "payload_version": 1,
+      "changed_at": "2026-08-25T13:00:00Z",
+      "payload": {
+        "slug": "personal-es-redes-locales--33333333",
+        "title": "Redes locales",
+        "language": "es",
+        "kind": "article",
+        "status": "reviewed",
+        "summary": "Conceptos de una red local.",
+        "content": "Contenido personal sincronizable.",
+        "source_url": "https://es.wikipedia.org/wiki/Red_de_%C3%A1rea_local",
+        "categories": ["Redes"],
+        "tags": ["lan", "wifi"],
+        "notes": "Revisar seguridad.",
+        "created_at": "2026-08-24T10:00:00Z",
+        "updated_at": "2026-08-25T13:00:00Z"
+      }
+    },
+    {
+      "change_id": "chg_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "device_id": "dev_11111111111111111111111111111111",
+      "entity_type": "favorite",
+      "entity_id": {
+        "origin": "package",
+        "slug": "hipotesis"
+      },
+      "operation": "delete",
+      "base_revision": 4,
+      "payload_version": 1,
+      "changed_at": "2026-08-25T13:01:00Z",
+      "payload": null
+    },
+    {
+      "change_id": "chg_cccccccccccccccccccccccccccccccc",
+      "device_id": "dev_11111111111111111111111111111111",
+      "entity_type": "history",
+      "entity_id": {
+        "origin": "personal",
+        "slug": "personal-es-redes-locales--33333333"
+      },
+      "operation": "upsert",
+      "base_revision": 1,
+      "payload_version": 1,
+      "changed_at": "2026-08-25T13:02:00Z",
+      "payload": {
+        "at": "2026-08-25T13:02:00Z"
+      }
+    },
+    {
+      "change_id": "chg_dddddddddddddddddddddddddddddddd",
+      "device_id": "dev_11111111111111111111111111111111",
+      "entity_type": "collection",
+      "entity_id": {
+        "uid": "col_44444444444444444444444444444444"
+      },
+      "operation": "upsert",
+      "base_revision": 0,
+      "payload_version": 1,
+      "changed_at": "2026-08-25T13:03:00Z",
+      "payload": {
+        "name": "Para estudiar",
+        "created_at": "2026-08-25T13:03:00Z",
+        "updated_at": "2026-08-25T13:03:00Z"
+      }
+    },
+    {
+      "change_id": "chg_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "device_id": "dev_11111111111111111111111111111111",
+      "entity_type": "collection_member",
+      "entity_id": {
+        "collection_uid": "col_44444444444444444444444444444444",
+        "origin": "package",
+        "slug": "marea"
+      },
+      "operation": "upsert",
+      "base_revision": 0,
+      "payload_version": 1,
+      "changed_at": "2026-08-25T13:04:00Z",
+      "payload": {
+        "at": "2026-08-25T13:04:00Z"
+      }
+    }
+  ]
+}

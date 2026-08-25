@@ -1,9 +1,9 @@
 # Plan de sincronizacion local mobile <-> desktop/web
 
-- Estado: propuesta para implementar por etapas; bootstrap de importacion 9.2
-  terminado.
+- Estado: propuesta para implementar por etapas; bootstrap 9.2 y contrato v1
+  9.3 terminados.
 - Fecha: 2026-08-25.
-- Prioridad: siguiente capacidad grande (`personal-catalog-roadmap.md`, 9.3).
+- Prioridad: siguiente capacidad grande (`personal-catalog-roadmap.md`, 9.4).
 
 ## Que habia en el repositorio
 
@@ -221,7 +221,8 @@ helper del host o incorporarse despues; QR y URL manual deben funcionar siempre.
 ## Secuencia de entrega
 
 1. ✅ Base terminada en 9.2: validacion + merge determinista del respaldo.
-2. Aprobar un ADR con limites, identidades, conflictos y version del protocolo.
+2. ✅ ADR 0004 y contrato v1 compartido con limites, identidades, conflictos,
+   lectores Kotlin/Python y fixtures ejecutables.
 3. Dar paridad a los dos esquemas y agregar journal, cursors y tombstones.
 4. Implementar el intercambio e idempotencia en el backend, todavia solo en
    localhost y con fixtures de contrato.

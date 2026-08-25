@@ -822,11 +822,15 @@ paquete canonico. Es manual al principio, sin cuenta ni nube, con QR para
 emparejar. mDNS/NSD queda como comodidad posterior y no como requisito para que
 el flujo funcione.
 
-- [ ] **9.3** _(Sonnet 5 · M)_ ADR y contrato v1. Fijar alcance, versionado,
-      identidades estables, `change_id` idempotente, `device_id`, cursor del
-      servidor, limites de lote, errores y reglas por entidad. Incluir fixtures
-      JSON que Kotlin y Python deban interpretar igual. No empezar dos motores
-      de merge distintos: el de importar 9.2 es el bootstrap de sync.
+- [x] **9.3** ✅ ADR 0004 y contrato v1 ejecutable. Fija alcance, versionado,
+      identidades estructuradas, `change_id` idempotente, `device_id`, cursor
+      decimal del servidor, lotes de 200/1 MiB, errores y reglas para las cinco
+      entidades. Los lectores estrictos
+      `mobile/.../domain/sync/LocalSyncContract.kt` y
+      `backend/local_sync_contract.py` consumen los mismos cuatro fixtures bajo
+      `contracts/local-sync/v1/fixtures/`; cuatro tests Kotlin y cuatro Python
+      fijan la interpretacion. El bootstrap queda explicitamente en el
+      planificador de importacion 9.2, sin un segundo merge.
 - [ ] **9.4** _(Opus 5 · L)_ Volver sincronizables ambos esquemas. Dar paridad
       a web y Android para terminos, favoritos, historial, colecciones y
       miembros; agregar revision/estado a las entidades que hoy solo existen o

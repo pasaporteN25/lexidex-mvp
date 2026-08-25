@@ -1,0 +1,46 @@
+{
+  "protocol": "lexidex-local-sync",
+  "version": 1,
+  "request_id": "req_00000000000000000000000000000002",
+  "device_id": "dev_11111111111111111111111111111111",
+  "package": {
+    "package_id": "lexidex-core",
+    "package_version": "0.4.0"
+  },
+  "since_cursor": "0",
+  "limit": 100,
+  "changes": [
+    {
+      "change_id": "chg_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "device_id": "dev_11111111111111111111111111111111",
+      "entity_type": "history",
+      "entity_id": {
+        "origin": "package",
+        "slug": "hipotesis"
+      },
+      "operation": "upsert",
+      "base_revision": 0,
+      "payload_version": 1,
+      "changed_at": "2026-08-25T13:00:00Z",
+      "payload": {
+        "at": "2026-08-25T13:00:00Z"
+      }
+    },
+    {
+      "change_id": "chg_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "device_id": "dev_11111111111111111111111111111111",
+      "entity_type": "history",
+      "entity_id": {
+        "origin": "package",
+        "slug": "marea"
+      },
+      "operation": "upsert",
+      "base_revision": 0,
+      "payload_version": 1,
+      "changed_at": "2026-08-25T13:01:00Z",
+      "payload": {
+        "at": "2026-08-25T13:01:00Z"
+      }
+    }
+  ]
+}

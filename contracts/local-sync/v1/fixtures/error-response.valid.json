@@ -1,0 +1,13 @@
+{
+  "protocol": "lexidex-local-sync",
+  "version": 1,
+  "request_id": "req_00000000000000000000000000000001",
+  "error": {
+    "code": "cursor_expired",
+    "message": "El cursor ya no esta disponible; hace falta un nuevo bootstrap.",
+    "retryable": false,
+    "details": {
+      "minimum_cursor": "97"
+    }
+  }
+}
