@@ -66,7 +66,7 @@ lexidex-mvp/
 Desde esta carpeta, con Python 3.11 o posterior:
 
 ```bash
-python tools/build_corpus.py data/raw/palabras.txt data/packages/palabras-v0.1.0-seed.1 --raw-copy data/raw/palabras.txt --package-id lexidex.palabras --package-version 0.1.0-seed.1
+python tools/build_corpus.py data/raw/palabras.txt data/packages/palabras-v0.4.0-enriched.1 --raw-copy data/raw/palabras.txt --package-id lexidex.palabras --package-version 0.4.0-enriched.1
 python -m unittest discover -s tests -v
 ```
 
