@@ -48,7 +48,7 @@ class SyncRepository(
     suspend fun sync(): Result<SyncOutcome> = syncResult {
         val binding = bindingStore.read() ?: throw SyncError.NotPaired()
         SyncCoordinator(
-            database = userDatabaseProvider.get(),
+            store = RoomSyncStore(userDatabaseProvider.get()),
             client = client,
             packageDescriptor = { descriptor() },
         ).sync(binding)

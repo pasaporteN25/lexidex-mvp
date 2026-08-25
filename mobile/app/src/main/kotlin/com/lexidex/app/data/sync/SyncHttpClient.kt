@@ -31,14 +31,22 @@ import kotlinx.serialization.json.Json
  * indistinguishable from a timeout at the point where the UI has to decide whether to offer a
  * retry or send the user back to pairing.
  */
+/**
+ * El intercambio visto por el coordinador. Existe para poder probarlo sin red: la implementacion
+ * real es [SyncHttpClient] y no hay ninguna otra.
+ */
+interface SyncExchange {
+    suspend fun exchange(binding: SyncHubBinding, document: String): SyncExchangeResponse
+}
+
 class SyncHttpClient(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val connectTimeoutMillis: Int = 8_000,
     private val readTimeoutMillis: Int = 20_000,
-) {
+) : SyncExchange {
     private val json = Json { ignoreUnknownKeys = false }
 
-    suspend fun exchange(binding: SyncHubBinding, document: String): SyncExchangeResponse =
+    override suspend fun exchange(binding: SyncHubBinding, document: String): SyncExchangeResponse =
         withContext(dispatcher) {
             val body = post(
                 url = binding.exchangeUrl,
