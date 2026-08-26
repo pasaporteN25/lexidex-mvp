@@ -46,6 +46,10 @@ KNOWLEDGE_MAX_REDIRECTS = 3
 KNOWLEDGE_SEARCH_LIMIT = 10
 KNOWLEDGE_MAX_SEARCH_LIMIT = 25
 KNOWLEDGE_FALLBACK_LANGUAGE = "es"
+
+# Adonde se repite la busqueda cuando el idioma pedido no devuelve nada. Ingles y no otro porque es
+# donde esta casi todo lo tecnico, que es de lo que mas se crean terminos aca.
+KNOWLEDGE_SECONDARY_LANGUAGE = "en"
 WIKIPEDIA_LANGUAGE_PATTERN = re.compile(r"^[a-z]{2,3}$")
 ALLOWED_SORTS = {
     "title_asc",
@@ -1966,14 +1970,30 @@ def wikipedia_language(language):
 
 def wikipedia_search(query, language, limit):
     """
-    Candidatos para crear un termino. Se lee `description` (texto plano) y nunca `excerpt`, que
-    viene con marcado `<span class="searchmatch">`.
+    Candidatos para crear un termino, buscando primero en el idioma pedido.
+
+    Si ese idioma no devuelve nada se repite en ingles, que es donde esta casi todo lo tecnico.
+    Solo si no devuelve nada: los resultados de dos idiomas **no se mezclan**. Mezclarlos pondria
+    al lado dos articulos que no son el mismo, ordenados por una relevancia que no es comparable
+    entre ediciones, y el usuario elegiria a ciegas. Cada resultado se queda con el idioma en el
+    que aparecio, que despues es el que queda fijado al importarlo.
     """
     text = (query or "").strip()
     if not text:
         return []
-    lang = wikipedia_language(language)
     safe_limit = max(1, min(int(limit or KNOWLEDGE_SEARCH_LIMIT), KNOWLEDGE_MAX_SEARCH_LIMIT))
+    primary = wikipedia_language(language)
+    results = wikipedia_search_in(primary, text, safe_limit)
+    if results or primary == KNOWLEDGE_SECONDARY_LANGUAGE:
+        return results
+    return wikipedia_search_in(KNOWLEDGE_SECONDARY_LANGUAGE, text, safe_limit)
+
+
+def wikipedia_search_in(lang, text, safe_limit):
+    """
+    Una consulta a una edicion de Wikipedia. Se lee `description` (texto plano) y nunca `excerpt`,
+    que viene con marcado `<span class="searchmatch">`.
+    """
     url = f"https://{lang}.wikipedia.org/w/rest.php/v1/search/page?" + urlencode(
         {"q": text, "limit": safe_limit}
     )

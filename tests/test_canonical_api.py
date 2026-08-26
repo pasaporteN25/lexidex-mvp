@@ -533,6 +533,64 @@ class ExternalKnowledgeSourceTest(unittest.TestCase):
         self.assertEqual(api.wikipedia_language("EN"), "en")
         self.assertEqual(api.wikipedia_language("pt-BR"), "pt")
 
+    def test_search_falls_back_to_english_only_when_spanish_finds_nothing(self):
+        asked = []
+
+        def fake_fetch(url):
+            asked.append(url)
+            if "en.wikipedia.org" in url:
+                return {"pages": [{"key": "Branch_predictor", "title": "Branch predictor"}]}
+            return {"pages": []}
+
+        original = api.fetch_knowledge_json
+        api.fetch_knowledge_json = fake_fetch
+        try:
+            items = api.wikipedia_search("branch predictor", "es", 10)
+        finally:
+            api.fetch_knowledge_json = original
+
+        self.assertEqual(len(asked), 2)
+        self.assertIn("es.wikipedia.org", asked[0])
+        self.assertIn("en.wikipedia.org", asked[1])
+        # El resultado conserva el idioma en el que aparecio, que es el que queda fijado al
+        # importar el articulo.
+        self.assertEqual(items[0]["language"], "en")
+
+    def test_a_language_that_answers_is_not_mixed_with_another(self):
+        asked = []
+
+        def fake_fetch(url):
+            asked.append(url)
+            return {"pages": [{"key": "Marea", "title": "Marea"}]}
+
+        original = api.fetch_knowledge_json
+        api.fetch_knowledge_json = fake_fetch
+        try:
+            items = api.wikipedia_search("marea", "es", 10)
+        finally:
+            api.fetch_knowledge_json = original
+
+        # Dos ediciones ordenan por relevancias que no son comparables: mezclarlas pondria al lado
+        # articulos que no son el mismo y el usuario elegiria a ciegas.
+        self.assertEqual(len(asked), 1)
+        self.assertEqual([item["language"] for item in items], ["es"])
+
+    def test_a_search_already_in_english_does_not_ask_twice(self):
+        asked = []
+
+        def fake_fetch(url):
+            asked.append(url)
+            return {"pages": []}
+
+        original = api.fetch_knowledge_json
+        api.fetch_knowledge_json = fake_fetch
+        try:
+            self.assertEqual(api.wikipedia_search("nada", "en", 10), [])
+        finally:
+            api.fetch_knowledge_json = original
+
+        self.assertEqual(len(asked), 1)
+
     def test_search_with_blank_query_never_touches_the_network(self):
         def explode(_url):
             raise AssertionError("no deberia consultarse la fuente con una consulta vacia")

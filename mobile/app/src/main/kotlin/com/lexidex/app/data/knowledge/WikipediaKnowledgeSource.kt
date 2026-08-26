@@ -18,26 +18,49 @@ import kotlinx.serialization.json.Json
  * The language code only ever reaches the URL through [wikipediaLanguage], which reduces it to two
  * or three lowercase letters, so the subdomain can never be steered by user input. The fetcher's
  * allowlist then re-checks the resulting host independently.
+ *
+ * Depende de "una forma de traer texto de una URL permitida" y no del fetcher concreto, que es lo
+ * que deja probar el encadenado de idiomas sin red y sin abrir [AllowlistedHttpFetcher] a la
+ * herencia: en una clase que existe justamente para acotar lo que sale a internet, esa es la unica
+ * pieza que no conviene aflojar.
  */
 class WikipediaKnowledgeSource(
-    private val fetcher: AllowlistedHttpFetcher = AllowlistedHttpFetcher(
+    private val getText: suspend (String) -> String = AllowlistedHttpFetcher(
         allowedHosts = setOf(WIKIPEDIA_HOST),
         userAgent = USER_AGENT,
-    ),
+    )::getText,
 ) : KnowledgeSource {
 
     override val id: String = SOURCE_ID
     override val displayName: String = "Wikipedia"
 
+    /**
+     * Busca en el idioma pedido y, solo si no devuelve nada, repite en ingles.
+     *
+     * Los resultados de dos idiomas **no se mezclan**: cada edicion ordena por una relevancia que
+     * no es comparable con la otra, asi que una lista mezclada pondria lado a lado articulos que
+     * no son el mismo y el usuario elegiria a ciegas. Cada resultado se queda con el idioma en el
+     * que aparecio, que es el que despues queda fijado al importar el articulo.
+     */
     override suspend fun search(query: String, language: String, limit: Int): List<KnowledgeSearchResult> {
         val trimmed = query.trim()
         if (trimmed.isBlank()) return emptyList()
-        val wikiLanguage = wikipediaLanguage(language)
         val safeLimit = limit.coerceIn(1, MAX_SEARCH_LIMIT)
+        val primary = wikipediaLanguage(language)
+        val found = searchIn(primary, trimmed, safeLimit)
+        if (found.isNotEmpty() || primary == SECONDARY_LANGUAGE) return found
+        return searchIn(SECONDARY_LANGUAGE, trimmed, safeLimit)
+    }
+
+    private suspend fun searchIn(
+        wikiLanguage: String,
+        trimmed: String,
+        safeLimit: Int,
+    ): List<KnowledgeSearchResult> {
         val url = "https://$wikiLanguage.$WIKIPEDIA_HOST/w/rest.php/v1/search/page" +
             "?q=${encodeQuery(trimmed)}&limit=$safeLimit"
 
-        val response = decode(SearchResponse.serializer(), fetcher.getText(url))
+        val response = decode(SearchResponse.serializer(), getText(url))
         return response.pages
             .filter { it.key.isNotBlank() }
             .map { page ->
@@ -56,7 +79,7 @@ class WikipediaKnowledgeSource(
         val url = "https://$wikiLanguage.$WIKIPEDIA_HOST/api/rest_v1/page/summary/" +
             encodePathSegment(result.externalId)
 
-        val summary = decode(SummaryResponse.serializer(), fetcher.getText(url))
+        val summary = decode(SummaryResponse.serializer(), getText(url))
         val articleUrl = summary.contentUrls?.desktop?.page?.takeIf { it.isNotBlank() }
             ?: "https://$wikiLanguage.$WIKIPEDIA_HOST/wiki/${encodePathSegment(result.externalId)}"
 
@@ -82,6 +105,12 @@ class WikipediaKnowledgeSource(
         const val USER_AGENT = "Lexidex/0.1 (aplicacion personal de consulta offline)"
         const val MAX_SEARCH_LIMIT = 25
         const val FALLBACK_LANGUAGE = "es"
+
+        /**
+         * Adonde se repite la busqueda cuando el idioma pedido no devuelve nada. Ingles y no otro
+         * porque es donde esta casi todo lo tecnico, que es de lo que mas se crean terminos aca.
+         */
+        const val SECONDARY_LANGUAGE = "en"
 
         val json = Json { ignoreUnknownKeys = true }
 

@@ -453,10 +453,20 @@ la razon de que el encabezado haya vuelto a 🔶.
       superior en lugar de `Cancelar`. Al importar un articulo, el idioma queda
       fijado al informado por la fuente; al crear el termino completamente a
       mano, el idioma sigue siendo editable.
-- [ ] **5.11** _(M)_ Buscar primero en Wikipedia en espanol y, solamente si no
-      devuelve resultados, repetir en ingles. Cada resultado debe conservar y
-      mostrar su idioma real, que luego queda fijado al importar el articulo.
-      Evitar mezclar ambas consultas si la primera ya encontro algo.
+- [x] **5.11** ✅ La busqueda va primero al idioma pedido y solo repite en ingles
+      si ese no devolvio nada, en las dos superficies. Los resultados de dos
+      idiomas **no se mezclan**: cada edicion ordena por una relevancia que no es
+      comparable con la otra, asi que una lista mezclada pondria lado a lado
+      articulos que no son el mismo y el usuario elegiria a ciegas. Cada
+      resultado conserva el idioma en el que aparecio, que es el que queda
+      fijado al importar. Una busqueda que ya venia en ingles no pregunta dos
+      veces.
+
+      De paso, `WikipediaKnowledgeSource` pasa a depender de "una forma de traer
+      texto de una URL permitida" en vez del fetcher concreto. Era eso o abrir
+      `AllowlistedHttpFetcher` a la herencia, y esa clase existe justamente para
+      acotar lo que sale a internet: es la unica pieza que no conviene aflojar
+      para poder testear.
 - [ ] **5.12** _(L)_ Permitir elegir una fuente, un grupo de fuentes o todas.
       Antes de habilitar `Todas`, definir deduplicacion entre fuentes, limites de
       concurrencia y pedidos, cancelacion, latencia esperable y una indicacion

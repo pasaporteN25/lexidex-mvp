@@ -19,6 +19,10 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Agregado
 
+- Al crear un termino, la busqueda va primero al idioma que pediste y solo
+  repite en ingles si ese no encontro nada (tarea 5.11). Los resultados de dos
+  idiomas no se mezclan y cada uno muestra el idioma real en el que aparecio,
+  que es el que queda fijado al importarlo.
 - La web tambien dice de donde salen y donde se guardan los datos (tarea 6.4,
   que cierra la epica 6). `/api/stats` gana un bloque `storage` con las rutas
   reales de las dos bases, el checksum y el tamano del paquete, cuantos terminos
