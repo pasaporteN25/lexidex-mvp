@@ -1076,7 +1076,8 @@ el flujo funcione.
          con `unexpected end of stream` en el segundo pedido.
 
       **Falta la mitad de contenedor**: volumen persistente, healthcheck y
-      recreacion. Espera a una maquina con Docker.
+      recreacion. Espera a una maquina con Docker, y el checklist paso por paso
+      esta en [`verify-local-sync.md`](verify-local-sync.md).
 
       **Es tambien donde se cubre lo que hoy no tiene test**: `RoomSyncStore` y
       el SQL que Room genera. El resto de la ruta de sincronizacion se prueba
