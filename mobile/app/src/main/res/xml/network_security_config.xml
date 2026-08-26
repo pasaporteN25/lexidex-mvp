@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Desde API 28 Android bloquea el trafico en claro, y con razon. Aca se abre una sola excepcion:
+    el hub corriendo en esta misma maquina, que es el caso de desarrollo y el del emulador.
+
+    Un hub en la LAN tiene que usar TLS. No es una comodidad que se recorta: la direccion es una IP
+    sin nombre que ninguna CA puede avalar, asi que la identidad se fija por huella al emparejar
+    (9.6), y sin TLS no hay huella que fijar ni nada que impida que otro conteste en su lugar.
+    Generar el certificado es un comando, documentado en contracts/local-sync/v1/README.md.
+
+    La configuracion de red de Android no entiende rangos, solo nombres y direcciones sueltas, asi
+    que no hay forma de escribir "toda la red privada" aunque se quisiera.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!-- El loopback del host visto desde el emulador. -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

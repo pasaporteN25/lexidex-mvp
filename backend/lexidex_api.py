@@ -2035,6 +2035,16 @@ def is_allowed_write_origin(origin, host):
 class LexidexHandler(BaseHTTPRequestHandler):
     store = None
 
+    # `BaseHTTPRequestHandler` habla HTTP/1.0 por default y cierra la conexion despues de cada
+    # respuesta. Un navegador lo tolera; un cliente con pool de conexiones -el `HttpURLConnection`
+    # de Android, que por debajo es OkHttp- reusa el socket que el servidor ya cerro y falla con
+    # "unexpected end of stream" en el segundo pedido. Aparecio emparejando el telefono de verdad:
+    # el primer pedido andaba y el siguiente no.
+    #
+    # Anunciar 1.1 exige `Content-Length` en toda respuesta, que es lo que ya hacen `send_json`,
+    # `send_static` y el `send_error` de la clase base.
+    protocol_version = "HTTP/1.1"
+
     def send_common_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")

@@ -87,6 +87,14 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Corregido
 
+- La aplicacion no podia hablar con un hub sin TLS: desde `targetSdk` 36 Android
+  bloquea el trafico en claro y el hub sirve HTTP por default. Ahora hay una
+  configuracion de red que abre solo el loopback, y emparejar con un hub de la
+  red local sin TLS avisa en el momento en vez de fallar despues como un error
+  de red.
+- El hub anunciaba HTTP/1.0 y cerraba la conexion despues de cada respuesta, asi
+  que cualquier cliente con pool de conexiones fallaba en el segundo pedido con
+  `unexpected end of stream`. Aparecio emparejando el telefono de verdad.
 - `package_meta.package_version` decia adentro del paquete la version desde la
   que se enriquecio y no la propia (`0.2.0-seed.1` dentro de v0.4.0). Se
   arreglo por las dos puntas: `finalize_package` sella la fila antes del

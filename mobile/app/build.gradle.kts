@@ -87,4 +87,12 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.androidx.sqlite.bundled.jvm)
+
+    // Room no se puede instanciar en un test JVM en este modulo, asi que lo que escribe de verdad
+    // sobre la base se prueba en un dispositivo. Es el lugar canonico para probar Room y no
+    // simula el framework, a diferencia de Robolectric.
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }

@@ -3,6 +3,7 @@ package com.lexidex.app.data.sync
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 private const val HUB_ID = "hub_22222222222222222222222222222222"
@@ -59,6 +60,20 @@ class SyncPairingTest {
         assertThrows(SyncError.InvalidPairing::class.java) {
             parseSyncPairingOffer(offerJson(fingerprint = "abc123"))
         }
+    }
+
+    @Test
+    fun `refuses a LAN hub without TLS while the user is still pairing`() {
+        // Android bloquea el trafico en claro desde API 28 y la excepcion de la app llega solo al
+        // loopback. Sin este corte el emparejamiento parecia andar y fallaba despues como un error
+        // de red que no explicaba nada.
+        val error = assertThrows(SyncError.InvalidPairing::class.java) {
+            parseSyncPairingOffer(
+                offerJson(url = "http://192.168.0.10:8765/api/sync/v1/exchange", fingerprint = null)
+            )
+        }
+
+        assertTrue(error.message!!.contains("https"))
     }
 
     @Test

@@ -76,11 +76,24 @@ fun parseSyncPairingOffer(text: String): SyncPairingOffer {
     if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) {
         throw SyncError.InvalidPairing("La direccion del hub no es valida.")
     }
+    // Android bloquea el trafico en claro desde API 28 y la excepcion de esta app llega solo al
+    // loopback. Decirlo aca, mientras el usuario todavia esta emparejando, es mucho mejor que
+    // dejarlo fallar despues como un error de red que no explica nada.
+    if (uri.scheme == "http" && !isLoopback(uri.host)) {
+        throw SyncError.InvalidPairing(
+            "Ese hub no usa TLS. Un hub en la red local tiene que servir por https: " +
+                "generá su certificado y volvé a pedir el codigo.",
+        )
+    }
     if (offer.token.isBlank()) {
         throw SyncError.InvalidPairing("El codigo no trae token de emparejamiento.")
     }
     return offer
 }
+
+/** Las mismas direcciones que abre `res/xml/network_security_config.xml`. */
+private fun isLoopback(host: String): Boolean =
+    host in setOf("localhost", "127.0.0.1", "::1", "10.0.2.2")
 
 @Serializable
 internal data class PairingRedemption(

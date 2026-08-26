@@ -1038,11 +1038,45 @@ el flujo funcione.
       no se cumple. Hoy se sincroniza apretando el boton, que es explicito y
       funciona.
 
-- [ ] **9.12** _(Opus 5 · L)_ Verificacion de punta a punta con dos replicas y
-      Docker real: cambios en ambos sentidos, edicion concurrente, borrado
-      offline, lote repetido, corte a mitad, paquetes distintos, revocacion,
-      recreacion del contenedor y restauracion del volumen. Correr tambien el
-      checklist actualizado del modelo de amenazas antes de declarar LAN lista.
+- [x] **9.12** 🔶 Verificacion de punta a punta, sin la parte de contenedor.
+
+      `tests/test_local_sync_end_to_end.py` corre el checklist con dos replicas
+      contra un hub HTTP real: cambios en los dos sentidos, edicion concurrente
+      con un ganador y un conflicto, borrado hecho mientras la otra estaba
+      offline -que no resucita-, lote repetido que responde `duplicate` con la
+      revision y el cursor originales, `change_id` reusado para otro contenido,
+      cascada de borrados derivados, referencia a un paquete que la otra replica
+      no tiene, paginado, revocacion de una sin tocar a la otra, cursor de otro
+      hub, y convergencia final. El cliente esta simulado en Python a proposito:
+      si compartiera codigo con el hub probaria que el hub esta de acuerdo
+      consigo mismo.
+
+      `app/src/androidTest` cubre lo que faltaba del lado del telefono, sobre el
+      emulador: `RoomSyncStoreTest` prueba lo que Room escribe de verdad -sobre
+      todo los `ON CONFLICT` que **copian** la revision del hub- y que una
+      transaccion fallida no deja nada a medio aplicar; `HubHandshakeTest`
+      empareja y sincroniza contra el hub de verdad, que es el unico test que
+      cruza el seam entero: kotlinx.serialization -> validador estricto de
+      Python -> motor -> lector estricto de Kotlin -> Room. Se saltea solo si no
+      hay hub escuchando, para no convertirse en una prueba que se rompe segun
+      quien la corra.
+
+      **Encontro dos bugs que ningun test veia**, los dos porque todo lo demas
+      usaba loopback dentro del mismo proceso:
+
+      1. Con `targetSdk` 36, Android bloquea el trafico en claro. La app no
+         podia hablar con un hub `http://`, que es el default. Se agrego
+         `res/xml/network_security_config.xml` abriendo **solo** el loopback y
+         `10.0.2.2`; un hub en la LAN tiene que usar TLS, y ahora el
+         emparejamiento lo dice mientras el usuario todavia esta en esa pantalla
+         en vez de fallar despues como un error de red que no explica nada.
+      2. El hub anunciaba HTTP/1.0 y cerraba la conexion despues de cada
+         respuesta. Cualquier cliente con pool -el `HttpURLConnection` de
+         Android, que por debajo es OkHttp- reusaba el socket cerrado y fallaba
+         con `unexpected end of stream` en el segundo pedido.
+
+      **Falta la mitad de contenedor**: volumen persistente, healthcheck y
+      recreacion. Espera a una maquina con Docker.
 
       **Es tambien donde se cubre lo que hoy no tiene test**: `RoomSyncStore` y
       el SQL que Room genera. El resto de la ruta de sincronizacion se prueba
