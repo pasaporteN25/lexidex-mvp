@@ -15,6 +15,19 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 ## Sin publicar
 
+### 2026-08-26
+
+#### Agregado
+
+- Las fuentes externas tienen un registro de admision comun en Android y
+  Python (tarea 5.12): idioma, contenido, licencia, almacenamiento, costo,
+  cuota, secretos y transporte son parte del contrato. Un proveedor que exige
+  secreto no puede registrarse como acceso directo desde el telefono.
+- Los terminos personales admiten varias fuentes ordenadas (tarea 5.13). El
+  esquema personal v4 migra cada URL de forma transaccional y repetible;
+  respaldo v2 y payload de sync v2 transportan la lista completa, mientras los
+  lectores siguen aceptando v1 sin descartar referencias secundarias.
+
 ### 2026-08-25
 
 #### Agregado

@@ -1,4 +1,5 @@
 import datetime as dt
+import hashlib
 import json
 import re
 from urllib.parse import urlparse
@@ -18,6 +19,9 @@ CHANGE_ID_PATTERN = re.compile(r"^chg_[a-f0-9]{32}$")
 PERSONAL_UID_PATTERN = re.compile(r"^usr_[a-f0-9]{32}$")
 COLLECTION_UID_PATTERN = re.compile(r"^col_[A-Za-z0-9_-]{1,60}$")
 PERSONAL_SLUG_PATTERN = re.compile(r"^[a-z0-9-]+$")
+SOURCE_UID_PATTERN = re.compile(r"^src_[a-f0-9]{32}$")
+SOURCE_PROVIDER_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
+SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 LANGUAGE_PATTERN = re.compile(r"^(?:und|[a-z]{2,3}(?:-[a-z0-9]{2,8})*)$")
 CURSOR_PATTERN = re.compile(r"^(?:0|[1-9][0-9]{0,18})$")
 
@@ -300,12 +304,17 @@ def _validate_common_change(
     numeric_revision = _require_int(revision, "revision", "invalid_change")
     if numeric_revision < (0 if revision_can_be_zero else 1):
         _invalid("invalid_change", "La revision no es valida.")
-    if _require_int(payload_version, "payload_version", "invalid_change") != 1:
+    numeric_payload_version = _require_int(payload_version, "payload_version", "invalid_change")
+    if numeric_payload_version != 1 and not (
+        entity_type == "personal_term"
+        and operation == "upsert"
+        and numeric_payload_version == 2
+    ):
         _invalid("unsupported_payload_version", "payload_version no esta soportada.")
     _require_timestamp(changed_at, "changed_at")
     identity = _require_object(entity_id, "entity_id", "invalid_change")
     _validate_entity_id(entity_type, identity)
-    _validate_payload(entity_type, identity, operation, payload)
+    _validate_payload(entity_type, identity, operation, numeric_payload_version, payload)
 
 
 def _validate_entity_id(entity_type, identity):
@@ -343,21 +352,21 @@ def _validate_reference(origin, slug):
         _invalid("invalid_change", "Una referencia personal debe usar un slug personal.")
 
 
-def _validate_payload(entity_type, identity, operation, payload):
+def _validate_payload(entity_type, identity, operation, payload_version, payload):
     if operation == "delete":
         if payload is not None:
             _invalid("invalid_change", "Un delete debe llevar payload null.")
         return
     value = _require_object(payload, "payload", "invalid_change")
     if entity_type == "personal_term":
-        _validate_term_payload(identity["uid"], value)
+        _validate_term_payload(identity["uid"], payload_version, value)
     elif entity_type == "collection":
         _validate_collection_payload(value)
     else:
         _validate_timestamp_payload(value)
 
 
-def _validate_term_payload(uid, payload):
+def _validate_term_payload(uid, payload_version, payload):
     _require_exact_keys(
         payload,
         {
@@ -374,7 +383,7 @@ def _validate_term_payload(uid, payload):
             "notes",
             "created_at",
             "updated_at",
-        },
+        } | ({"sources"} if payload_version == 2 else set()),
         "invalid_change",
     )
     slug = _require_text(payload["slug"], 160, "slug", "invalid_change")
@@ -410,6 +419,8 @@ def _validate_term_payload(uid, payload):
         parsed = urlparse(source_url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             _invalid("invalid_change", "source_url no es una URL HTTP valida.")
+    if payload_version == 2:
+        _validate_source_payloads(uid, source_url, payload["sources"])
     _require_string_list(payload["categories"], "categories")
     _require_string_list(payload["tags"], "tags")
     _require_text(payload["notes"], 5000, "notes", "invalid_change", allow_blank=True)
@@ -417,6 +428,59 @@ def _validate_term_payload(uid, payload):
     updated_at = _require_timestamp(payload["updated_at"], "updated_at")
     if updated_at < created_at:
         _invalid("invalid_change", "updated_at es anterior a created_at.")
+
+
+def _validate_source_payloads(term_uid, source_url, sources):
+    if not isinstance(sources, list) or len(sources) > 30:
+        _invalid("invalid_change", "sources no es una lista valida.")
+    source_ids = set()
+    urls = set()
+    for source in sources:
+        source = _require_object(source, "source", "invalid_change")
+        _require_exact_keys(
+            source,
+            {
+                "uid", "provider_id", "kind", "title", "url", "language",
+                "license_name", "retrieved_at", "content_sha256",
+            },
+            "invalid_change",
+        )
+        uid = _require_text(source["uid"], 36, "uid", "invalid_change")
+        url = _require_text(source["url"], 2048, "url", "invalid_change")
+        expected_uid = "src_" + hashlib.sha256(
+            f"{term_uid}\0{url}".encode("utf-8")
+        ).hexdigest()[:32]
+        if not SOURCE_UID_PATTERN.fullmatch(uid) or uid != expected_uid:
+            _invalid("invalid_change", "La identidad de una fuente no es valida.")
+        if uid in source_ids or url in urls:
+            _invalid("invalid_change", "sources contiene valores repetidos.")
+        source_ids.add(uid)
+        urls.add(url)
+        provider = _require_text(
+            source["provider_id"], 32, "provider_id", "invalid_change"
+        )
+        if not SOURCE_PROVIDER_PATTERN.fullmatch(provider):
+            _invalid("invalid_change", "provider_id no es valido.")
+        _require_text(source["kind"], 40, "kind", "invalid_change")
+        _require_text(source["title"], 200, "title", "invalid_change", allow_blank=True)
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            _invalid("invalid_change", "La URL de una fuente no es HTTP valida.")
+        language = _require_text(source["language"], 24, "language", "invalid_change")
+        if not LANGUAGE_PATTERN.fullmatch(language):
+            _invalid("invalid_change", "El idioma de una fuente no es valido.")
+        _require_text(
+            source["license_name"], 200, "license_name", "invalid_change", allow_blank=True
+        )
+        if source["retrieved_at"] is not None:
+            _require_timestamp(source["retrieved_at"], "retrieved_at")
+        content_hash = _require_text(
+            source["content_sha256"], 64, "content_sha256", "invalid_change", allow_blank=True
+        )
+        if content_hash and not SHA256_PATTERN.fullmatch(content_hash):
+            _invalid("invalid_change", "content_sha256 no es valido.")
+    if source_url != (sources[0]["url"] if sources else ""):
+        _invalid("invalid_change", "source_url no coincide con la fuente primaria.")
 
 
 def _validate_collection_payload(payload):

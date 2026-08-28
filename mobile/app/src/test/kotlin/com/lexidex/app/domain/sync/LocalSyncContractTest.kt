@@ -21,6 +21,31 @@ class LocalSyncContractTest {
     }
 
     @Test
+    fun `kotlin reads term payload version two with ordered sources`() {
+        val text = fixture("exchange-request.valid.json")
+            .replaceFirst("\"payload_version\": 1", "\"payload_version\": 2")
+            .replaceFirst(
+                "\"source_url\": \"https://es.wikipedia.org/wiki/Red_de_%C3%A1rea_local\",",
+                """"source_url": "https://es.wikipedia.org/wiki/Red_de_%C3%A1rea_local",
+                "sources": [{
+                  "uid": "src_65ddf8964ecaf36e7f9610700ade3f02",
+                  "provider_id": "wikipedia",
+                  "kind": "wikipedia",
+                  "title": "",
+                  "url": "https://es.wikipedia.org/wiki/Red_de_%C3%A1rea_local",
+                  "language": "es",
+                  "license_name": "CC BY-SA",
+                  "retrieved_at": null,
+                  "content_sha256": ""
+                }],""",
+            )
+
+        val request = parseSyncExchangeRequest(text)
+        assertEquals(2, request.changes.first().payloadVersion)
+        assertEquals(1, request.changes.first().payload?.get("sources")?.let { (it as kotlinx.serialization.json.JsonArray).size })
+    }
+
+    @Test
     fun `kotlin interprets the shared response and error fixtures`() {
         val response = parseSyncExchangeResponse(fixture("exchange-response.valid.json"))
         val error = parseSyncErrorResponse(fixture("error-response.valid.json"))

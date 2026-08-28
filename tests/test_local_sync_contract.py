@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -38,6 +39,28 @@ class LocalSyncContractTest(unittest.TestCase):
             request["changes"][0]["entity_id"]["uid"],
             "usr_33333333333333333333333333333333",
         )
+
+    def test_python_reads_term_payload_v2_with_ordered_sources(self):
+        document = json.loads(self.fixture("exchange-request.valid.json"))
+        term = document["changes"][0]
+        term["payload_version"] = 2
+        term["payload"]["sources"] = [
+            {
+                "uid": "src_65ddf8964ecaf36e7f9610700ade3f02",
+                "provider_id": "wikipedia",
+                "kind": "wikipedia",
+                "title": "",
+                "url": term["payload"]["source_url"],
+                "language": "es",
+                "license_name": "CC BY-SA",
+                "retrieved_at": None,
+                "content_sha256": "",
+            }
+        ]
+
+        parsed = parse_exchange_request(json.dumps(document))
+        self.assertEqual(parsed["changes"][0]["payload_version"], 2)
+        self.assertEqual(len(parsed["changes"][0]["payload"]["sources"]), 1)
 
     def test_python_interprets_the_shared_response_and_error_fixtures(self):
         response = parse_exchange_response(self.fixture("exchange-response.valid.json"))

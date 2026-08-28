@@ -2,12 +2,14 @@ package com.lexidex.app.domain.sync
 
 import java.net.URI
 import java.time.Instant
+import java.security.MessageDigest
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 
 const val SYNC_PROTOCOL_NAME = "lexidex-local-sync"
@@ -29,6 +31,9 @@ private val CHANGE_ID_PATTERN = Regex("^chg_[a-f0-9]{32}$")
 private val PERSONAL_UID_PATTERN = Regex("^usr_[a-f0-9]{32}$")
 private val COLLECTION_UID_PATTERN = Regex("^col_[A-Za-z0-9_-]{1,60}$")
 private val PERSONAL_SLUG_PATTERN = Regex("^[a-z0-9-]+$")
+private val SOURCE_UID_PATTERN = Regex("^src_[a-f0-9]{32}$")
+private val SOURCE_PROVIDER_PATTERN = Regex("^[a-z][a-z0-9_]{1,31}$")
+private val SHA256_PATTERN = Regex("^[a-f0-9]{64}$")
 private val LANGUAGE_PATTERN = Regex("^(?:und|[a-z]{2,3}(?:-[a-z0-9]{2,8})*)$")
 private val CURSOR_PATTERN = Regex("^(?:0|[1-9][0-9]{0,18})$")
 
@@ -322,12 +327,14 @@ private fun validateCommonChange(
     if (revision < if (revisionCanBeZero) 0 else 1) {
         invalidContract("invalid_change", "La revision no es valida.")
     }
-    if (payloadVersion != 1) {
+    if (payloadVersion != 1 &&
+        !(entityType == "personal_term" && operation == "upsert" && payloadVersion == 2)
+    ) {
         invalidContract("unsupported_payload_version", "payload_version no esta soportada.")
     }
     requireInstant(changedAt, "changed_at")
     validateEntityId(entityType, entityId)
-    validatePayload(entityType, entityId, operation, payload)
+    validatePayload(entityType, entityId, operation, payloadVersion, payload)
 }
 
 private fun validateEntityId(entityType: String, id: SyncEntityId) {
@@ -395,6 +402,7 @@ private fun validatePayload(
     entityType: String,
     entityId: SyncEntityId,
     operation: String,
+    payloadVersion: Int,
     payload: JsonObject?,
 ) {
     if (operation == "delete") {
@@ -405,17 +413,17 @@ private fun validatePayload(
     }
     val value = payload ?: invalidContract("invalid_change", "Un upsert necesita payload.")
     when (entityType) {
-        "personal_term" -> validateTermPayload(entityId.uid.orEmpty(), value)
+        "personal_term" -> validateTermPayload(entityId.uid.orEmpty(), payloadVersion, value)
         "collection" -> validateCollectionPayload(value)
         "favorite", "history", "collection_member" -> validateTimestampPayload(value)
     }
 }
 
-private fun validateTermPayload(uid: String, payload: JsonObject) {
+private fun validateTermPayload(uid: String, payloadVersion: Int, payload: JsonObject) {
     val expected = setOf(
         "slug", "title", "language", "kind", "status", "summary", "content", "source_url",
         "categories", "tags", "notes", "created_at", "updated_at",
-    )
+    ) + if (payloadVersion == 2) setOf("sources") else emptySet()
     requireKeys(payload, expected)
     val slug = payload.requireString("slug", 160)
     if (!PERSONAL_SLUG_PATTERN.matches(slug) || !slug.startsWith("personal-") ||
@@ -447,6 +455,7 @@ private fun validateTermPayload(uid: String, payload: JsonObject) {
             invalidContract("invalid_change", "source_url no es una URL HTTP valida.")
         }
     }
+    if (payloadVersion == 2) validateSourcePayloads(uid, sourceUrl, payload)
     payload.requireStringList("categories")
     payload.requireStringList("tags")
     payload.requireString("notes", 5_000, allowBlank = true)
@@ -456,6 +465,64 @@ private fun validateTermPayload(uid: String, payload: JsonObject) {
         invalidContract("invalid_change", "updated_at es anterior a created_at.")
     }
 }
+
+private fun validateSourcePayloads(uid: String, sourceUrl: String, payload: JsonObject) {
+    val sources = payload["sources"] as? JsonArray
+        ?: invalidContract("invalid_change", "sources debe ser una lista.")
+    if (sources.size > MAX_LIST_ITEMS) invalidContract("invalid_change", "sources tiene demasiados valores.")
+    val sourceIds = mutableSetOf<String>()
+    val urls = mutableSetOf<String>()
+    sources.forEach { element ->
+        val source = element as? JsonObject
+            ?: invalidContract("invalid_change", "sources contiene un valor invalido.")
+        requireKeys(
+            source,
+            setOf("uid", "provider_id", "kind", "title", "url", "language", "license_name", "retrieved_at", "content_sha256"),
+        )
+        val sourceUid = source.requireString("uid", 36)
+        val url = source.requireString("url", 2_048)
+        if (!SOURCE_UID_PATTERN.matches(sourceUid) || sourceUid != syncSourceUid(uid, url)) {
+            invalidContract("invalid_change", "La identidad de una fuente no es valida.")
+        }
+        if (!sourceIds.add(sourceUid) || !urls.add(url)) {
+            invalidContract("invalid_change", "sources contiene valores repetidos.")
+        }
+        val provider = source.requireString("provider_id", 32)
+        if (!SOURCE_PROVIDER_PATTERN.matches(provider)) invalidContract("invalid_change", "provider_id no es valido.")
+        source.requireString("kind", 40)
+        source.requireString("title", 200, allowBlank = true)
+        val uri = try { URI(url) } catch (error: Exception) {
+            invalidContract("invalid_change", "La URL de una fuente no es valida.", error)
+        }
+        if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) {
+            invalidContract("invalid_change", "La URL de una fuente no es HTTP valida.")
+        }
+        if (!LANGUAGE_PATTERN.matches(source.requireString("language", 24))) {
+            invalidContract("invalid_change", "El idioma de una fuente no es valido.")
+        }
+        source.requireString("license_name", 200, allowBlank = true)
+        val retrievedAt = source["retrieved_at"]
+        if (retrievedAt !is JsonNull) {
+            val value = retrievedAt as? JsonPrimitive
+                ?: invalidContract("invalid_change", "retrieved_at no es valido.")
+            if (!value.isString) invalidContract("invalid_change", "retrieved_at no es valido.")
+            requireInstant(value.content, "retrieved_at")
+        }
+        val hash = source.requireString("content_sha256", 64, allowBlank = true)
+        if (hash.isNotBlank() && !SHA256_PATTERN.matches(hash)) {
+            invalidContract("invalid_change", "content_sha256 no es valido.")
+        }
+    }
+    if (sourceUrl != sources.firstOrNull()?.let { (it as JsonObject).requireString("url", 2_048) }.orEmpty()) {
+        invalidContract("invalid_change", "source_url no coincide con la fuente primaria.")
+    }
+}
+
+private fun syncSourceUid(termUid: String, url: String): String =
+    "src_" + MessageDigest.getInstance("SHA-256")
+        .digest("$termUid\u0000$url".toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+        .take(32)
 
 private fun validateCollectionPayload(payload: JsonObject) {
     requireKeys(payload, setOf("name", "created_at", "updated_at"))

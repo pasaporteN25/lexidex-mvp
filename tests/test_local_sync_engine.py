@@ -137,6 +137,37 @@ class SyncEngineTest(unittest.TestCase):
         ).fetchone()
         self.assertEqual((row["title"], row["revision"]), ("Redes locales", 1))
 
+    def test_a_v1_term_update_replaces_only_the_primary_source(self):
+        self.create_term()
+        secondary_url = "https://example.test/secundaria"
+        self.conn.execute(
+            """
+            INSERT INTO personal_term_sources(
+              uid, term_uid, position, provider_id, source_kind, title, url, language,
+              license_name, retrieved_at, content_sha256
+            ) VALUES (?, ?, 1, 'manual', 'web', '', ?, 'es', '', NULL, '')
+            """,
+            (api.personal_source_uid(TERM_UID, secondary_url), TERM_UID, secondary_url),
+        )
+        self.conn.commit()
+        payload = term_payload()
+        payload["source_url"] = "https://example.test/nueva-primaria"
+
+        response = self.exchange(
+            request(
+                [change(change_id("b"), "personal_term", {"uid": TERM_UID}, base_revision=1, payload=payload)],
+                number=2,
+            )
+        )
+
+        self.assertEqual(response["acknowledgements"][0]["status"], "applied")
+        self.assertEqual(
+            [row[0] for row in self.conn.execute(
+                "SELECT url FROM personal_term_sources WHERE term_uid = ? ORDER BY position",
+                (TERM_UID,),
+            )],
+            ["https://example.test/nueva-primaria", secondary_url],
+        )
     def test_repeating_a_batch_does_not_write_twice(self):
         first = self.create_term()
         repeated = self.create_term()

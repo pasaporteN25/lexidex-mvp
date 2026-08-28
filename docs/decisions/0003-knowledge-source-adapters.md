@@ -21,15 +21,27 @@ permiso `INTERNET`.
 ### Un adaptador por fuente
 
 Cada fuente de conocimiento se expone detras de una interfaz minima con dos
-operaciones, `search(consulta)` y `fetch(resultado)`, mas metadatos de
-identidad. Agregar una fuente nueva es implementar esa interfaz, no reescribir
-la interfaz de usuario de busqueda. Es el mismo principio de "adaptadores
+operaciones, `search(consulta)` y `fetch(resultado)`, y un descriptor de
+admision obligatorio. Ese descriptor declara identidad, idiomas, tipos de
+contenido, licencia y atribucion, politica de almacenamiento offline,
+costo/cuota, si necesita secreto y transporte (`direct` o `backend`). Agregar
+una fuente nueva es implementar esa interfaz y registrarla, no reescribir la
+interfaz de usuario de busqueda. Es el mismo principio de "adaptadores
 reemplazables" que `docs/roadmap.md` ya fija para Graphify y Obsidian.
+
+El registro rechaza ids duplicados y la combinacion `requiresSecret=true` con
+`transport=direct`. La decision de red de Wikipedia no se hereda: una fuente
+como Cambridge, cuya clave debe quedar del lado servidor, solo puede admitirse
+como `backend`. Su politica de almacenamiento tambien se evalua antes de que el
+adaptador llegue a la UI; una fuente que prohibe guardar contenido no puede
+alimentar silenciosamente el camino offline actual.
 
 ### Cada cliente resuelve su propia red
 
-Android llama a Wikipedia directamente. La web sigue hablando unicamente con
-su backend, y es el backend quien llama a Wikipedia.
+Android llama directamente solo a fuentes admitidas con transporte `direct` y
+sin secreto; hoy, Wikipedia. La web sigue hablando unicamente con su backend,
+y es el backend quien llama al proveedor. Una fuente declarada `backend`
+tambien pasa por ese backend desde Android cuando exista ese transporte.
 
 El motivo es que la alternativa -que todo pase por el backend- obligaria al
 telefono a alcanzar ese backend por red, lo que cruza la compuerta "servidor
@@ -73,10 +85,15 @@ como texto plano, no el articulo completo. Alcanza como vista previa sin
 conexion, pesa poco, y al ser texto plano sigue cubierto por el escapado que
 las interfaces ya aplican, sin necesidad de sanitizar HTML.
 
+Cada termino personal conserva una lista ordenada en
+`personal_term_sources`. `source_url` sigue existiendo como proyeccion de la
+primera referencia para clientes anteriores; no es la fuente de verdad. La
+identidad estable de una referencia deriva del uid del termino y de su URL, por
+lo que reintentar una migracion o importacion no la duplica.
+
 La intencion declarada es escalar mas adelante al articulo completo o casi
-completo. Esa ampliacion no necesita una columna nueva para saber que terminos
-actualizar: los terminos importados conservan su `source_url`, que alcanza
-para volver a pedirlos. Si llega ese momento, habra que resolver antes el
+completo. Las referencias permiten saber que terminos actualizar. Si llega ese
+momento, habra que resolver antes el
 tamano por termino, la atribucion CC BY-SA y el saneamiento de HTML, que hoy
 no son problemas porque el contenido es texto plano y corto.
 

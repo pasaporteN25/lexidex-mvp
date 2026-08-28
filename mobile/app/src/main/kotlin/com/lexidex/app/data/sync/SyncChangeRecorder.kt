@@ -4,6 +4,8 @@ import com.lexidex.app.data.userdb.dao.SyncStorageDao
 import com.lexidex.app.data.userdb.entity.SyncJournalEntity
 import com.lexidex.app.data.userdb.entity.SyncTombstoneEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
+import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
+import com.lexidex.app.data.userdb.mergeLegacyPrimarySource
 import com.lexidex.app.domain.TermOrigin
 import java.time.Duration
 import java.time.Instant
@@ -12,6 +14,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.UUID
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -43,12 +46,24 @@ class SyncChangeRecorder(
     private val newChangeId: () -> String = ::randomChangeId,
 ) {
     suspend fun termUpserted(term: UserTermEntity, changedAt: String): Long =
+        termUpserted(
+            term,
+            mergeLegacyPrimarySource(term.uid, term.language, term.sourceUrl, emptyList()),
+            changedAt,
+        )
+
+    suspend fun termUpserted(
+        term: UserTermEntity,
+        sources: List<PersonalTermSourceEntity>,
+        changedAt: String,
+    ): Long =
         append(
             entityType = ENTITY_TERM,
             entityId = uidIdentity(term.uid),
             operation = OPERATION_UPSERT,
             revision = term.revision,
-            payload = termPayload(term),
+            payload = termPayload(term, sources),
+            payloadVersion = 2,
             changedAt = changedAt,
         )
 
@@ -179,6 +194,7 @@ class SyncChangeRecorder(
         revision: Long,
         payload: JsonObject?,
         changedAt: String,
+        payloadVersion: Int = 1,
     ): Long = journal.appendJournal(
         SyncJournalEntity(
             sourceDeviceId = deviceId,
@@ -187,6 +203,7 @@ class SyncChangeRecorder(
             entityIdJson = canonicalJson(entityId),
             operation = operation,
             revision = revision,
+            payloadVersion = payloadVersion,
             changedAt = changedAt,
             payloadJson = payload?.toString(),
         ),
@@ -248,7 +265,10 @@ class SyncChangeRecorder(
                 postfix = "}",
             ) { (key, value) -> "${JsonPrimitive(key)}:${JsonPrimitive(value)}" }
 
-        fun termPayload(term: UserTermEntity): JsonObject = buildJsonObject {
+        fun termPayload(term: UserTermEntity, sources: List<PersonalTermSourceEntity>): JsonObject = buildJsonObject {
+            require(term.sourceUrl == sources.firstOrNull()?.url.orEmpty()) {
+                "source_url must project the first personal term source"
+            }
             put("slug", term.slug)
             put("title", term.title)
             put("language", term.language)
@@ -257,6 +277,21 @@ class SyncChangeRecorder(
             put("summary", term.summary)
             put("content", term.content)
             put("source_url", term.sourceUrl)
+            put("sources", buildJsonArray {
+                sources.sortedBy { it.position }.forEach { source ->
+                    add(buildJsonObject {
+                        put("uid", source.uid)
+                        put("provider_id", source.providerId)
+                        put("kind", source.sourceKind)
+                        put("title", source.title)
+                        put("url", source.url)
+                        put("language", source.language)
+                        put("license_name", source.licenseName)
+                        put("retrieved_at", source.retrievedAt?.let(::JsonPrimitive) ?: JsonNull)
+                        put("content_sha256", source.contentSha256)
+                    })
+                }
+            })
             put("categories", buildJsonArray { term.categories.forEach { add(JsonPrimitive(it)) } })
             put("tags", buildJsonArray { term.tags.forEach { add(JsonPrimitive(it)) } })
             put("notes", term.notes)

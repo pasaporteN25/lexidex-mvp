@@ -174,6 +174,17 @@ class CanonicalApiTest(PackageFixture, unittest.TestCase):
                     "notes": "Revisar mas adelante.",
                 },
             )
+            secondary_url = "https://example.com/ontologia/bibliografia"
+            user_connection.execute(
+                """
+                INSERT INTO personal_term_sources(
+                  uid, term_uid, position, provider_id, source_kind, title, url, language,
+                  license_name, retrieved_at, content_sha256
+                ) VALUES (?, ?, 1, 'manual', 'web', 'Bibliografia', ?, 'es', '', NULL, '')
+                """,
+                (api.personal_source_uid(created["uid"], secondary_url), created["uid"], secondary_url),
+            )
+            user_connection.commit()
             result = api.combined_list_terms(
                 package_connection,
                 user_connection,
@@ -206,6 +217,9 @@ class CanonicalApiTest(PackageFixture, unittest.TestCase):
             remaining = user_connection.execute(
                 "SELECT COUNT(*) FROM user_terms"
             ).fetchone()[0]
+            remaining_sources = user_connection.execute(
+                "SELECT COUNT(*) FROM personal_term_sources"
+            ).fetchone()[0]
         finally:
             package_connection.close()
             user_connection.close()
@@ -218,7 +232,12 @@ class CanonicalApiTest(PackageFixture, unittest.TestCase):
         self.assertEqual(updated["status"], "reviewed")
         self.assertEqual(updated["revision"], 2)
         self.assertEqual(updated["notes"], ["Revision terminada."])
+        self.assertEqual(
+            [source["url"] for source in updated["sources"]],
+            ["https://example.com/ontologia", secondary_url],
+        )
         self.assertEqual(remaining, 0)
+        self.assertEqual(remaining_sources, 0)
 
     def test_filters_both_catalogs_by_the_same_label(self):
         # El paquete guarda las etiquetas en tablas normalizadas y el catalogo personal como
@@ -493,6 +512,35 @@ class CollectionsTest(PackageFixture, unittest.TestCase):
 
 
 class ExternalKnowledgeSourceTest(unittest.TestCase):
+    def test_wikipedia_registry_declares_admission_capabilities(self):
+        source = api.knowledge_source_registry()["wikipedia"]
+
+        self.assertEqual(source.descriptor.display_name, "Wikipedia")
+        self.assertEqual(source.descriptor.languages, "dynamic")
+        self.assertEqual(source.descriptor.content_types, frozenset({"encyclopedia_article"}))
+        self.assertEqual(source.descriptor.transport, "direct")
+        self.assertEqual(source.descriptor.offline_storage, "allowed_with_attribution")
+        self.assertEqual(source.descriptor.cost, "free")
+        self.assertTrue(source.descriptor.attribution_required)
+        self.assertFalse(source.descriptor.requires_secret)
+
+    def test_a_provider_secret_cannot_be_admitted_as_direct_transport(self):
+        with self.assertRaisesRegex(ValueError, "secret"):
+            api.KnowledgeSourceDescriptor(
+                id="private_dictionary",
+                display_name="Private",
+                homepage_url="https://example.test/",
+                languages="dynamic",
+                content_types=frozenset({"dictionary_entry"}),
+                transport="direct",
+                offline_storage="forbidden",
+                cost="metered",
+                license_name="Private",
+                license_url="https://example.test/license",
+                attribution_required=True,
+                requires_secret=True,
+            )
+
     """
     Cubre los controles de red del ADR 0003 sin salir a internet: lo que se prueba es que la
     politica se aplique, no que Wikipedia responda.

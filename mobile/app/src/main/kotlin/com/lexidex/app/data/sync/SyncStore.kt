@@ -7,11 +7,15 @@ import com.lexidex.app.data.userdb.entity.SyncJournalEntity
 import com.lexidex.app.data.userdb.entity.SyncReplicaCursorEntity
 import com.lexidex.app.data.userdb.entity.SyncTombstoneEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
+import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
+import com.lexidex.app.data.userdb.mergeLegacyPrimarySource
 import com.lexidex.app.domain.TermOrigin
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -73,8 +77,30 @@ class RoomSyncStore(private val database: LexidexUserDatabase) : SyncStore {
 
     override suspend fun upsertTerm(uid: String, payload: JsonObject, revision: Long) {
         val dao = database.userTermDao()
+        val sourceDao = database.personalTermSourceDao()
         val local = dao.getByUid(uid)
         val title = payload.text("title")
+        val sources = payload["sources"]?.jsonArray?.mapIndexed { position, element ->
+            val source = element.jsonObject
+            PersonalTermSourceEntity(
+                uid = source.text("uid"),
+                termUid = uid,
+                position = position,
+                providerId = source.text("provider_id"),
+                sourceKind = source.text("kind"),
+                title = source.text("title"),
+                url = source.text("url"),
+                language = source.text("language"),
+                licenseName = source.text("license_name"),
+                retrievedAt = source["retrieved_at"]?.takeUnless { it is JsonNull }?.jsonPrimitive?.content,
+                contentSha256 = source.text("content_sha256"),
+            )
+        } ?: mergeLegacyPrimarySource(
+            uid,
+            payload.text("language"),
+            payload.text("source_url"),
+            sourceDao.forTerm(uid),
+        )
         val term = UserTermEntity(
             id = local?.id ?: 0,
             uid = uid,
@@ -88,7 +114,7 @@ class RoomSyncStore(private val database: LexidexUserDatabase) : SyncStore {
             status = payload.text("status"),
             summary = payload.text("summary"),
             content = payload.text("content"),
-            sourceUrl = payload.text("source_url"),
+            sourceUrl = sources.firstOrNull()?.url.orEmpty(),
             categories = payload.textList("categories"),
             tags = payload.textList("tags"),
             notes = payload.text("notes"),
@@ -97,6 +123,7 @@ class RoomSyncStore(private val database: LexidexUserDatabase) : SyncStore {
             updatedAt = payload.text("updated_at"),
         )
         if (local == null) dao.insert(term) else dao.update(term)
+        sourceDao.replaceForTerm(uid, sources)
     }
 
     override suspend fun deleteTerm(uid: String) {

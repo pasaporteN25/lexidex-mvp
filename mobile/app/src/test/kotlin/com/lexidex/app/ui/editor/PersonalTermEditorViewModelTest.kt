@@ -5,6 +5,14 @@ import com.lexidex.app.data.corpus.CorpusDatabaseProvider
 import com.lexidex.app.data.knowledge.KnowledgeArticle
 import com.lexidex.app.data.knowledge.KnowledgeSearchResult
 import com.lexidex.app.data.knowledge.KnowledgeSource
+import com.lexidex.app.data.knowledge.KnowledgeContentType
+import com.lexidex.app.data.knowledge.KnowledgeLanguageSupport
+import com.lexidex.app.data.knowledge.KnowledgeSourceCapabilities
+import com.lexidex.app.data.knowledge.KnowledgeSourceCost
+import com.lexidex.app.data.knowledge.KnowledgeSourceDescriptor
+import com.lexidex.app.data.knowledge.KnowledgeSourceLicense
+import com.lexidex.app.data.knowledge.KnowledgeSourceTransport
+import com.lexidex.app.data.knowledge.OfflineStoragePolicy
 import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.data.userdb.UserDatabaseProvider
 import kotlinx.coroutines.Dispatchers
@@ -115,8 +123,20 @@ private class FakeKnowledgeSource(
     private val searchResults: List<KnowledgeSearchResult> = emptyList(),
     private val article: KnowledgeArticle? = null,
 ) : KnowledgeSource {
-    override val id = "wikipedia"
-    override val displayName = "Wikipedia"
+    override val descriptor = KnowledgeSourceDescriptor(
+        id = "wikipedia",
+        displayName = "Wikipedia",
+        homepageUrl = "https://example.test/",
+        capabilities = KnowledgeSourceCapabilities(
+            languages = KnowledgeLanguageSupport.Dynamic,
+            contentTypes = setOf(KnowledgeContentType.ENCYCLOPEDIA_ARTICLE),
+            transport = KnowledgeSourceTransport.DIRECT,
+            offlineStorage = OfflineStoragePolicy.ALLOWED,
+            cost = KnowledgeSourceCost.FREE,
+            license = KnowledgeSourceLicense("Test", "https://example.test/license", false),
+            requiresSecret = false,
+        ),
+    )
     val searchCalls = mutableListOf<SearchCall>()
 
     override suspend fun search(

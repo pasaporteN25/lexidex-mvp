@@ -30,9 +30,24 @@ class WikipediaKnowledgeSource(
         userAgent = USER_AGENT,
     )::getText,
 ) : KnowledgeSource {
-
-    override val id: String = SOURCE_ID
-    override val displayName: String = "Wikipedia"
+    override val descriptor = KnowledgeSourceDescriptor(
+        id = SOURCE_ID,
+        displayName = "Wikipedia",
+        homepageUrl = "https://www.wikipedia.org/",
+        capabilities = KnowledgeSourceCapabilities(
+            languages = KnowledgeLanguageSupport.Dynamic,
+            contentTypes = setOf(KnowledgeContentType.ENCYCLOPEDIA_ARTICLE),
+            transport = KnowledgeSourceTransport.DIRECT,
+            offlineStorage = OfflineStoragePolicy.ALLOWED_WITH_ATTRIBUTION,
+            cost = KnowledgeSourceCost.FREE,
+            license = KnowledgeSourceLicense(
+                name = "Creative Commons Attribution-ShareAlike",
+                url = "https://creativecommons.org/licenses/by-sa/4.0/",
+                attributionRequired = true,
+            ),
+            requiresSecret = false,
+        ),
+    )
 
     /**
      * Busca en el idioma pedido y, solo si no devuelve nada, repite en ingles.

@@ -13,6 +13,8 @@ import urllib.error
 import urllib.request
 import uuid
 from collections import Counter
+from collections.abc import Callable
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
@@ -51,6 +53,7 @@ KNOWLEDGE_FALLBACK_LANGUAGE = "es"
 # donde esta casi todo lo tecnico, que es de lo que mas se crean terminos aca.
 KNOWLEDGE_SECONDARY_LANGUAGE = "en"
 WIKIPEDIA_LANGUAGE_PATTERN = re.compile(r"^[a-z]{2,3}$")
+KNOWLEDGE_SOURCE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
 ALLOWED_SORTS = {
     "title_asc",
     "title_desc",
@@ -110,7 +113,7 @@ CREATE TABLE IF NOT EXISTS term_relations (
 """
 
 
-USER_SCHEMA_VERSION = 3
+USER_SCHEMA_VERSION = 4
 
 USER_SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -173,6 +176,27 @@ CREATE INDEX IF NOT EXISTS idx_user_terms_language_title
   ON user_terms(language, normalized_title);
 CREATE INDEX IF NOT EXISTS idx_user_terms_status ON user_terms(status);
 
+CREATE TABLE IF NOT EXISTS personal_term_sources (
+  uid TEXT PRIMARY KEY,
+  term_uid TEXT NOT NULL REFERENCES user_terms(uid) ON DELETE CASCADE,
+  position INTEGER NOT NULL CHECK (position >= 0),
+  provider_id TEXT NOT NULL,
+  source_kind TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  url TEXT NOT NULL,
+  language TEXT NOT NULL,
+  license_name TEXT NOT NULL DEFAULT '',
+  retrieved_at TEXT,
+  content_sha256 TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS index_personal_term_sources_term_uid
+  ON personal_term_sources(term_uid);
+CREATE UNIQUE INDEX IF NOT EXISTS index_personal_term_sources_term_uid_position
+  ON personal_term_sources(term_uid, position);
+CREATE UNIQUE INDEX IF NOT EXISTS index_personal_term_sources_term_uid_url
+  ON personal_term_sources(term_uid, url);
+
 CREATE TABLE IF NOT EXISTS favorites (
   term_slug TEXT NOT NULL,
   term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
@@ -206,7 +230,7 @@ CREATE TABLE IF NOT EXISTS sync_journal (
   entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
   operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
   revision INTEGER NOT NULL CHECK (revision > 0),
-  payload_version INTEGER NOT NULL DEFAULT 1 CHECK (payload_version = 1),
+  payload_version INTEGER NOT NULL DEFAULT 1 CHECK (payload_version IN (1, 2)),
   changed_at TEXT NOT NULL,
   payload_json TEXT CHECK (payload_json IS NULL OR json_valid(payload_json)),
   CHECK (
@@ -282,7 +306,7 @@ CREATE TRIGGER IF NOT EXISTS user_terms_au AFTER UPDATE ON user_terms BEGIN
   );
 END;
 
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;
 """
 
 
@@ -399,7 +423,7 @@ def ensure_sync_storage_tables(conn):
           entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
           operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
           revision INTEGER NOT NULL CHECK (revision > 0),
-          payload_version INTEGER NOT NULL DEFAULT 1 CHECK (payload_version = 1),
+          payload_version INTEGER NOT NULL DEFAULT 1 CHECK (payload_version IN (1, 2)),
           changed_at TEXT NOT NULL,
           payload_json TEXT CHECK (payload_json IS NULL OR json_valid(payload_json)),
           CHECK (
@@ -487,9 +511,182 @@ def validate_user_database(conn):
     result = conn.execute("PRAGMA integrity_check").fetchone()[0]
     if result != "ok":
         raise sqlite3.DatabaseError(f"user database integrity check failed: {result}")
+    if has_table(conn, "personal_term_sources"):
+        invalid_projection = conn.execute(
+            """
+            SELECT COUNT(*) FROM user_terms ut
+            LEFT JOIN personal_term_sources ps ON ps.term_uid = ut.uid AND ps.position = 0
+            WHERE ut.source_url <> COALESCE(ps.url, '')
+            """
+        ).fetchone()[0]
+        if invalid_projection:
+            raise sqlite3.IntegrityError(
+                "source_url does not match the primary personal term source"
+            )
 
 
-def migrate_user_database_to_v3(conn):
+def personal_source_uid(term_uid, url):
+    return "src_" + hashlib.sha256(f"{term_uid}\0{url}".encode("utf-8")).hexdigest()[:32]
+
+
+def legacy_source_payload(term_uid, language, url):
+    host = (urlparse(url).hostname or "").rstrip(".").lower()
+    wikipedia = host == "wikipedia.org" or host.endswith(".wikipedia.org")
+    return {
+        "uid": personal_source_uid(term_uid, url),
+        "provider_id": "wikipedia" if wikipedia else "manual",
+        "kind": "wikipedia" if wikipedia else "web",
+        "title": "",
+        "url": url,
+        "language": language,
+        "license_name": "CC BY-SA" if wikipedia else "",
+        "retrieved_at": None,
+        "content_sha256": "",
+    }
+
+
+def legacy_sources_for_edit(conn, term_uid, language, source_url):
+    existing = []
+    for row in conn.execute(
+        "SELECT * FROM personal_term_sources WHERE term_uid = ? ORDER BY position",
+        (term_uid,),
+    ):
+        existing.append(
+            {
+                "uid": row["uid"],
+                "provider_id": row["provider_id"],
+                "kind": row["source_kind"],
+                "title": row["title"],
+                "url": row["url"],
+                "language": row["language"],
+                "license_name": row["license_name"],
+                "retrieved_at": row["retrieved_at"],
+                "content_sha256": row["content_sha256"],
+            }
+        )
+    if not source_url:
+        return existing[1:]
+    selected = next((index for index, source in enumerate(existing) if source["url"] == source_url), -1)
+    if selected == 0:
+        return existing
+    if selected > 0:
+        return [existing[selected], *[
+            source for index, source in enumerate(existing) if index not in {0, selected}
+        ]]
+    return [legacy_source_payload(term_uid, language, source_url), *existing[1:]][:30]
+
+
+def ensure_personal_term_sources(conn):
+    legacy = conn.execute(
+        "SELECT uid, source_url, language FROM user_terms WHERE source_url <> ''"
+    ).fetchall()
+    for row in legacy:
+        parsed = urlparse(row["source_url"])
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise sqlite3.IntegrityError(
+                "user_terms contains an invalid source_url; migration aborted"
+            )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS personal_term_sources (
+          uid TEXT PRIMARY KEY,
+          term_uid TEXT NOT NULL REFERENCES user_terms(uid) ON DELETE CASCADE,
+          position INTEGER NOT NULL CHECK (position >= 0),
+          provider_id TEXT NOT NULL,
+          source_kind TEXT NOT NULL,
+          title TEXT NOT NULL DEFAULT '',
+          url TEXT NOT NULL,
+          language TEXT NOT NULL,
+          license_name TEXT NOT NULL DEFAULT '',
+          retrieved_at TEXT,
+          content_sha256 TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS index_personal_term_sources_term_uid ON personal_term_sources(term_uid)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS index_personal_term_sources_term_uid_position ON personal_term_sources(term_uid, position)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS index_personal_term_sources_term_uid_url ON personal_term_sources(term_uid, url)"
+    )
+    for row in legacy:
+        host = (urlparse(row["source_url"]).hostname or "").rstrip(".").lower()
+        wikipedia = host == "wikipedia.org" or host.endswith(".wikipedia.org")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO personal_term_sources(
+              uid, term_uid, position, provider_id, source_kind, title, url, language,
+              license_name, retrieved_at, content_sha256
+            ) VALUES (?, ?, 0, ?, ?, '', ?, ?, ?, NULL, '')
+            """,
+            (
+                personal_source_uid(row["uid"], row["source_url"]),
+                row["uid"],
+                "wikipedia" if wikipedia else "manual",
+                "wikipedia" if wikipedia else "web",
+                row["source_url"],
+                row["language"],
+                "CC BY-SA" if wikipedia else "",
+            ),
+        )
+
+
+def allow_sync_payload_version_two(conn):
+    if not has_table(conn, "sync_journal"):
+        return
+    sql_row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sync_journal'"
+    ).fetchone()
+    if sql_row and "payload_version IN (1, 2)" in (sql_row[0] or ""):
+        return
+    conn.execute(
+        """
+        CREATE TABLE sync_journal_v4 (
+          cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+          source_device_id TEXT NOT NULL,
+          change_id TEXT NOT NULL,
+          entity_type TEXT NOT NULL CHECK (
+            entity_type IN ('personal_term', 'favorite', 'history', 'collection', 'collection_member')
+          ),
+          entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
+          operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
+          revision INTEGER NOT NULL CHECK (revision > 0),
+          payload_version INTEGER NOT NULL DEFAULT 1 CHECK (payload_version IN (1, 2)),
+          changed_at TEXT NOT NULL,
+          payload_json TEXT CHECK (payload_json IS NULL OR json_valid(payload_json)),
+          CHECK (
+            (operation = 'delete' AND payload_json IS NULL) OR
+            (operation = 'upsert' AND payload_json IS NOT NULL)
+          )
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO sync_journal_v4(
+          cursor, source_device_id, change_id, entity_type, entity_id_json, operation,
+          revision, payload_version, changed_at, payload_json
+        )
+        SELECT cursor, source_device_id, change_id, entity_type, entity_id_json, operation,
+               revision, payload_version, changed_at, payload_json
+        FROM sync_journal ORDER BY cursor
+        """
+    )
+    conn.execute("DROP TABLE sync_journal")
+    conn.execute("ALTER TABLE sync_journal_v4 RENAME TO sync_journal")
+    conn.execute(
+        "CREATE UNIQUE INDEX index_sync_journal_source_device_id_change_id ON sync_journal(source_device_id, change_id)"
+    )
+    conn.execute(
+        "CREATE INDEX index_sync_journal_entity_type_entity_id_json ON sync_journal(entity_type, entity_id_json)"
+    )
+
+
+def migrate_user_database_to_v4(conn):
     conn.execute("BEGIN IMMEDIATE")
     try:
         if not has_table(conn, "user_terms"):
@@ -631,6 +828,8 @@ def migrate_user_database_to_v3(conn):
             conn.execute("ALTER TABLE collection_terms_v3 RENAME TO collection_terms")
 
         ensure_sync_storage_tables(conn)
+        allow_sync_payload_version_two(conn)
+        ensure_personal_term_sources(conn)
         ensure_user_term_search_schema(conn)
         conn.execute("INSERT INTO user_terms_fts(user_terms_fts) VALUES ('rebuild')")
         validate_user_database(conn)
@@ -654,7 +853,7 @@ def initialize_user_database(db_path):
         if version == 0 and not has_personal_data:
             conn.executescript(USER_SCHEMA)
         elif version < USER_SCHEMA_VERSION:
-            migrate_user_database_to_v3(conn)
+            migrate_user_database_to_v4(conn)
         elif version > USER_SCHEMA_VERSION:
             raise sqlite3.DatabaseError(
                 f"user database version {version} is newer than supported version {USER_SCHEMA_VERSION}"
@@ -901,33 +1100,39 @@ def enrich_term(conn, term, canonical, include_details=True):
     return data
 
 
-def personal_term_from_row(row, include_details=True):
+def personal_term_from_row(user_conn, row, include_details=True):
     data = dict_from_row(row)
     data["origin"] = "personal"
     data["editable"] = True
-    data["source_kind"] = "manual" if data.get("source_url") else "none"
+    primary_source = user_conn.execute(
+        "SELECT source_kind FROM personal_term_sources WHERE term_uid = ? ORDER BY position LIMIT 1",
+        (data["uid"],),
+    ).fetchone()
+    data["source_kind"] = primary_source["source_kind"] if primary_source else "none"
     data["categories"] = parse_json_list(data.pop("categories_json", "[]"))
     data["tags"] = parse_json_list(data.pop("tags_json", "[]"))
     data["occurrence_count"] = 1
     data["display_id"] = f"P{data['id']:04d}"
     if include_details:
         data["notes"] = [data.pop("notes")] if data.get("notes") else []
-        if data.get("source_url"):
-            parsed = urlparse(data["source_url"])
-            data["sources"] = [
+        data["sources"] = []
+        for source in user_conn.execute(
+            "SELECT * FROM personal_term_sources WHERE term_uid = ? ORDER BY position",
+            (data["uid"],),
+        ):
+            parsed = urlparse(source["url"])
+            data["sources"].append(
                 {
-                    "source_kind": "manual",
-                    "url": data["source_url"],
-                    "canonical_url": data["source_url"],
+                    "source_kind": source["source_kind"],
+                    "url": source["url"],
+                    "canonical_url": source["url"],
                     "host": parsed.hostname or "",
-                    "language": data["language"],
-                    "license_name": "",
-                    "retrieved_at": None,
-                    "content_sha256": "",
+                    "language": source["language"],
+                    "license_name": source["license_name"],
+                    "retrieved_at": source["retrieved_at"],
+                    "content_sha256": source["content_sha256"],
                 }
-            ]
-        else:
-            data["sources"] = []
+            )
     else:
         data.pop("notes", None)
     return data
@@ -997,11 +1202,18 @@ def add_catalog_filters(where, params, query, table_name="terms", canonical=True
             params.append(source)
     elif not canonical and source:
         if source == "none":
-            where.append(f"{table_name}.source_url = ''")
+            where.append(
+                f"NOT EXISTS (SELECT 1 FROM personal_term_sources ps WHERE ps.term_uid = {table_name}.uid)"
+            )
         elif source == "manual":
-            where.append(f"{table_name}.source_url <> ''")
+            where.append(
+                f"EXISTS (SELECT 1 FROM personal_term_sources ps WHERE ps.term_uid = {table_name}.uid AND ps.provider_id = 'manual')"
+            )
         else:
-            where.append("0 = 1")
+            where.append(
+                f"EXISTS (SELECT 1 FROM personal_term_sources ps WHERE ps.term_uid = {table_name}.uid AND ps.source_kind = ?)"
+            )
+            params.append(source)
 
 
 def sql_order(query, match_query, table_name):
@@ -1096,7 +1308,7 @@ def list_personal_terms(conn, query, max_page_size=MAX_PAGE_SIZE):
         [*params, limit, offset],
     ).fetchall()
     return {
-        "items": [personal_term_from_row(row, include_details=False) for row in rows],
+        "items": [personal_term_from_row(conn, row, include_details=False) for row in rows],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -1207,7 +1419,7 @@ def get_catalog_term(package_conn, user_conn, slug, canonical):
         "SELECT * FROM user_terms WHERE slug = ?", (slug,)
     ).fetchone()
     if personal:
-        return personal_term_from_row(personal)
+        return personal_term_from_row(user_conn, personal)
     row = package_conn.execute("SELECT * FROM terms WHERE slug = ?", (slug,)).fetchone()
     return enrich_term(package_conn, row, canonical) if row else None
 
@@ -1252,7 +1464,7 @@ def random_catalog_term(package_conn, user_conn, canonical):
         "SELECT * FROM user_terms ORDER BY id LIMIT 1 OFFSET ?",
         (index - package_count,),
     ).fetchone()
-    return personal_term_from_row(row)
+    return personal_term_from_row(user_conn, row)
 
 
 def daily_term(conn, date_text, canonical):
@@ -1332,9 +1544,7 @@ def corpus_stats(conn, canonical):
 def catalog_stats(package_conn, user_conn, canonical):
     payload = corpus_stats(package_conn, canonical)
     personal = user_conn.execute("SELECT COUNT(*) FROM user_terms").fetchone()[0]
-    personal_sources = user_conn.execute(
-        "SELECT COUNT(*) FROM user_terms WHERE source_url <> ''"
-    ).fetchone()[0]
+    personal_sources = user_conn.execute("SELECT COUNT(*) FROM personal_term_sources").fetchone()[0]
     payload["package_terms"] = payload["terms"]
     payload["personal_terms"] = personal
     payload["terms"] += personal
@@ -1372,7 +1582,9 @@ def storage_info(package_conn, user_conn, canonical):
         ).fetchone()[0],
         # Solo se consultan cuando alguien busca explicitamente (ADR 0003); decirlo es la mitad
         # del punto de mostrarlas.
-        "knowledge_sources": ["Wikipedia"],
+        "knowledge_sources": [
+            source.descriptor.display_name for source in knowledge_source_registry().values()
+        ],
     }
     return info
 
@@ -1418,15 +1630,22 @@ def catalog_facets(package_conn, user_conn, canonical):
                 "SELECT source_kind, COUNT(DISTINCT term_id) FROM sources GROUP BY source_kind"
             ).fetchall()
         )
-    manual_count = user_conn.execute(
-        "SELECT COUNT(*) FROM user_terms WHERE source_url <> ''"
-    ).fetchone()[0]
+    personal_source_counts = user_conn.execute(
+        """
+        SELECT CASE WHEN provider_id = 'manual' THEN 'manual' ELSE source_kind END,
+               COUNT(DISTINCT term_uid)
+        FROM personal_term_sources
+        GROUP BY CASE WHEN provider_id = 'manual' THEN 'manual' ELSE source_kind END
+        """
+    ).fetchall()
     no_source = user_conn.execute(
-        "SELECT COUNT(*) FROM user_terms WHERE source_url = ''"
+        """
+        SELECT COUNT(*) FROM user_terms ut
+        WHERE NOT EXISTS (SELECT 1 FROM personal_term_sources ps WHERE ps.term_uid = ut.uid)
+        """
     ).fetchone()[0]
     source_counts = Counter({row[0]: row[1] for row in sources})
-    if manual_count:
-        source_counts["manual"] += manual_count
+    source_counts.update({row[0]: row[1] for row in personal_source_counts})
     if no_source:
         source_counts["none"] += no_source
     package_count = package_conn.execute("SELECT COUNT(*) FROM terms").fetchone()[0]
@@ -1571,6 +1790,7 @@ def publish_local_change(
             payload,
             base_revision,
             changed_at,
+            payload_version=2 if entity_type == "personal_term" and operation == "upsert" else 1,
         )
     except local_sync_engine.LocalChangeRejected as rejected:
         raise ApiError(409, rejected.code, str(rejected), rejected.details) from rejected
@@ -1582,7 +1802,7 @@ def apply_local_term_change(user_conn, entity_id, operation, payload, base_revis
     )
 
 
-def term_change_payload(values, slug, created_at, updated_at):
+def term_change_payload(values, slug, created_at, updated_at, sources):
     """Pasa lo que valido la API a la forma exacta que fija el contrato v1."""
     return {
         "slug": slug,
@@ -1592,7 +1812,8 @@ def term_change_payload(values, slug, created_at, updated_at):
         "status": values["status"],
         "summary": values["summary"],
         "content": values["content"],
-        "source_url": values["source_url"],
+        "source_url": sources[0]["url"] if sources else "",
+        "sources": sources,
         "categories": json.loads(values["categories_json"]),
         "tags": json.loads(values["tags_json"]),
         "notes": values["notes"],
@@ -1620,12 +1841,18 @@ def create_personal_term(package_conn, user_conn, payload):
         user_conn,
         {"uid": uid},
         "upsert",
-        term_change_payload(values, slug, created_at=now, updated_at=now),
+        term_change_payload(
+            values,
+            slug,
+            created_at=now,
+            updated_at=now,
+            sources=legacy_sources_for_edit(user_conn, uid, values["language"], values["source_url"]),
+        ),
         base_revision=0,
         changed_at=now,
     )
     row = user_conn.execute("SELECT * FROM user_terms WHERE uid = ?", (uid,)).fetchone()
-    return personal_term_from_row(row)
+    return personal_term_from_row(user_conn, row)
 
 
 def update_personal_term(package_conn, user_conn, slug, payload):
@@ -1659,6 +1886,9 @@ def update_personal_term(package_conn, user_conn, slug, payload):
             current["slug"],
             created_at=current["created_at"],
             updated_at=now,
+            sources=legacy_sources_for_edit(
+                user_conn, current["uid"], values["language"], values["source_url"]
+            ),
         ),
         base_revision=current["revision"],
         changed_at=now,
@@ -1666,7 +1896,7 @@ def update_personal_term(package_conn, user_conn, slug, payload):
     row = user_conn.execute(
         "SELECT * FROM user_terms WHERE uid = ?", (current["uid"],)
     ).fetchone()
-    return personal_term_from_row(row)
+    return personal_term_from_row(user_conn, row)
 
 
 def delete_personal_term(user_conn, slug):
@@ -2046,6 +2276,78 @@ def wikipedia_article(external_id, language):
     }
 
 
+@dataclass(frozen=True)
+class KnowledgeSourceDescriptor:
+    """Declarative admission contract shared in shape with Android's KnowledgeSource."""
+
+    id: str
+    display_name: str
+    homepage_url: str
+    languages: str | frozenset[str]
+    content_types: frozenset[str]
+    transport: str
+    offline_storage: str
+    cost: str
+    license_name: str
+    license_url: str
+    attribution_required: bool
+    requires_secret: bool
+    quota: tuple[int, int] | None = None
+
+    def __post_init__(self):
+        if not KNOWLEDGE_SOURCE_ID_PATTERN.fullmatch(self.id):
+            raise ValueError(f"Invalid knowledge source id: {self.id}")
+        if not self.display_name.strip() or not self.homepage_url.startswith("https://"):
+            raise ValueError("Knowledge sources need a name and HTTPS homepage")
+        if not self.content_types:
+            raise ValueError("Knowledge sources need at least one content type")
+        if self.requires_secret and self.transport == "direct":
+            raise ValueError("A source that requires a secret must use backend transport")
+
+
+@dataclass(frozen=True)
+class KnowledgeSourceAdapter:
+    descriptor: KnowledgeSourceDescriptor
+    search: Callable[[str, str, int], list[dict]]
+    fetch: Callable[[str, str], dict]
+
+
+def knowledge_source_registry():
+    """One admission point: duplicate or unsafe descriptors fail before serving requests."""
+    sources = (
+        KnowledgeSourceAdapter(
+            descriptor=KnowledgeSourceDescriptor(
+                id="wikipedia",
+                display_name="Wikipedia",
+                homepage_url="https://www.wikipedia.org/",
+                languages="dynamic",
+                content_types=frozenset({"encyclopedia_article"}),
+                transport="direct",
+                offline_storage="allowed_with_attribution",
+                cost="free",
+                license_name="Creative Commons Attribution-ShareAlike",
+                license_url="https://creativecommons.org/licenses/by-sa/4.0/",
+                attribution_required=True,
+                requires_secret=False,
+            ),
+            search=wikipedia_search,
+            fetch=wikipedia_article,
+        ),
+    )
+    registry = {source.descriptor.id: source for source in sources}
+    if len(registry) != len(sources):
+        raise ValueError("Knowledge source ids must be unique")
+    return registry
+
+
+def requested_knowledge_source(query):
+    source_id = query_value(query, "source") or "wikipedia"
+    source = knowledge_source_registry().get(source_id)
+    if source is None:
+        raise ApiError(404, "source_not_found", "La fuente pedida no esta habilitada.")
+    return source
+
+
 def is_allowed_write_origin(origin, host):
     if not origin:
         return True
@@ -2333,8 +2635,9 @@ class LexidexHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def handle_knowledge_get(self, path, query):
+        source = requested_knowledge_source(query)
         if path == "/api/knowledge/search":
-            items = wikipedia_search(
+            items = source.search(
                 query_value(query, "q"),
                 query_value(query, "language"),
                 bounded_query_int(
@@ -2349,7 +2652,7 @@ class LexidexHandler(BaseHTTPRequestHandler):
         elif path == "/api/knowledge/article":
             self.send_json(
                 200,
-                wikipedia_article(query_value(query, "id"), query_value(query, "language")),
+                source.fetch(query_value(query, "id"), query_value(query, "language")),
             )
         else:
             self.send_json(404, {"error": "not_found"})

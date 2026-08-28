@@ -17,7 +17,7 @@ Las palabras **debe**, **no debe** y **puede** son normativas.
 - `Content-Type`: `application/json; charset=utf-8`.
 - `protocol`: `lexidex-local-sync`.
 - `version`: `1`.
-- `payload_version`: `1` para los cinco tipos de entidad de este documento.
+- `payload_version`: `1`, o `2` solo para un `personal_term` con fuentes ordenadas.
 - Los documentos v1 no admiten campos desconocidos.
 - Request y response no pueden superar 1 MiB en UTF-8.
 
@@ -28,9 +28,9 @@ cabecera.
 
 ## Persistencia compatible
 
-El esquema personal v3 que deja 9.4 esta fijado en
+El esquema personal v4 esta fijado en
 [`storage-schema.json`](storage-schema.json). Python/SQLite y Room deben exponer
-las mismas ocho tablas sincronizables y de control. Favoritos, historial y
+las mismas nueve tablas sincronizables y de control. Favoritos, historial y
 miembros conservan filas ausentes mediante `is_present` y una `revision`; los
 borrados de terminos y colecciones se retienen en `sync_tombstones`. El journal
 es monotono y `(source_device_id, change_id)` es unico. `updated_at`, `at` y
@@ -45,7 +45,7 @@ las usa para decidir que revision gana.
 | `device_id` | `dev_` + 32 hex minusculas | Instalacion/editor estable ligado a su credencial. |
 | `hub_id` | `hub_` + 32 hex minusculas | Identidad estable del hub, distinta de direccion o IP. |
 | `change_id` | `chg_` + 32 hex minusculas | Identidad de una mutacion y sus reintentos. |
-| termino personal | `usr_` + 32 hex minusculas | El `uid` que ya conserva el respaldo v1. |
+| termino personal | `usr_` + 32 hex minusculas | El `uid` que conservan los respaldos v1/v2. |
 | coleccion | `col_` + 1..60 caracteres `[A-Za-z0-9_-]` | Nunca el `id` numerico local. |
 | cursor | entero decimal no negativo como string | Posicion opaca en el journal del hub, dentro de `Long`. |
 
@@ -96,9 +96,9 @@ Un `upsert` exige payload objeto. Un `delete` exige `payload: null`.
 
 ## Identidad, payload y regla por entidad
 
-| `entity_type` | `entity_id` exacto | Payload v1 de `upsert` | Regla |
+| `entity_type` | `entity_id` exacto | Payload de `upsert` | Regla |
 | --- | --- | --- | --- |
-| `personal_term` | `{ "uid": "usr_..." }` | `slug`, `title`, `language`, `kind`, `status`, `summary`, `content`, `source_url`, `categories`, `tags`, `notes`, `created_at`, `updated_at` | Base exacta; colision de titulo normalizado + idioma con otro uid es conflicto. |
+| `personal_term` | `{ "uid": "usr_..." }` | v1: campos historicos hasta `updated_at`. v2: los mismos mas `sources`. | Base exacta; colision de titulo normalizado + idioma con otro uid es conflicto. |
 | `collection` | `{ "uid": "col_..." }` | `name`, `created_at`, `updated_at` | Base exacta; nombre normalizado unico. |
 | `favorite` | `{ "origin", "slug" }` | `at` | `upsert` presente, `delete` ausente; base exacta. |
 | `history` | `{ "origin", "slug" }` | `at` | Una fila por identidad; orden del hub, no del reloj. |
@@ -113,6 +113,16 @@ respaldo/importador 9.2:
 - hasta 30 categorias y 30 tags, de 1..60 caracteres, sin duplicados;
 - nombre de coleccion 1..80;
 - slugs referenciados 1..200, sin espacios.
+
+El protocolo general sigue en v1. Solo el payload de `personal_term` suma una
+version 2: `sources` es una lista ordenada de hasta 30 objetos con `uid`,
+`provider_id`, `kind`, `title`, `url`, `language`, `license_name`,
+`retrieved_at` y `content_sha256`. `source_url` debe ser exactamente la URL del
+primer objeto, o vacio si la lista esta vacia. El lector nuevo acepta payloads
+de termino v1 y v2; al aplicar v1 actualiza solo la fuente primaria y conserva
+las secundarias. El `uid` de cada fuente es `src_` mas los primeros 32 hex del
+SHA-256 de `term_uid`, un byte NUL y la URL exacta. Las demas entidades siguen
+usando payload v1.
 
 Una referencia `package` que el paquete local no resuelve se conserva como
 pendiente. Una referencia `personal` sin termino vivo se rechaza con
@@ -191,7 +201,8 @@ entidad viajan dentro de una response HTTP 200 y no como error global.
 
 No existe un segundo formato de merge. Para primera sincronizacion o
 `cursor_expired`, cada lado materializa el snapshot en el formato
-`lexidex-personal-catalog` v1, ejecuta el planificador puro de 9.2 y muestra su
+`lexidex-personal-catalog` v2 (cuyo lector tambien acepta v1), ejecuta el
+planificador puro de 9.2 y muestra su
 preview. Al confirmar, el plan se convierte en cambios normales de este
 contrato. El exchange incremental nunca vuelve a decidir colisiones de un
 catalogo entero.

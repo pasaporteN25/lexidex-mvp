@@ -2,6 +2,9 @@ package com.lexidex.app.data.knowledge
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 /** Devuelve lo que se le programo por idioma y anota que URLs le pidieron. */
@@ -18,6 +21,42 @@ private class ScriptedFetcher(private val pagesByLanguage: Map<String, String>) 
 private fun page(key: String) = """{"pages":[{"key":"$key","title":"$key","description":""}]}"""
 
 class WikipediaSearchLanguageTest {
+    @Test
+    fun `wikipedia declares the capabilities that make it safe to register`() {
+        val descriptor = WikipediaKnowledgeSource().descriptor
+
+        assertEquals("wikipedia", descriptor.id)
+        assertEquals("Wikipedia", descriptor.displayName)
+        assertEquals(KnowledgeLanguageSupport.Dynamic, descriptor.capabilities.languages)
+        assertEquals(
+            setOf(KnowledgeContentType.ENCYCLOPEDIA_ARTICLE),
+            descriptor.capabilities.contentTypes,
+        )
+        assertEquals(KnowledgeSourceTransport.DIRECT, descriptor.capabilities.transport)
+        assertEquals(OfflineStoragePolicy.ALLOWED_WITH_ATTRIBUTION, descriptor.capabilities.offlineStorage)
+        assertEquals(KnowledgeSourceCost.FREE, descriptor.capabilities.cost)
+        assertTrue(descriptor.capabilities.license.attributionRequired)
+        assertFalse(descriptor.capabilities.requiresSecret)
+    }
+
+    @Test
+    fun `a provider secret can never be admitted as direct transport`() {
+        try {
+            KnowledgeSourceCapabilities(
+                languages = KnowledgeLanguageSupport.Dynamic,
+                contentTypes = setOf(KnowledgeContentType.DICTIONARY_ENTRY),
+                transport = KnowledgeSourceTransport.DIRECT,
+                offlineStorage = OfflineStoragePolicy.FORBIDDEN,
+                cost = KnowledgeSourceCost.METERED,
+                license = KnowledgeSourceLicense("Privada", "https://example.test/license", true),
+                requiresSecret = true,
+            )
+            fail("Expected the unsafe source to be rejected")
+        } catch (error: IllegalArgumentException) {
+            assertTrue(error.message.orEmpty().contains("secret"))
+        }
+    }
+
 
     @Test
     fun `falls back to english only when the asked language finds nothing`() = runTest {

@@ -1,12 +1,16 @@
 package com.lexidex.app.data.repository
 
+import com.lexidex.app.data.userdb.personalTermSourceUid
+import com.lexidex.app.data.userdb.sourceFromLegacyUrl
 import com.lexidex.app.domain.backup.BACKUP_FORMAT_NAME
 import com.lexidex.app.domain.backup.BACKUP_FORMAT_VERSION
 import com.lexidex.app.domain.backup.BackupCollection
 import com.lexidex.app.domain.backup.BackupTerm
 import com.lexidex.app.domain.backup.BackupTermRef
+import com.lexidex.app.domain.backup.BackupTermSource
 import com.lexidex.app.domain.backup.PersonalCatalogBackup
 import com.lexidex.app.domain.backup.personalCatalogBackupFromJson
+import java.net.URI
 import java.time.Instant
 
 const val MAX_BACKUP_BYTES = 10 * 1024 * 1024
@@ -22,6 +26,9 @@ private const val MAX_LIST_ITEM_LENGTH = 60
 private val PERSONAL_UID_PATTERN = Regex("^usr_[a-f0-9]{32}$")
 private val COLLECTION_UID_PATTERN = Regex("^col_[A-Za-z0-9_-]{1,60}$")
 private val PERSONAL_SLUG_PATTERN = Regex("^[a-z0-9-]+$")
+private val SOURCE_UID_PATTERN = Regex("^src_[a-f0-9]{32}$")
+private val SOURCE_PROVIDER_PATTERN = Regex("^[a-z][a-z0-9_]{1,31}$")
+private val SHA256_PATTERN = Regex("^[a-f0-9]{64}$")
 
 /** A backup is untrusted input and failed before any database write was attempted. */
 class InvalidPersonalCatalogBackupException(message: String, cause: Throwable? = null) :
@@ -59,6 +66,7 @@ data class TermTitleKey(val normalizedTitle: String, val language: String)
 data class PlannedCollectionMember(val collectionUid: String, val reference: BackupTermRef)
 
 data class PersonalCatalogImportPlan(
+    val sourcePayloadVersion: Int,
     val termsToAdd: List<BackupTerm>,
     val termsToUpdate: List<BackupTerm>,
     val favoritesToAdd: List<BackupTermRef>,
@@ -91,7 +99,7 @@ fun validatedPersonalCatalogBackupFromJson(text: String): PersonalCatalogBackup 
     if (parsed.format != BACKUP_FORMAT_NAME) {
         invalidBackup("El archivo no es un respaldo de Lexidex.")
     }
-    if (parsed.version != BACKUP_FORMAT_VERSION) {
+    if (parsed.version !in 1..BACKUP_FORMAT_VERSION) {
         invalidBackup(
             if (parsed.version > BACKUP_FORMAT_VERSION) {
                 "El respaldo usa la version ${parsed.version}, que esta aplicacion todavia no puede leer."
@@ -111,7 +119,7 @@ fun validatedPersonalCatalogBackupFromJson(text: String): PersonalCatalogBackup 
         "miembros de colecciones",
     )
 
-    val terms = parsed.terms.map(::validateBackupTerm)
+    val terms = parsed.terms.map { validateBackupTerm(it, parsed.version) }
     requireUnique(terms, { it.uid }, "Hay dos terminos con el mismo uid.")
     requireUnique(terms, { it.slug }, "Hay dos terminos con el mismo slug.")
     requireUnique(
@@ -286,6 +294,7 @@ fun planPersonalCatalogImport(
         pendingPackageReferences = pendingPackageReferences,
     )
     return PersonalCatalogImportPlan(
+        sourcePayloadVersion = incoming.version,
         termsToAdd = termsToAdd,
         termsToUpdate = termsToUpdate,
         favoritesToAdd = favoritesToAdd,
@@ -297,7 +306,7 @@ fun planPersonalCatalogImport(
     )
 }
 
-private fun validateBackupTerm(term: BackupTerm): BackupTerm {
+private fun validateBackupTerm(term: BackupTerm, backupVersion: Int): BackupTerm {
     if (!PERSONAL_UID_PATTERN.matches(term.uid)) invalidBackup("Un termino tiene un uid invalido.")
     val uidSuffix = term.uid.substring(4, 12)
     if (term.slug.length > 160 || !PERSONAL_SLUG_PATTERN.matches(term.slug) ||
@@ -330,6 +339,26 @@ private fun validateBackupTerm(term: BackupTerm): BackupTerm {
             error,
         )
     }
+    val sources = if (backupVersion == 1) {
+        if (validated.sourceUrl.isBlank()) emptyList() else {
+            val source = sourceFromLegacyUrl(term.uid, validated.sourceUrl, validated.language)
+            listOf(
+                BackupTermSource(
+                    uid = source.uid,
+                    providerId = source.providerId,
+                    kind = source.sourceKind,
+                    title = source.title,
+                    url = source.url,
+                    language = source.language,
+                    licenseName = source.licenseName,
+                    retrievedAt = source.retrievedAt,
+                    contentSha256 = source.contentSha256,
+                ),
+            )
+        }
+    } else {
+        validateBackupSources(term.uid, validated.language, validated.sourceUrl, term.sources)
+    }
     return term.copy(
         title = validated.title,
         language = validated.language,
@@ -338,10 +367,61 @@ private fun validateBackupTerm(term: BackupTerm): BackupTerm {
         summary = validated.summary,
         content = validated.content,
         sourceUrl = validated.sourceUrl,
+        sources = sources,
         categories = validated.categories,
         tags = validated.tags,
         notes = validated.notes,
     )
+}
+
+private fun validateBackupSources(
+    termUid: String,
+    termLanguage: String,
+    sourceUrl: String,
+    sources: List<BackupTermSource>,
+): List<BackupTermSource> {
+    if (sources.size > MAX_LIST_ITEMS) invalidBackup("Un termino tiene demasiadas fuentes.")
+    requireUnique(sources, BackupTermSource::uid, "Un termino repite el uid de una fuente.")
+    requireUnique(sources, BackupTermSource::url, "Un termino repite una fuente.")
+    val validated = sources.map { source ->
+        if (!SOURCE_UID_PATTERN.matches(source.uid) ||
+            source.uid != personalTermSourceUid(termUid, source.url)
+        ) {
+            invalidBackup("Un termino tiene una identidad de fuente invalida.")
+        }
+        if (!SOURCE_PROVIDER_PATTERN.matches(source.providerId)) {
+            invalidBackup("Un termino tiene un proveedor de fuente invalido.")
+        }
+        if (source.kind.isBlank() || source.kind.length > 40 || source.title.length > 200 ||
+            source.licenseName.length > 200
+        ) {
+            invalidBackup("Un termino tiene metadatos de fuente invalidos.")
+        }
+        val uri = try {
+            URI(source.url)
+        } catch (error: Exception) {
+            throw InvalidPersonalCatalogBackupException("Un termino tiene una fuente invalida.", error)
+        }
+        if (source.url.length > 2_048 || uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) {
+            invalidBackup("Un termino tiene una fuente invalida.")
+        }
+        val language = source.language.trim().lowercase()
+        if (language != termLanguage && language != "und" &&
+            !Regex("^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$").matches(language)
+        ) {
+            invalidBackup("Un termino tiene un idioma de fuente invalido.")
+        }
+        source.retrievedAt?.let { requireInstant(it, "retrievedAt de fuente") }
+        if (source.contentSha256.isNotBlank() && !SHA256_PATTERN.matches(source.contentSha256)) {
+            invalidBackup("Un termino tiene un hash de fuente invalido.")
+        }
+        source.copy(language = language)
+    }
+    val projected = validated.firstOrNull()?.url.orEmpty()
+    if (sourceUrl != projected) {
+        invalidBackup("El enlace de fuente no coincide con la fuente primaria.")
+    }
+    return validated
 }
 
 private fun validateCollection(collection: BackupCollection): BackupCollection {

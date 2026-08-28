@@ -23,6 +23,21 @@ class PersonalCatalogBackupTest {
                 kind = "reference",
                 status = "seed",
                 summary = "Una nota propia.",
+                sourceUrl = "https://example.test/tango",
+                sources = listOf(
+                    BackupTermSource(
+                        uid = com.lexidex.app.data.userdb.personalTermSourceUid(
+                            "usr_0123456789abcdef0123456789abcdef",
+                            "https://example.test/tango",
+                        ),
+                        providerId = "manual",
+                        kind = "web",
+                        title = "Referencia",
+                        url = "https://example.test/tango",
+                        language = "es",
+                        licenseName = "",
+                    ),
+                ),
                 categories = listOf("Musica"),
                 tags = listOf("baile"),
                 createdAt = "2026-08-19T10:00:00Z",

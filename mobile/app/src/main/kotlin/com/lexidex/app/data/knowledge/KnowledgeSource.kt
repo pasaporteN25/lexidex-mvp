@@ -24,6 +24,90 @@ data class KnowledgeArticle(
     val language: String,
 )
 
+/** Languages offered by a source. Dynamic means the adapter validates the requested tag itself. */
+sealed interface KnowledgeLanguageSupport {
+    data object Dynamic : KnowledgeLanguageSupport
+
+    data class Explicit(val languageTags: Set<String>) : KnowledgeLanguageSupport {
+        init {
+            require(languageTags.isNotEmpty()) { "At least one language is required" }
+        }
+    }
+}
+
+enum class KnowledgeContentType {
+    ENCYCLOPEDIA_ARTICLE,
+    DICTIONARY_ENTRY,
+}
+
+enum class KnowledgeSourceTransport {
+    /** Safe without a Lexidex-owned secret; the client talks to the provider. */
+    DIRECT,
+
+    /** The client talks to Lexidex and the backend owns provider credentials and policy. */
+    BACKEND,
+}
+
+enum class OfflineStoragePolicy {
+    ALLOWED,
+    ALLOWED_WITH_ATTRIBUTION,
+    FORBIDDEN,
+    UNKNOWN,
+}
+
+enum class KnowledgeSourceCost {
+    FREE,
+    METERED,
+    PAID,
+    UNKNOWN,
+}
+
+data class KnowledgeSourceLicense(
+    val name: String,
+    val url: String,
+    val attributionRequired: Boolean,
+)
+
+data class KnowledgeSourceQuota(
+    val requests: Int,
+    val periodSeconds: Int,
+)
+
+data class KnowledgeSourceCapabilities(
+    val languages: KnowledgeLanguageSupport,
+    val contentTypes: Set<KnowledgeContentType>,
+    val transport: KnowledgeSourceTransport,
+    val offlineStorage: OfflineStoragePolicy,
+    val cost: KnowledgeSourceCost,
+    val license: KnowledgeSourceLicense,
+    val requiresSecret: Boolean,
+    val quota: KnowledgeSourceQuota? = null,
+) {
+    init {
+        require(contentTypes.isNotEmpty()) { "At least one content type is required" }
+        require(!(requiresSecret && transport == KnowledgeSourceTransport.DIRECT)) {
+            "A source that requires a secret must use the backend transport"
+        }
+    }
+}
+
+data class KnowledgeSourceDescriptor(
+    val id: String,
+    val displayName: String,
+    val homepageUrl: String,
+    val capabilities: KnowledgeSourceCapabilities,
+) {
+    init {
+        require(ID_PATTERN.matches(id)) { "Invalid source id: $id" }
+        require(displayName.isNotBlank()) { "A display name is required" }
+        require(homepageUrl.startsWith("https://")) { "A HTTPS homepage is required" }
+    }
+
+    private companion object {
+        val ID_PATTERN = Regex("^[a-z][a-z0-9_]{1,31}$")
+    }
+}
+
 /**
  * Failure modes of a [KnowledgeSource]. ViewModels branch on these, never on raw IO exceptions -
  * same reasoning as [com.lexidex.app.data.repository.CorpusError] for the local catalog.
@@ -53,11 +137,14 @@ sealed class KnowledgeSourceError(message: String, cause: Throwable? = null) : E
  * [KnowledgeSearchResult] and [KnowledgeArticle].
  */
 interface KnowledgeSource {
+    /** Admission contract. No source can be registered without declaring its legal/network shape. */
+    val descriptor: KnowledgeSourceDescriptor
+
     /** Stable identifier persisted on results, e.g. `wikipedia`. */
-    val id: String
+    val id: String get() = descriptor.id
 
     /** Shown to the user, e.g. "Wikipedia". */
-    val displayName: String
+    val displayName: String get() = descriptor.displayName
 
     suspend fun search(
         query: String,
@@ -70,4 +157,15 @@ interface KnowledgeSource {
     companion object {
         const val DEFAULT_SEARCH_LIMIT = 10
     }
+}
+
+/** Fails at app construction for duplicate or unsafe adapters, before they can reach the UI. */
+class KnowledgeSourceRegistry(sources: List<KnowledgeSource>) {
+    private val byId: Map<String, KnowledgeSource> = sources.associateBy { it.id }.also { registered ->
+        require(registered.size == sources.size) { "Knowledge source ids must be unique" }
+    }
+
+    val all: List<KnowledgeSource> = byId.values.toList()
+
+    operator fun get(id: String): KnowledgeSource? = byId[id]
 }

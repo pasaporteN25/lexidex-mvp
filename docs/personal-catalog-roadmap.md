@@ -59,41 +59,46 @@ saber esto porque cambia el tamano real de la tarea:
   se cargan al crear/editar un termino y se muestran como chips en la ficha
   (`TermDetail.categories` / `TermDetail.tags`, ADR 0002). Desde el paquete
   v0.4.0 los terminos del paquete tambien traen categorias reales (1.882
-  sobre 2.570 terminos). Lo que sigue sin existir es *filtrar o navegar* por
-  una etiqueta: hoy los chips son decorativos.
+  sobre 2.570 terminos). Desde la epica 2 los chips tambien navegan: tocar uno
+  lista todo lo que lleva esa categoria o etiqueta, de los dos catalogos.
 - **Colecciones ("globos de temas")**: implementadas el 2026-08-20 en las tres
   plataformas (epica 3). Fue lo unico de esta lista que necesito tablas
   nuevas, y en Android una migracion de la base de usuario.
-- **Traer contenido externo (Wikipedia u otra fuente) no existe en ninguna
-  plataforma**, pero **ya esta anticipado**: `docs/security-threat-model.md`
-  (seccion "SSRF", lineas ~146-166) tiene un checklist de seguridad ya
-  escrito para el dia que se implemente esto, y menciona Wikipedia/Wiktionary
-  como los hosts pensados para la allowlist. No hay que inventar la politica
-  de seguridad, solo cumplirla.
+- **Los terminos propios ya se pueden escribir completamente a mano** en las
+  dos plataformas; Wikipedia es una ayuda opcional, no el origen obligatorio.
+  La busqueda externa tambien esta implementada, hoy solo contra Wikipedia.
+  Desde 5.13, un termino personal representa ademas varias fuentes ordenadas,
+  cada una con su licencia y su fecha; `source_url` queda unicamente como
+  proyeccion compatible de la primera, mientras existan clientes anteriores.
 
 ## Orden sugerido
 
 Como project leader dejo esto priorizado, pero es una sugerencia, no una
 imposicion:
 
-Al 2026-08-24 estan cerradas las epicas 1, 2, 3, 7 y 8. La epica 5 recibio
-tareas nuevas despues del cierre y la 6 conserva su equivalente web pendiente.
-La siguiente capacidad grande priorizada es sincronizar la capa personal entre
-Android y desktop/web cuando comparten la red local.
+Al 2026-08-26 estan cerradas las epicas 1, 2, 3, 6, 7 y 8. La epica 5 recibio
+tareas nuevas despues del cierre. El recorrido manual de sincronizacion de la
+epica 9 ya esta implementado; quedan la verificacion del contenedor y comodidades
+opcionales que no bloquean el uso por direccion escrita.
 
 **El minijuego "Cinco" (epica 8) esta terminado y verificado a mano.** Era la
 funcionalidad de esta version mayor, y quedo cerrada el mismo dia en que se
 decidio.
 
-1. **Sincronizacion local mobile <-> desktop/web** (9.3 a 9.12) - siguiente
-   epica grande. Primero manual, bidireccional, sin cuenta y con el desktop/web
-   dockerizado como hub local; el plan tecnico vive en
-   `docs/local-network-sync-plan.md`.
-2. **Articulo completo** (resto de la epica 4) - el mas grande de los que
+1. **Sincronizacion local mobile <-> desktop/web** (epica 9) - cerrar el
+   recorrido manual y su verificacion con el desktop/web dockerizado como hub
+   local; el plan tecnico vive en `docs/local-network-sync-plan.md`.
+2. **Autoria y fuentes evaluadas** (5.12 a 5.18) - primero procedencia y reglas
+   de admision; despues una segunda fuente. Evita que el producto quede atado a
+   Wikipedia y que una integracion tecnicamente facil cree una deuda legal o de
+   datos dificil de deshacer.
+3. **Splash nativa de Android** (epica 11) - pulido chico y aislado: puede
+   entrar entre tareas grandes, pero nunca debe demorar el arranque a proposito.
+4. **Articulo completo** (resto de la epica 4) - el mas grande de los que
    quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
-3. **Copias fechadas y versionadas del articulo** (epica 10) - empieza barato
+5. **Copias fechadas y versionadas del articulo** (epica 10) - empieza barato
    (10.1 y 10.2 son fechar y mostrar) y se pone cara al final (10.6).
-4. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
+6. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
    al final de la epica 7.
 
 ---
@@ -419,7 +424,8 @@ mueven enteras al backend y Android/web pasan a ser solo consumidores)
       con `KnowledgeSearchResult` y `KnowledgeArticle` como unico vocabulario
       que ve la UI, de modo que sumar otra fuente sea implementar la interfaz.
       `LexidexApplication` ya expone una **lista** de fuentes, no una sola.
-      Falta el espejo en Python cuando se haga 5.2.
+      El backend tiene los endpoints equivalentes; desde 5.12, ambos lados usan
+      un registro con capacidades declarativas en vez de cablear Wikipedia.
 
 ### Agregado despues de cerrar la epica
 
@@ -467,7 +473,79 @@ la razon de que el encabezado haya vuelto a 🔶.
       `AllowlistedHttpFetcher` a la herencia, y esa clase existe justamente para
       acotar lo que sale a internet: es la unica pieza que no conviene aflojar
       para poder testear.
-- [ ] **5.12** _(L)_ Permitir elegir una fuente, un grupo de fuentes o todas.
+### Siguiente etapa: autoria y fuentes evaluadas
+
+Crear un termino propio **ya funciona**: el `+` abre el editor manual y ninguno
+de sus campos depende de Wikipedia. Hay dos ampliaciones distintas que no
+conviene mezclar:
+
+- un termino **personal**, escrito y sincronizado por su usuario;
+- un termino **editorial de Lexidex**, revisado en el repositorio y distribuido
+  dentro de un paquete canonico reproducible.
+
+En ambos casos, las fuentes deben ser evidencia para una redaccion propia, no
+un permiso implicito para copiar paginas. Una fuente no se admite con un unico
+puntaje de "calidad": Cambridge puede ser excelente para una definicion o una
+pronunciacion y no servir para historia o ciencia. La ficha de cada proveedor
+debe registrar, como minimo:
+
+1. alcance tematico e idiomas;
+2. licencia, atribucion y si permite transformar y guardar contenido offline;
+3. API/feed/dataset oficial disponible, autenticacion y estabilidad de ids;
+4. procedencia que se puede conservar: URL canonica, fecha, revision y hash;
+5. cuotas, costo, latencia, consumo de datos y politica de cache;
+6. seguridad y privacidad: hosts permitidos, secretos, redirecciones y datos
+   que salen del dispositivo.
+
+Cambridge confirma por que esta compuerta va antes del adaptador. Tiene una API
+oficial de busqueda y entradas, pero la clave debe mantenerse del lado servidor;
+la licencia de evaluacion es por 30 dias, exige luego un acuerdo de desarrollo y
+prohibe cachear o guardar el contenido. Eso choca directamente con la promesa
+offline de Lexidex salvo que el acuerdo final autorice ese uso. Fuentes oficiales:
+[API](https://dictionary-api.cambridge.org/api/),
+[terminos](https://dictionary-api.cambridge.org/api/terms-and-conditions) y
+[recomendacion sobre la clave](https://dictionary-api.cambridge.org/api/resources).
+
+- [x] **5.12** ✅ Definir el registro y la politica de admision de fuentes.
+      Extender `KnowledgeSource` y su equivalente Python con capacidades
+      declarativas: idiomas, tipo de contenido, atribucion, almacenamiento
+      permitido, costo/cuota y transporte (`directo` o `backend`). Actualizar el
+      ADR 0003: una fuente con secreto no puede heredar por accidente la decision
+      de que Android consulte Wikipedia directamente.
+      Hecho el 2026-08-26 en Kotlin y Python: descriptor obligatorio, registro
+      unico y rechazo de secretos con transporte directo.
+- [x] **5.13** ✅ Varias fuentes por termino personal, primero a nivel de la
+      ficha completa y no por parrafo. Crear identidades estables de fuente y una
+      tabla `personal_term_sources`; migrar cada `source_url` existente sin
+      perder ni reinterpretar la URL. La tabla nueva pasa a ser la fuente de
+      verdad y `source_url` queda, mientras haya clientes v1, solo como proyeccion
+      compatible de la fuente primaria. La migracion debe ser transaccional,
+      verificar FKs e integridad y ampliar respaldo/sync con lectura hacia atras;
+      repetirla no puede duplicar fuentes.
+      Hecho el 2026-08-26 con esquema personal v4, respaldo v2 y payload de
+      termino v2; los lectores conservan compatibilidad con respaldo/payload v1.
+- [ ] **5.14** _(M)_ Hacer explicita la autoria personal en el editor: "Escribir
+      termino propio" como camino principal, fuentes opcionales y separacion
+      visible entre texto escrito por el usuario y texto importado. Agregar,
+      quitar o reordenar referencias nunca debe sobrescribir contenido sin una
+      confirmacion separada.
+- [ ] **5.15** _(L)_ Pipeline para terminos editoriales de Lexidex. Fuente
+      versionada y revisable en el repositorio, autor/revisor, referencias y
+      licencia obligatorias, validacion de colisiones, y entrada al constructor
+      del paquete canonico sin escribir nunca el `.sqlite` publicado en el lugar.
+- [ ] **5.16** _(S)_ Cambridge sin copia: accion "Abrir en Cambridge" para la
+      consulta actual usando su busqueda web oficial, fuera de la app. No se
+      parsea HTML, no se guarda contenido y no se presenta como fuente importada;
+      es valor inmediato mientras se resuelve la licencia. Cambridge publica un
+      [buscador gratuito](https://dictionary.cambridge.org/us/freesearch.html)
+      que abre los resultados en su sitio.
+- [ ] **5.17** _(M, condicionada)_ Pedir acceso y evaluar el acuerdo de la API
+      de Cambridge antes de escribir el adaptador: diccionarios/idiomas realmente
+      disponibles, costo, cuotas, atribucion, transformacion y, sobre todo,
+      permiso de almacenamiento offline. Solo si esas respuestas cierran,
+      implementar el adaptador en el backend/hub para no exponer la clave. **No
+      hacer scraping** ni usar la clave de evaluacion en una version distribuida.
+- [ ] **5.18** _(L)_ Permitir elegir una fuente, un grupo de fuentes o todas.
       Antes de habilitar `Todas`, definir deduplicacion entre fuentes, limites de
       concurrencia y pedidos, cancelacion, latencia esperable y una indicacion
       visible del consumo de datos; no debe convertirse en la opcion por defecto.
@@ -1192,6 +1270,32 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
 - [ ] **10.7** _(Sonnet 5 · M)_ Verificar a mano: actualizar un termino que
       cambio, uno que no, quedarse con una copia vieja, borrar otra, y correr
       una actualizacion masiva cortandola por la mitad para ver que retoma.
+
+## 11. Splash nativa de Android, sin demora artificial ⬜
+
+Pedido el 2026-08-26. Tiene sentido **como continuidad visual del trabajo real de
+arranque**, no como una pantalla adicional con un temporizador. Android 12 o
+superior ya muestra una splash del sistema; despues Lexidex muestra hoy un
+`CircularProgressIndicator` mientras `ensureReady()` verifica y abre el paquete
+local. La mejora es unir esas dos etapas con la API nativa y la identidad que ya
+tiene la aplicacion, no agregar una `Activity` intermedia.
+
+La guia oficial recomienda `SplashScreen`/`androidx.core:core-splashscreen` y
+desaconseja una Activity dedicada porque duplica pantallas y latencia. La splash
+solo puede mantenerse mientras dure la preparacion local imprescindible; nunca
+espera red, animacion ni un minimo de tiempo:
+[documentacion de Android](https://developer.android.com/develop/ui/views/launch/splash-screen).
+
+- [ ] **11.1** _(Sonnet 5 · S)_ Aplicar un tema `Theme.SplashScreen` con el icono
+      de ficha y el color de Lexidex, llamar `installSplashScreen()` antes de
+      `super.onCreate()` y mantenerla solo mientras `AppReadiness` sea `Loading`.
+      `Ready` muestra la aplicacion y `Error` debe soltar la splash para mostrar
+      el error recuperable. Sin `delay`, sin nueva Activity y sin trabajo de red.
+- [ ] **11.2** _(Sonnet 5 · S)_ Verificar inicio frio, tibio y caliente; primera
+      instalacion con copia/verificacion del paquete; error de paquete; temas
+      claro/oscuro y animaciones reducidas. Medir que no aumente el tiempo hasta
+      el primer contenido y evitar el destello entre el fondo del sistema y el
+      de Compose.
 
 ## Preguntas abiertas (para decidir antes de picar codigo, no para un modelo chico)
 

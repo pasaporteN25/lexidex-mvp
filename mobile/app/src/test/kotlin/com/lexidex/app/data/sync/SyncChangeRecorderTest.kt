@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -97,17 +98,22 @@ class SyncChangeRecorderTest {
         assertEquals("personal_term", row.entityType)
         assertEquals("upsert", row.operation)
         assertEquals(1L, row.revision)
+        assertEquals(2, row.payloadVersion)
         assertEquals(DEVICE, row.sourceDeviceId)
         val payload = payloadOf(row)
         assertEquals(
             setOf(
                 "slug", "title", "language", "kind", "status", "summary", "content",
-                "source_url", "categories", "tags", "notes", "created_at", "updated_at",
+                "source_url", "sources", "categories", "tags", "notes", "created_at", "updated_at",
             ),
             payload.keys,
         )
         assertEquals("Redes locales", payload.getValue("title").jsonPrimitive.content)
         assertEquals("lan", payload.getValue("tags").jsonArray.single().jsonPrimitive.content)
+        assertEquals(
+            payload.getValue("source_url").jsonPrimitive.content,
+            payload.getValue("sources").jsonArray.single().jsonObject.getValue("url").jsonPrimitive.content,
+        )
     }
 
     @Test

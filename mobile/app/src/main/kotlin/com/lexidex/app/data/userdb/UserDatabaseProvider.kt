@@ -6,6 +6,7 @@ import androidx.room3.migration.Migration
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
+import java.net.URI
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -221,6 +222,113 @@ internal val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+/**
+ * Makes provenance one-to-many while preserving source_url as the v1 projection of position zero.
+ * Room wraps this in a transaction. Preconditions run before the first DDL statement as an extra
+ * safeguard for direct migration tests and corrupted databases.
+ */
+internal val MIGRATION_3_4 = object : Migration(3, 4) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        val legacy = mutableListOf<Triple<String, String, String>>()
+        connection.prepare(
+            "SELECT `uid`, `source_url`, `language` FROM `user_terms` WHERE `source_url` <> ''",
+        ).use { statement ->
+            while (statement.step()) {
+                val uid = statement.getText(0)
+                val url = statement.getText(1)
+                val language = statement.getText(2)
+                check(isHttpUrlForMigration(url)) {
+                    "user_terms contains an invalid source_url; migration aborted"
+                }
+                legacy += Triple(uid, url, language)
+            }
+        }
+
+        // These already exist in a real Room v3 database. Keeping them explicit also makes the
+        // migration safe for old hand-created/dev databases before the FK is introduced.
+        connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_user_terms_uid` ON `user_terms` (`uid`)")
+        connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_user_terms_slug` ON `user_terms` (`slug`)")
+
+        connection.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `personal_term_sources` (
+              `uid` TEXT NOT NULL,
+              `term_uid` TEXT NOT NULL,
+              `position` INTEGER NOT NULL,
+              `provider_id` TEXT NOT NULL,
+              `source_kind` TEXT NOT NULL,
+              `title` TEXT NOT NULL,
+              `url` TEXT NOT NULL,
+              `language` TEXT NOT NULL,
+              `license_name` TEXT NOT NULL,
+              `retrieved_at` TEXT,
+              `content_sha256` TEXT NOT NULL,
+              PRIMARY KEY(`uid`),
+              FOREIGN KEY(`term_uid`) REFERENCES `user_terms`(`uid`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        connection.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_personal_term_sources_term_uid` ON `personal_term_sources` (`term_uid`)",
+        )
+        connection.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_personal_term_sources_term_uid_position` ON `personal_term_sources` (`term_uid`, `position`)",
+        )
+        connection.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_personal_term_sources_term_uid_url` ON `personal_term_sources` (`term_uid`, `url`)",
+        )
+
+        legacy.forEach { (termUid, url, language) ->
+            val source = sourceFromLegacyUrl(termUid, url, language)
+            connection.prepare(
+                """
+                INSERT OR IGNORE INTO `personal_term_sources`(
+                  `uid`, `term_uid`, `position`, `provider_id`, `source_kind`, `title`, `url`,
+                  `language`, `license_name`, `retrieved_at`, `content_sha256`
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.bindText(1, source.uid)
+                statement.bindText(2, source.termUid)
+                statement.bindLong(3, source.position.toLong())
+                statement.bindText(4, source.providerId)
+                statement.bindText(5, source.sourceKind)
+                statement.bindText(6, source.title)
+                statement.bindText(7, source.url)
+                statement.bindText(8, source.language)
+                statement.bindText(9, source.licenseName)
+                statement.bindText(10, source.contentSha256)
+                statement.step()
+            }
+        }
+
+        check(scalarLong(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check") == 0L) {
+            "foreign key validation failed after personal source migration"
+        }
+        check(
+            scalarLong(
+                connection,
+                """
+                SELECT COUNT(*) FROM `user_terms` ut
+                LEFT JOIN `personal_term_sources` ps
+                  ON ps.`term_uid` = ut.`uid` AND ps.`position` = 0
+                WHERE ut.`source_url` <> COALESCE(ps.`url`, '')
+                """.trimIndent(),
+            ) == 0L,
+        ) { "source_url projection validation failed after personal source migration" }
+        check(scalarText(connection, "PRAGMA integrity_check") == "ok") {
+            "integrity check failed after personal source migration"
+        }
+    }
+}
+
+private fun isHttpUrlForMigration(value: String): Boolean = try {
+    val uri = URI(value)
+    uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()
+} catch (_: Exception) {
+    false
+}
+
 private fun checkMigrationPreconditions(connection: SQLiteConnection) {
     check(
         scalarLong(
@@ -268,7 +376,7 @@ class UserDatabaseProvider(
             )
                 .setDriver(BundledSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
         }
     }

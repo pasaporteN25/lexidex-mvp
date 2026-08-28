@@ -8,8 +8,10 @@ import com.lexidex.app.data.db.entity.SourceEntity
 import com.lexidex.app.data.db.entity.TermEntity
 import com.lexidex.app.data.userdb.UserDatabaseProvider
 import com.lexidex.app.data.userdb.LexidexUserDatabase
+import com.lexidex.app.data.userdb.mergeLegacyPrimarySource
 import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.CollectionEntity
+import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 import com.lexidex.app.domain.CatalogFilter
 import com.lexidex.app.domain.HistoryItem
@@ -25,6 +27,7 @@ import com.lexidex.app.domain.TermSummary
 import com.lexidex.app.domain.backup.BackupCollection
 import com.lexidex.app.domain.backup.BackupTerm
 import com.lexidex.app.domain.backup.BackupTermRef
+import com.lexidex.app.domain.backup.BackupTermSource
 import com.lexidex.app.domain.backup.PersonalCatalogBackup
 import com.lexidex.app.domain.games.CINCO_QUESTION_COUNT
 import com.lexidex.app.domain.games.CincoQuestion
@@ -103,7 +106,7 @@ class CorpusRepository(
     /** Forces (or joins) the verify-and-open of the bundled package without running a query. */
     suspend fun ensureReady(): Result<Unit> = corpusResult {
         databaseProvider.get()
-        Unit
+        return@corpusResult Unit
     }
 
     // region Combined search, detail, daily, random
@@ -359,6 +362,7 @@ class CorpusRepository(
         exportedAt: String,
     ): PersonalCatalogBackup {
         val collections = database.collectionDao().listAllForBackup()
+        val sourcesByTerm = database.personalTermSourceDao().allForBackup().groupBy { it.termUid }
         val membersByCollection = database.collectionDao().listAllMembersForBackup()
             .groupBy { it.collectionUid }
         return PersonalCatalogBackup(
@@ -374,6 +378,7 @@ class CorpusRepository(
                     summary = term.summary,
                     content = term.content,
                     sourceUrl = term.sourceUrl,
+                    sources = sourcesByTerm[term.uid].orEmpty().map { it.toBackupSource() },
                     categories = term.categories,
                     tags = term.tags,
                     notes = term.notes,
@@ -445,6 +450,7 @@ class CorpusRepository(
         recorder: SyncChangeRecorder,
     ) {
         val termDao = database.userTermDao()
+        val sourceDao = database.personalTermSourceDao()
         (plan.termsToAdd + plan.termsToUpdate).forEach { imported ->
             val local = termDao.getByUid(imported.uid)
             if (local == null) {
@@ -454,7 +460,24 @@ class CorpusRepository(
             }
             val stored = termDao.getByUid(imported.uid)
                 ?: throw CorpusError.PersonalTermNotFound(imported.slug)
-            recorder.termUpserted(stored, stored.updatedAt)
+            val incomingSources = imported.sources.mapIndexed { position, source ->
+                source.toEntity(imported.uid, position)
+            }
+            val sources = if (plan.sourcePayloadVersion == 1) {
+                mergeLegacyPrimarySource(
+                    imported.uid,
+                    imported.language,
+                    imported.sourceUrl,
+                    sourceDao.forTerm(imported.uid),
+                )
+            } else {
+                incomingSources
+            }
+            sourceDao.replaceForTerm(imported.uid, sources)
+            val projected = sources.firstOrNull()?.url.orEmpty()
+            val projectedTerm = if (stored.sourceUrl == projected) stored else stored.copy(sourceUrl = projected)
+            if (stored.sourceUrl != projected) termDao.update(projectedTerm)
+            recorder.termUpserted(projectedTerm, sources, projectedTerm.updatedAt)
         }
 
         val collectionDao = database.collectionDao()
@@ -559,7 +582,9 @@ class CorpusRepository(
         )
         journaling { database, recorder ->
             database.userTermDao().insert(term)
-            recorder.termUpserted(term, now)
+            val sources = mergeLegacyPrimarySource(uid, term.language, term.sourceUrl, emptyList())
+            database.personalTermSourceDao().replaceForTerm(uid, sources)
+            recorder.termUpserted(term, sources, now)
         }
         buildPersonalDetail(term)
     }
@@ -584,10 +609,18 @@ class CorpusRepository(
             updatedAt = nowIso(),
         )
         journaling { database, recorder ->
-            database.userTermDao().update(updated)
-            recorder.termUpserted(updated, updated.updatedAt)
+            val sources = mergeLegacyPrimarySource(
+                updated.uid,
+                updated.language,
+                validated.sourceUrl,
+                database.personalTermSourceDao().forTerm(updated.uid),
+            )
+            val projected = updated.copy(sourceUrl = sources.firstOrNull()?.url.orEmpty())
+            database.userTermDao().update(projected)
+            database.personalTermSourceDao().replaceForTerm(projected.uid, sources)
+            recorder.termUpserted(projected, sources, projected.updatedAt)
         }
-        buildPersonalDetail(updated)
+        buildPersonalDetail(userTermDao().getByUid(updated.uid) ?: updated)
     }
 
     suspend fun deletePersonalTerm(slug: String): Result<Unit> = corpusResult {
@@ -922,7 +955,7 @@ class CorpusRepository(
     }
 
     /** Mirrors `personal_term_from_row` in backend/lexidex_api.py: no source_occurrences or term_relations exist for personal terms. */
-    private fun buildPersonalDetail(term: UserTermEntity): TermDetail = TermDetail(
+    private suspend fun buildPersonalDetail(term: UserTermEntity): TermDetail = TermDetail(
         slug = term.slug,
         title = term.title,
         language = term.language,
@@ -932,7 +965,7 @@ class CorpusRepository(
         content = term.content,
         categories = term.categories,
         tags = term.tags,
-        sources = if (term.sourceUrl.isBlank()) emptyList() else listOf(term.sourceUrl.toManualSource(term.language)),
+        sources = userDatabaseProvider.get().personalTermSourceDao().forTerm(term.uid).map { it.toDomain() },
         occurrenceCount = 1,
         notes = if (term.notes.isBlank()) emptyList() else listOf(term.notes),
         relations = emptyList(),
@@ -1004,6 +1037,41 @@ private fun BackupTerm.toEntity(id: Long = 0) = UserTermEntity(
     revision = revision,
     createdAt = createdAt,
     updatedAt = updatedAt,
+)
+
+private fun BackupTermSource.toEntity(termUid: String, position: Int) = PersonalTermSourceEntity(
+    uid = uid,
+    termUid = termUid,
+    position = position,
+    providerId = providerId,
+    sourceKind = kind,
+    title = title,
+    url = url,
+    language = language,
+    licenseName = licenseName,
+    retrievedAt = retrievedAt,
+    contentSha256 = contentSha256,
+)
+
+private fun PersonalTermSourceEntity.toBackupSource() = BackupTermSource(
+    uid = uid,
+    providerId = providerId,
+    kind = sourceKind,
+    title = title,
+    url = url,
+    language = language,
+    licenseName = licenseName,
+    retrievedAt = retrievedAt,
+    contentSha256 = contentSha256,
+)
+
+private fun PersonalTermSourceEntity.toDomain() = TermSource(
+    kind = sourceKind,
+    url = url,
+    host = runCatching { URI(url).host.orEmpty() }.getOrDefault(""),
+    language = language,
+    licenseName = licenseName,
+    retrievedAt = retrievedAt,
 )
 
 private fun BackupCollection.toEntity() = CollectionEntity(

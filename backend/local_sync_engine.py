@@ -189,6 +189,7 @@ def apply_local_change(
     payload=None,
     base_revision=0,
     changed_at=None,
+    payload_version=1,
 ):
     """
     Aplica una edicion hecha en el hub por el mismo camino que una que llega por la red.
@@ -205,7 +206,7 @@ def apply_local_change(
             "entity_id": entity_id,
             "operation": operation,
             "base_revision": base_revision,
-            "payload_version": 1,
+            "payload_version": payload_version,
             "changed_at": changed_at or now_timestamp(),
             "payload": payload,
         }
@@ -468,6 +469,87 @@ def _apply_term_upsert(conn, entity_id, payload, revision):
             payload["updated_at"],
         ),
     )
+    sources = payload.get("sources")
+    if sources is None:
+        sources = _merge_legacy_primary_source(
+            conn, entity_id["uid"], payload["language"], payload["source_url"]
+        )
+    _replace_term_sources(conn, entity_id["uid"], sources)
+
+
+def _source_uid(term_uid, url):
+    return "src_" + hashlib.sha256(f"{term_uid}\0{url}".encode("utf-8")).hexdigest()[:32]
+
+
+def _legacy_source(term_uid, language, url):
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).hostname or "").rstrip(".").lower()
+    wikipedia = host == "wikipedia.org" or host.endswith(".wikipedia.org")
+    return {
+        "uid": _source_uid(term_uid, url),
+        "provider_id": "wikipedia" if wikipedia else "manual",
+        "kind": "wikipedia" if wikipedia else "web",
+        "title": "",
+        "url": url,
+        "language": language,
+        "license_name": "CC BY-SA" if wikipedia else "",
+        "retrieved_at": None,
+        "content_sha256": "",
+    }
+
+
+def _merge_legacy_primary_source(conn, term_uid, language, source_url):
+    existing = [
+        {
+            "uid": row["uid"],
+            "provider_id": row["provider_id"],
+            "kind": row["source_kind"],
+            "title": row["title"],
+            "url": row["url"],
+            "language": row["language"],
+            "license_name": row["license_name"],
+            "retrieved_at": row["retrieved_at"],
+            "content_sha256": row["content_sha256"],
+        }
+        for row in conn.execute(
+            "SELECT * FROM personal_term_sources WHERE term_uid = ? ORDER BY position",
+            (term_uid,),
+        )
+    ]
+    if not source_url:
+        merged = existing[1:]
+    else:
+        selected = next((index for index, row in enumerate(existing) if row["url"] == source_url), -1)
+        if selected == 0:
+            merged = existing
+        elif selected > 0:
+            merged = [existing[selected]] + [
+                row for index, row in enumerate(existing) if index not in {0, selected}
+            ]
+        else:
+            merged = [_legacy_source(term_uid, language, source_url)] + existing[1:]
+    return merged[:30]
+
+
+def _replace_term_sources(conn, term_uid, sources):
+    conn.execute("DELETE FROM personal_term_sources WHERE term_uid = ?", (term_uid,))
+    for position, source in enumerate(sources):
+        conn.execute(
+            """
+            INSERT INTO personal_term_sources(
+              uid, term_uid, position, provider_id, source_kind, title, url, language,
+              license_name, retrieved_at, content_sha256
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                source["uid"], term_uid, position, source["provider_id"], source["kind"],
+                source["title"], source["url"], source["language"], source["license_name"],
+                source["retrieved_at"], source["content_sha256"],
+            ),
+        )
+    projection = sources[0]["url"] if sources else ""
+    conn.execute("UPDATE user_terms SET source_url = ? WHERE uid = ?", (projection, term_uid))
 
 
 def _apply_collection_upsert(conn, entity_id, payload, revision):

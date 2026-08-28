@@ -33,10 +33,11 @@ class UserDatabaseMigrationTest {
     }
 
     @Test
-    fun `v2 migration preserves user data and matches shared schema`() = runTest {
+    fun `v2 migration preserves user data, backfills one stable source and matches shared schema`() = runTest {
         seedLegacyData(connection)
 
         MIGRATION_2_3.migrate(connection)
+        MIGRATION_3_4.migrate(connection)
 
         val contract = Json.parseToJsonElement(
             requireNotNull(javaClass.getResource("/local-sync/v1/storage-schema.json")).readText(),
@@ -63,8 +64,41 @@ class UserDatabaseMigrationTest {
             scalarText(connection, "SELECT viewed_at FROM history_entries"),
         )
         assertEquals("col_integridad", scalarText(connection, "SELECT collection_uid FROM collection_terms"))
+        assertEquals(1L, scalarLong(connection, "SELECT COUNT(*) FROM personal_term_sources"))
+        assertEquals(
+            "https://example.test/integridad",
+            scalarText(connection, "SELECT url FROM personal_term_sources"),
+        )
+        assertEquals(
+            "https://example.test/integridad",
+            scalarText(connection, "SELECT source_url FROM user_terms"),
+        )
+        val sourceUid = scalarText(connection, "SELECT uid FROM personal_term_sources")
+        assertEquals(36, sourceUid.length)
+        assertEquals("src_", sourceUid.take(4))
+
+        // The helper is deliberately repeatable: retrying startup cannot duplicate provenance.
+        MIGRATION_3_4.migrate(connection)
+        assertEquals(1L, scalarLong(connection, "SELECT COUNT(*) FROM personal_term_sources"))
         assertEquals(0L, scalarLong(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check"))
         assertEquals("ok", scalarText(connection, "PRAGMA integrity_check"))
+    }
+
+    @Test
+    fun `source migration rejects a corrupt legacy URL before writing anything`() = runTest {
+        seedLegacyData(connection)
+        MIGRATION_2_3.migrate(connection)
+        connection.execSQL("UPDATE user_terms SET source_url = 'javascript:perder-datos()'")
+
+        try {
+            MIGRATION_3_4.migrate(connection)
+            fail("Expected an integrity failure")
+        } catch (error: IllegalStateException) {
+            assertEquals("user_terms contains an invalid source_url; migration aborted", error.message)
+        }
+
+        assertEquals(0L, scalarLong(connection, "SELECT COUNT(*) FROM sqlite_master WHERE name = 'personal_term_sources'"))
+        assertEquals("javascript:perder-datos()", scalarText(connection, "SELECT source_url FROM user_terms"))
     }
 
     @Test

@@ -182,6 +182,11 @@ class SyncStorageSchemaTest(unittest.TestCase):
             term = dict(connection.execute("SELECT * FROM user_terms").fetchone())
             self.assertEqual(term["revision"], 7)
             self.assertEqual(term["notes"], "nota")
+            sources = [dict(row) for row in connection.execute("SELECT * FROM personal_term_sources")]
+            self.assertEqual(len(sources), 1)
+            self.assertEqual(sources[0]["term_uid"], term["uid"])
+            self.assertEqual(sources[0]["url"], term["source_url"])
+            self.assertTrue(sources[0]["uid"].startswith("src_"))
 
             favorite = dict(connection.execute("SELECT * FROM favorites").fetchone())
             self.assertEqual(favorite["created_at"], "2026-08-21T10:00:00Z")
@@ -264,6 +269,61 @@ class SyncStorageSchemaTest(unittest.TestCase):
             self.assertEqual(
                 connection.execute("SELECT collection_id FROM collection_terms").fetchone()[0],
                 999,
+            )
+        finally:
+            connection.close()
+
+    def test_v3_source_migration_is_repeatable_and_rejects_corrupt_urls(self):
+        api.initialize_user_database(self.database)
+        connection = api.connect_user(self.database)
+        try:
+            connection.execute(
+                """
+                INSERT INTO user_terms(
+                  uid, slug, title, normalized_title, language, kind, status, summary,
+                  content, source_url, categories_json, tags_json, notes, revision,
+                  created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "usr_22222222222222222222222222222222", "personal-es-fuente--22222222",
+                    "Fuente", "fuente", "es", "reference", "seed", "", "",
+                    "https://example.test/fuente", "[]", "[]", "", 1,
+                    "2026-08-20T00:00:00Z", "2026-08-20T00:00:00Z",
+                ),
+            )
+            connection.execute("DELETE FROM personal_term_sources")
+            connection.execute("PRAGMA user_version = 3")
+            connection.commit()
+        finally:
+            connection.close()
+
+        api.initialize_user_database(self.database)
+        api.initialize_user_database(self.database)
+        connection = api.connect_user(self.database)
+        try:
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM personal_term_sources").fetchone()[0], 1
+            )
+            connection.execute("DELETE FROM personal_term_sources")
+            connection.execute("UPDATE user_terms SET source_url = 'javascript:corrupto'")
+            connection.execute("PRAGMA user_version = 3")
+            connection.commit()
+        finally:
+            connection.close()
+
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "invalid source_url"):
+            api.initialize_user_database(self.database)
+
+        connection = api.connect_user(self.database)
+        try:
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 3)
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM personal_term_sources").fetchone()[0], 0
+            )
+            self.assertEqual(
+                connection.execute("SELECT source_url FROM user_terms").fetchone()[0],
+                "javascript:corrupto",
             )
         finally:
             connection.close()

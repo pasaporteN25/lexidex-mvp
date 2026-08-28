@@ -96,7 +96,8 @@ la clave del hub y el descubrimiento solo entrega su direccion actual.
 
 ## Contrato de datos
 
-El JSON de respaldo v1 es el punto de partida, no el protocolo final. Para que
+El lector conserva el JSON de respaldo v1 y el escritor actual usa v2; son el
+punto de partida, no el protocolo final. Para que
 los reintentos, eliminaciones y cambios offline sean seguros hace falta un
 journal versionado.
 

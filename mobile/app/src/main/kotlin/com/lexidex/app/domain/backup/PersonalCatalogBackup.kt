@@ -4,8 +4,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** Sube cuando el formato deje de poder leerse con el codigo de la version anterior. */
-const val BACKUP_FORMAT_VERSION = 1
+/** Version escrita hoy; el importador mantiene lectores explicitos para las versiones anteriores. */
+const val BACKUP_FORMAT_VERSION = 2
 
 /** Marca del archivo, para reconocerlo antes de intentar leerlo (lo va a necesitar 9.2). */
 const val BACKUP_FORMAT_NAME = "lexidex-personal-catalog"
@@ -45,12 +45,27 @@ data class BackupTerm(
     val summary: String = "",
     val content: String = "",
     val sourceUrl: String = "",
+    /** Ordered provenance. sourceUrl remains the compatibility projection of the first item. */
+    val sources: List<BackupTermSource> = emptyList(),
     val categories: List<String> = emptyList(),
     val tags: List<String> = emptyList(),
     val notes: String = "",
     val revision: Long = 1,
     val createdAt: String,
     val updatedAt: String,
+)
+
+@Serializable
+data class BackupTermSource(
+    val uid: String,
+    val providerId: String,
+    val kind: String,
+    val title: String = "",
+    val url: String,
+    val language: String,
+    val licenseName: String = "",
+    val retrievedAt: String? = null,
+    val contentSha256: String = "",
 )
 
 /**

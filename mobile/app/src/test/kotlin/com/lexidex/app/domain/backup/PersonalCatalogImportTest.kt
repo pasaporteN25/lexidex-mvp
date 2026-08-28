@@ -4,6 +4,7 @@ import com.lexidex.app.domain.backup.BACKUP_FORMAT_NAME
 import com.lexidex.app.domain.backup.BackupCollection
 import com.lexidex.app.domain.backup.BackupTerm
 import com.lexidex.app.domain.backup.BackupTermRef
+import com.lexidex.app.domain.backup.BackupTermSource
 import com.lexidex.app.domain.backup.PersonalCatalogBackup
 import com.lexidex.app.domain.backup.toJson
 
@@ -26,6 +27,25 @@ class PersonalCatalogImportTest {
         assertEquals(1, plan.summary.collectionsAdded)
         assertEquals(2, plan.summary.membersAdded)
         assertEquals(2, plan.summary.pendingPackageReferences)
+        assertEquals(backup.terms.single().sourceUrl, backup.terms.single().sources.firstOrNull()?.url.orEmpty())
+    }
+
+    @Test
+    fun `version two keeps ordered sources and rejects a false legacy projection`() {
+        val first = source("https://a.example/uno")
+        val second = source("https://b.example/dos")
+        val valid = validBackup().copy(
+            terms = listOf(term().copy(sourceUrl = first.url, sources = listOf(first, second))),
+        )
+
+        val restored = validatedPersonalCatalogBackupFromJson(valid.toJson())
+        assertEquals(listOf(first, second), restored.terms.single().sources)
+
+        assertInvalid("fuente primaria") {
+            validatedPersonalCatalogBackupFromJson(
+                valid.copy(terms = listOf(valid.terms.single().copy(sourceUrl = second.url))).toJson(),
+            )
+        }
     }
 
     @Test
@@ -185,6 +205,16 @@ class PersonalCatalogImportTest {
         createdAt = EARLIER,
         updatedAt = LATER,
         revision = revision,
+    )
+
+    private fun source(url: String) = BackupTermSource(
+        uid = com.lexidex.app.data.userdb.personalTermSourceUid(UID_A, url),
+        providerId = "manual",
+        kind = "web",
+        title = "",
+        url = url,
+        language = "es",
+        licenseName = "",
     )
 
     private fun assertInvalid(expectedMessagePart: String, block: () -> Unit) {

@@ -1,9 +1,13 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "tables": {
     "user_terms": {
       "primary_key": ["id"],
       "columns": ["id", "uid", "slug", "title", "normalized_title", "language", "kind", "status", "summary", "content", "source_url", "categories_json", "tags_json", "notes", "revision", "created_at", "updated_at"]
+    },
+    "personal_term_sources": {
+      "primary_key": ["uid"],
+      "columns": ["uid", "term_uid", "position", "provider_id", "source_kind", "title", "url", "language", "license_name", "retrieved_at", "content_sha256"]
     },
     "favorites": {
       "primary_key": ["term_slug", "term_origin"],
