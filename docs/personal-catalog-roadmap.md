@@ -543,10 +543,30 @@ offline de Lexidex salvo que el acuerdo final autorice ese uso. Fuentes oficiale
       texto dejo de ser el suyo, la marca se borra.
       Seis tests nuevos en `PersonalTermEditorViewModelTest` y verificacion en
       el emulador contra Wikipedia real.
-- [ ] **5.15** _(L)_ Pipeline para terminos editoriales de Lexidex. Fuente
-      versionada y revisable en el repositorio, autor/revisor, referencias y
-      licencia obligatorias, validacion de colisiones, y entrada al constructor
-      del paquete canonico sin escribir nunca el `.sqlite` publicado en el lugar.
+      Desde el 2026-08-28 la marca tambien aparece en la ficha, que es donde uno
+      lee el termino: solo para terminos propios, porque los del paquete son
+      todos importados y decirlo en cada uno seria ruido.
+- [x] **5.15** ✅ Hecho el 2026-08-28. Un termino editorial es un archivo JSON
+      en `data/editorial/`, uno por termino: se revisa en el diff como cualquier
+      otro cambio, que es lo que un renglon de SQLite no permite.
+      `tools/editorial_terms.py` valida antes de publicar: titulo, idioma,
+      contenido, **autor, revisor y licencia** obligatorios, y al menos una
+      referencia con URL http(s). Autor y revisor no pueden ser la misma
+      persona, porque revisarse a uno mismo no es una revision.
+      Dos validaciones de colision: dos archivos no pueden describir el mismo
+      termino, y un editorial no puede pisar uno que ya viene del txt importado
+      -si no, quedan dos fichas diciendo ser la misma cosa-.
+      Entra al paquete con `build_corpus.py --editorial data/editorial`, con el
+      contenido, las categorias, las etiquetas y las referencias como `sources`
+      con su licencia. **El constructor se niega a escribir sobre un
+      `lexidex.sqlite` que ya existe**: un paquete publicado se reemplaza entero
+      por una version nueva, que es lo que la app sabe verificar por checksum.
+      Autor y revisor **no** viajan dentro del `.sqlite`: el esquema canonico no
+      tiene donde ponerlos y `source_occurrences` significa otra cosa ("aparecio
+      en la linea N del txt"). Quedan en el repositorio y en el manifiesto de la
+      construccion; mostrarlos en la aplicacion pide una tabla nueva en el
+      esquema, que es una decision aparte y no se tomo aca.
+      Nueve tests en `tests/test_editorial_terms.py`.
 - [ ] **5.16** _(S)_ Cambridge sin copia: accion "Abrir en Cambridge" para la
       consulta actual usando su busqueda web oficial, fuera de la app. No se
       parsea HTML, no se guarda contenido y no se presenta como fuente importada;

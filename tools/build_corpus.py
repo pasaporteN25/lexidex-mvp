@@ -16,6 +16,12 @@ from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsp
 
 SCHEMA_VERSION = 2
 EXPORT_SCHEMA_VERSION = 1
+from editorial_terms import (  # noqa: E402  (mismo directorio que este script)
+    EditorialError,
+    assert_no_seed_collisions,
+    load_editorial_terms,
+)
+
 PARSER_VERSION = "1.0.0"
 UID_NAMESPACE = uuid.UUID("7c4e9ced-f104-4aec-9c7b-38a079d172a2")
 URL_PATTERN = re.compile(r"https?://[^\s]+", re.IGNORECASE)
@@ -86,6 +92,83 @@ class ParseResult:
     invalid_urls: int = 0
     urls_with_query: int = 0
     urls_with_fragment: int = 0
+
+
+def insert_editorial_terms(connection, editorial, created_at):
+    """
+    Escribe los terminos editoriales en un paquete recien construido.
+
+    Van con su contenido, sus referencias como `sources` y la licencia en `sources.license_name`.
+
+    Autor y revisor **no** viajan en el `.sqlite`: el esquema del paquete no tiene donde ponerlos y
+    la unica tabla parecida, `source_occurrences`, significa "esto aparecio en la linea N del txt
+    importado", que no es lo que pasa aca. Quedan en el archivo del repositorio, que es el registro
+    revisable, y en el reporte de la construccion. Mostrarlos en la aplicacion necesitaria agregar
+    una tabla al esquema canonico, que es una decision aparte de esta tarea.
+    """
+    for term in editorial:
+        uid = stable_uid("edt", f"{term['normalized_title']}:{term['language']}")
+        cursor = connection.execute(
+            """
+            INSERT INTO terms (
+              uid, slug, title, normalized_title, language, kind, status,
+              summary, content, source_url, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?)
+            """,
+            (
+                uid,
+                f"{term['language']}-{slugify(term['title'])}--{uid[4:12]}",
+                term["title"],
+                term["normalized_title"],
+                term["language"],
+                term["kind"],
+                term["status"],
+                term["summary"],
+                term["content"],
+                created_at,
+                created_at,
+            ),
+        )
+        term_id = cursor.lastrowid
+
+        for position, reference in enumerate(term["references"]):
+            connection.execute(
+                """
+                INSERT INTO sources (
+                  uid, term_id, source_kind, url, canonical_url, host, language, license_name
+                ) VALUES (?, ?, 'editorial_reference', ?, ?, ?, ?, ?)
+                """,
+                (
+                    stable_uid("src", f"{uid}:{position}:{reference['url']}"),
+                    term_id,
+                    reference["url"],
+                    reference["url"],
+                    reference["host"],
+                    term["language"],
+                    term["license"],
+                ),
+            )
+
+        for name in term["categories"]:
+            connection.execute(
+                "INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,)
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO term_categories (term_id, category_id)
+                SELECT ?, id FROM categories WHERE name = ?
+                """,
+                (term_id, name),
+            )
+        for name in term["tags"]:
+            connection.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (name,))
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO term_tags (term_id, tag_id)
+                SELECT ?, id FROM tags WHERE name = ?
+                """,
+                (term_id, name),
+            )
 
 
 def normalize_text(value):
@@ -371,7 +454,7 @@ def preserve_raw(source_path, destination_path):
         raise ValueError(f"Raw copy verification failed: {destination}")
 
 
-def insert_database(db_path, schema_path, parsed, import_record, package_meta):
+def insert_database(db_path, schema_path, parsed, import_record, package_meta, editorial=()):
     connection = sqlite3.connect(db_path)
     try:
         connection.executescript(Path(schema_path).read_text(encoding="utf-8"))
@@ -459,6 +542,8 @@ def insert_database(db_path, schema_path, parsed, import_record, package_meta):
                 ),
             )
             occurrence_ids[(occurrence.line_number, occurrence.item_index)] = cursor.lastrowid
+
+        insert_editorial_terms(connection, editorial, import_record["imported_at"])
 
         for relation in parsed.relations.values():
             connection.execute(
@@ -673,10 +758,22 @@ def build_package(
     package_version="0.1.0-seed.1",
     raw_copy=None,
     created_at=None,
+    editorial_dir=None,
 ):
     input_path = Path(input_path)
     output_dir = Path(output_dir)
     schema_path = Path(schema_path)
+
+    # Un paquete publicado no se edita en el lugar: se construye uno nuevo y se reemplaza entero,
+    # que es lo que la aplicacion sabe verificar por checksum.
+    published = output_dir / "lexidex.sqlite"
+    if published.exists():
+        raise FileExistsError(
+            f"{published} ya existe. Un paquete publicado no se reescribe en el lugar: "
+            "construi una version nueva en otro directorio."
+        )
+
+    editorial = load_editorial_terms(editorial_dir) if editorial_dir else []
     source_bytes = input_path.read_bytes()
     encoding = "utf-8-sig" if source_bytes.startswith(b"\xef\xbb\xbf") else "utf-8"
     text = source_bytes.decode(encoding)
@@ -718,8 +815,13 @@ def build_package(
         "created_at": created_at,
         "source_sha256": source_sha256,
     }
-    insert_database(temp_db, schema_path, parsed, import_record, package_meta)
-    validation = validate_database(temp_db, len(parsed.terms), len(parsed.occurrences))
+    assert_no_seed_collisions(editorial, parsed.terms.values())
+    insert_database(temp_db, schema_path, parsed, import_record, package_meta, editorial)
+    # Los editoriales tambien son terminos del paquete: si no se cuentan aca, la validacion
+    # denuncia como corrupto un paquete que esta bien.
+    validation = validate_database(
+        temp_db, len(parsed.terms) + len(editorial), len(parsed.occurrences)
+    )
     records = build_seed_records(parsed)
     write_jsonl(temp_jsonl, records)
     report = build_report(parsed, import_record)
@@ -750,6 +852,18 @@ def build_package(
             "import_report": artifact_info(report_path),
         },
         "counts": report["counts"],
+        "editorial": [
+            {
+                "file": term["file"],
+                "title": term["title"],
+                "language": term["language"],
+                "author": term["author"],
+                "reviewer": term["reviewer"],
+                "license": term["license"],
+                "references": [reference["url"] for reference in term["references"]],
+            }
+            for term in editorial
+        ],
         "capabilities": {
             "offline_search": True,
             "provenance": True,
@@ -782,6 +896,10 @@ def main():
     parser.add_argument("--package-id", default="lexidex.palabras")
     parser.add_argument("--package-version", default="0.1.0-seed.1")
     parser.add_argument("--created-at")
+    parser.add_argument(
+        "--editorial",
+        help="Directorio de terminos editoriales en JSON (por ejemplo data/editorial).",
+    )
     args = parser.parse_args()
     manifest = build_package(
         input_path=args.input_path,
@@ -791,6 +909,7 @@ def main():
         package_version=args.package_version,
         raw_copy=args.raw_copy,
         created_at=args.created_at,
+        editorial_dir=args.editorial,
     )
     print(json.dumps({
         "package_id": manifest["package_id"],

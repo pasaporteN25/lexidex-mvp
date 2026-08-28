@@ -25,8 +25,17 @@ en [`docs/corpus.md`](docs/corpus.md).
   primaria guarda desde 5.13 contra el contenido actual, sin guardar una
   segunda copia del texto para compararlas.
 
+- Lexidex puede publicar terminos propios (tarea 5.15): un JSON por termino en
+  `data/editorial/`, revisable en el diff, con autor, revisor, licencia y al
+  menos una referencia obligatorios, y validacion de colisiones contra los otros
+  editoriales y contra el corpus importado. Entran al paquete con
+  `build_corpus.py --editorial`, que ademas se niega a escribir sobre un
+  `.sqlite` ya publicado.
+
 #### Cambiado
 
+- La marca de autoria tambien se ve en la ficha del termino, no solo en el
+  editor.
 - Escribir el termino a mano es el camino principal del editor: la pantalla
   abre con "Escribi tu propio termino", aclara que las fuentes son opcionales, y
   el buscador externo pasa a ser un boton debajo del contenido.

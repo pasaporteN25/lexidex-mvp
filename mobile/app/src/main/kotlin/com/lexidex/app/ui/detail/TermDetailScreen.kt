@@ -49,6 +49,8 @@ import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
 import com.lexidex.app.ui.components.ChipRole
+import com.lexidex.app.data.userdb.sourceOfContent
+import com.lexidex.app.domain.TermOrigin
 import com.lexidex.app.domain.TermLabelKind
 import com.lexidex.app.ui.components.TermChip
 import com.lexidex.app.ui.components.chipRole
@@ -230,6 +232,7 @@ private fun TermDetailBody(
     ) {
         RecordHeader(term)
         if (term.content.isNotBlank() && term.content != term.summary) {
+            AuthorshipLine(term)
             Text(
                 term.content,
                 style = MaterialTheme.typography.bodyLarge,
@@ -259,6 +262,38 @@ private fun TermDetailBody(
         }
         Spacer(Modifier.height(LexidexSpacing.section))
     }
+}
+
+/**
+ * De quien es el texto, dicho tambien en la ficha y no solo en el editor: es donde uno lee el
+ * termino, y saber si lo escribio uno mismo o lo trajo de una fuente cambia como se lee.
+ *
+ * Solo para terminos propios. Los del paquete son todos importados y decirlo en cada uno seria
+ * ruido; su procedencia ya vive en la seccion PROCEDENCIA.
+ */
+@Composable
+private fun AuthorshipLine(term: TermDetail) {
+    if (term.origin != TermOrigin.PERSONAL) return
+    val source = sourceOfContent(term.content, term.sources)
+    val text = when {
+        source == null && term.sources.isEmpty() -> "Escrito por vos."
+        source == null -> "Escrito o editado por vos."
+        else -> "Importado de ${source.host.ifBlank { source.kind }}, sin editar."
+    }
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = if (source == null) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        modifier = Modifier.padding(
+            start = LexidexSpacing.panel,
+            end = LexidexSpacing.panel,
+            top = LexidexSpacing.compact,
+        ),
+    )
 }
 
 @Composable
