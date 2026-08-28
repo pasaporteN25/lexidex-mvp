@@ -27,6 +27,12 @@ data class TermSource(
     val language: String,
     val licenseName: String,
     val retrievedAt: String?,
+    /**
+     * Hash del texto que trajo esta fuente, si lo trajo. Es lo que permite distinguir despues un
+     * contenido importado tal cual de uno escrito o editado por el usuario, sin guardar dos copias
+     * del texto para compararlas.
+     */
+    val contentSha256: String = "",
 )
 
 /** One edge of `term_relations`, already resolved to the term on the other end. */

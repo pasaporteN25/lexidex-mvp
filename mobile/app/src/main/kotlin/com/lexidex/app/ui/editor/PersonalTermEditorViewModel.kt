@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lexidex.app.data.knowledge.KnowledgeSearchResult
 import com.lexidex.app.data.knowledge.KnowledgeSource
 import com.lexidex.app.data.repository.CorpusRepository
+import com.lexidex.app.data.userdb.sourceOfContent
 import com.lexidex.app.data.repository.PersonalTermInput
 import com.lexidex.app.ui.toUserMessage
 import com.lexidex.app.ui.viewModelFactoryOf
@@ -44,10 +45,56 @@ data class PersonalTermEditorUiState(
     val isImporting: Boolean = false,
     val searchErrorMessage: String? = null,
     val isLanguageFromSource: Boolean = false,
+    /** El texto tal como lo entrego la fuente, para saber despues si sigue siendo el suyo. */
+    val importedContent: String? = null,
+    /** De donde vino ese texto, para poder nombrarlo en pantalla. */
+    val importedFrom: String? = null,
+    /** Una importacion esperando permiso porque reemplazaria texto que ya existe. */
+    val pendingImport: PendingImport? = null,
 ) {
     val canSave: Boolean get() = title.isNotBlank() && !isSaving && !isDeleting
+
+    /**
+     * Quien escribio el contenido. Importado y despues editado cuenta como propio: hay trabajo del
+     * usuario que la fuente no escribio, y decir lo contrario seria atribuirle mal el texto.
+     */
+    val authorship: ContentAuthorship
+        get() = when {
+            content.isBlank() -> ContentAuthorship.EMPTY
+            importedContent == null -> ContentAuthorship.WRITTEN
+            content == importedContent -> ContentAuthorship.IMPORTED
+            else -> ContentAuthorship.IMPORTED_EDITED
+        }
     val canSubmitSearch: Boolean get() = searchQuery.isNotBlank() && !isSearching && !isImporting
 }
+
+/** De quien es el texto que hay en el formulario. */
+enum class ContentAuthorship { EMPTY, WRITTEN, IMPORTED, IMPORTED_EDITED }
+
+/** Lo que trajo la fuente, guardado aparte hasta que el usuario diga que hacer con su texto. */
+data class PendingImport(
+    val title: String,
+    val language: String,
+    val summary: String,
+    val content: String,
+    val sourceUrl: String,
+    val sourceName: String,
+)
+
+private fun PersonalTermEditorUiState.applyImport(incoming: PendingImport) = copy(
+    isImporting = false,
+    isSearchOpen = false,
+    errorMessage = null,
+    pendingImport = null,
+    title = incoming.title,
+    language = incoming.language,
+    summary = incoming.summary,
+    content = incoming.content,
+    sourceUrl = incoming.sourceUrl,
+    isLanguageFromSource = true,
+    importedContent = incoming.content,
+    importedFrom = incoming.sourceName,
+)
 
 sealed interface PersonalTermEditorEffect {
     data class Saved(val slug: String) : PersonalTermEditorEffect
@@ -108,6 +155,12 @@ class PersonalTermEditorViewModel(
                                 summary = term.summary,
                                 content = term.content,
                                 sourceUrl = term.sources.firstOrNull()?.url.orEmpty(),
+                                // La autoria sobrevive al guardado: si el texto sigue siendo el
+                                // que trajo una fuente, la ficha lo sigue diciendo al reabrirla.
+                                importedContent = sourceOfContent(term.content, term.sources)
+                                    ?.let { term.content },
+                                importedFrom = sourceOfContent(term.content, term.sources)
+                                    ?.let { source -> source.host.ifBlank { source.kind } },
                                 categoriesText = term.categories.joinToString(", "),
                                 tagsText = term.tags.joinToString(", "),
                                 notes = term.notes.firstOrNull().orEmpty(),
@@ -188,18 +241,27 @@ class PersonalTermEditorViewModel(
             _uiState.update { it.copy(isImporting = true, searchErrorMessage = null) }
             suspendRunCatching { source.fetch(result) }.fold(
                 onSuccess = { article ->
-                    _uiState.update {
-                        it.copy(
-                            isImporting = false,
-                            isSearchOpen = false,
-                            errorMessage = null,
-                            title = article.title,
-                            language = article.language,
-                            summary = article.summary,
-                            content = article.content,
-                            sourceUrl = article.sourceUrl,
-                            isLanguageFromSource = true,
-                        )
+                    val incoming = PendingImport(
+                        title = article.title,
+                        language = article.language,
+                        summary = article.summary,
+                        content = article.content,
+                        sourceUrl = article.sourceUrl,
+                        sourceName = source.displayName,
+                    )
+                    _uiState.update { state ->
+                        // Con el formulario vacio no hay nada que pisar y la importacion entra
+                        // sola; con texto propio adentro, reemplazarlo es una decision aparte.
+                        if (state.content.isBlank()) {
+                            state.applyImport(incoming)
+                        } else {
+                            state.copy(
+                                isImporting = false,
+                                isSearchOpen = false,
+                                errorMessage = null,
+                                pendingImport = incoming,
+                            )
+                        }
                     }
                 },
                 onFailure = { error ->
@@ -210,6 +272,22 @@ class PersonalTermEditorViewModel(
             )
         }
     }
+
+    /** Reemplaza el texto propio por el de la fuente: la confirmacion separada que pide 5.14. */
+    fun onReplaceContentWithImport() {
+        val pending = _uiState.value.pendingImport ?: return
+        _uiState.update { it.applyImport(pending) }
+    }
+
+    /** Se queda con el texto escrito y suma la fuente como referencia. */
+    fun onKeepMyTextAndAddSource() {
+        val pending = _uiState.value.pendingImport ?: return
+        _uiState.update {
+            it.copy(pendingImport = null, sourceUrl = pending.sourceUrl, errorMessage = null)
+        }
+    }
+
+    fun onDismissImport() = _uiState.update { it.copy(pendingImport = null) }
 
     // endregion
 
@@ -227,6 +305,7 @@ class PersonalTermEditorViewModel(
             categoriesText = state.categoriesText,
             tagsText = state.tagsText,
             notes = state.notes,
+            contentCameFromSource = state.authorship == ContentAuthorship.IMPORTED,
         )
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }

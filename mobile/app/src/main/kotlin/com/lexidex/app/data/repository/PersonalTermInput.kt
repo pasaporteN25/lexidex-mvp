@@ -12,4 +12,10 @@ data class PersonalTermInput(
     val categoriesText: String,
     val tagsText: String,
     val notes: String,
+    /**
+     * True cuando [content] es exactamente lo que devolvio la fuente de [sourceUrl] y el usuario
+     * no lo toco. Lo decide el editor, que es el unico que sabe de donde vino el texto; el
+     * repositorio solo lo convierte en el hash que guarda la fuente.
+     */
+    val contentCameFromSource: Boolean = false,
 )

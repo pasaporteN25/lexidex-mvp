@@ -15,6 +15,26 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 ## Sin publicar
 
+### 2026-08-28
+
+#### Agregado
+
+- El editor de terminos propios dice de quien es el texto (tarea 5.14):
+  "Escrito por vos", "Importado de X, sin editar" o "Importado de X y editado
+  por vos". La marca sobrevive al guardado comparando el sha256 que la fuente
+  primaria guarda desde 5.13 contra el contenido actual, sin guardar una
+  segunda copia del texto para compararlas.
+
+#### Cambiado
+
+- Escribir el termino a mano es el camino principal del editor: la pantalla
+  abre con "Escribi tu propio termino", aclara que las fuentes son opcionales, y
+  el buscador externo pasa a ser un boton debajo del contenido.
+- Importar un articulo ya no reemplaza en silencio lo que el usuario escribio.
+  Con el formulario vacio entra solo; con texto propio adentro se pregunta
+  aparte y hay dos salidas, "Solo agregar la fuente" y "Reemplazar mi texto".
+
+
 ### 2026-08-26
 
 #### Agregado

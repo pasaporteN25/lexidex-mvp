@@ -91,6 +91,107 @@ class PersonalTermEditorViewModelTest {
             assertEquals("en", viewModel.uiState.value.language)
         }
 
+    @Test
+    fun `an import into an empty form just fills it, and says the text is not yours`() =
+        runTest(dispatcher) {
+            val source = FakeKnowledgeSource(article = tangoArticle())
+            val viewModel = viewModel(source = source)
+
+            viewModel.onSelectSearchResult(searchResult(language = "es"))
+            runCurrent()
+
+            val state = viewModel.uiState.value
+            assertEquals("Tango is a partner dance.", state.content)
+            assertEquals(ContentAuthorship.IMPORTED, state.authorship)
+            assertEquals(null, state.pendingImport)
+        }
+
+    @Test
+    fun `an import never overwrites text the user wrote`() = runTest(dispatcher) {
+        val source = FakeKnowledgeSource(article = tangoArticle())
+        val viewModel = viewModel(source = source)
+        viewModel.onContentChange("Lo escribi yo.")
+
+        viewModel.onSelectSearchResult(searchResult(language = "es"))
+        runCurrent()
+
+        val state = viewModel.uiState.value
+        assertEquals("Lo escribi yo.", state.content)
+        assertEquals("Wikipedia", state.pendingImport?.sourceName)
+        assertEquals(ContentAuthorship.WRITTEN, state.authorship)
+    }
+
+    @Test
+    fun `keeping my text adds the source as a reference and leaves the text alone`() =
+        runTest(dispatcher) {
+            val source = FakeKnowledgeSource(article = tangoArticle())
+            val viewModel = viewModel(source = source)
+            viewModel.onContentChange("Lo escribi yo.")
+            viewModel.onSelectSearchResult(searchResult(language = "es"))
+            runCurrent()
+
+            viewModel.onKeepMyTextAndAddSource()
+
+            val state = viewModel.uiState.value
+            assertEquals("Lo escribi yo.", state.content)
+            assertEquals("https://es.wikipedia.org/wiki/Tango", state.sourceUrl)
+            assertEquals(ContentAuthorship.WRITTEN, state.authorship)
+            assertEquals(null, state.pendingImport)
+        }
+
+    @Test
+    fun `replacing is a separate decision, and only then the text stops being yours`() =
+        runTest(dispatcher) {
+            val source = FakeKnowledgeSource(article = tangoArticle())
+            val viewModel = viewModel(source = source)
+            viewModel.onContentChange("Lo escribi yo.")
+            viewModel.onSelectSearchResult(searchResult(language = "es"))
+            runCurrent()
+
+            viewModel.onReplaceContentWithImport()
+
+            val state = viewModel.uiState.value
+            assertEquals("Tango is a partner dance.", state.content)
+            assertEquals(ContentAuthorship.IMPORTED, state.authorship)
+            assertEquals(null, state.pendingImport)
+        }
+
+    @Test
+    fun `editing imported text makes it yours again`() = runTest(dispatcher) {
+        val source = FakeKnowledgeSource(article = tangoArticle())
+        val viewModel = viewModel(source = source)
+        viewModel.onSelectSearchResult(searchResult(language = "es"))
+        runCurrent()
+
+        viewModel.onContentChange("Tango is a partner dance. Y algo mio.")
+
+        assertEquals(ContentAuthorship.IMPORTED_EDITED, viewModel.uiState.value.authorship)
+    }
+
+    @Test
+    fun `dismissing the question changes nothing`() = runTest(dispatcher) {
+        val source = FakeKnowledgeSource(article = tangoArticle())
+        val viewModel = viewModel(source = source)
+        viewModel.onContentChange("Lo escribi yo.")
+        viewModel.onSelectSearchResult(searchResult(language = "es"))
+        runCurrent()
+
+        viewModel.onDismissImport()
+
+        val state = viewModel.uiState.value
+        assertEquals("Lo escribi yo.", state.content)
+        assertEquals("", state.sourceUrl)
+        assertEquals(null, state.pendingImport)
+    }
+
+    private fun tangoArticle() = KnowledgeArticle(
+        title = "Tango",
+        summary = "Musica y danza rioplatense.",
+        content = "Tango is a partner dance.",
+        sourceUrl = "https://es.wikipedia.org/wiki/Tango",
+        language = "es",
+    )
+
     private fun TestScope.viewModel(
         source: KnowledgeSource,
         initialTitle: String? = null,

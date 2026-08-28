@@ -118,6 +118,15 @@ fun PersonalTermEditorScreen(
         onDelete = viewModel::onDelete,
         onBack = onBack,
     )
+
+    uiState.pendingImport?.let { pending ->
+        ReplaceContentDialog(
+            pending = pending,
+            onReplace = viewModel::onReplaceContentWithImport,
+            onKeepMine = viewModel::onKeepMyTextAndAddSource,
+            onDismiss = viewModel::onDismissImport,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -181,20 +190,15 @@ private fun PersonalTermEditorContent(
             if (uiState.errorMessage != null) {
                 Text(uiState.errorMessage, color = MaterialTheme.colorScheme.error)
             }
-            if (search.sourceName != null) {
-                OutlinedButton(onClick = search.onOpen, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Search, contentDescription = null)
-                    Text(
-                        "Buscar en ${search.sourceName}",
-                        modifier = Modifier.padding(start = LexidexSpacing.tight),
-                    )
-                }
-                Text(
-                    "O carga los campos a mano, como siempre.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                if (isEditing) "Tu termino" else "Escribi tu propio termino",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                "Las fuentes son opcionales: podes citarlas, o no citar ninguna.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             TextField(
                 value = uiState.title,
                 onValueChange = onTitleChange,
@@ -228,6 +232,7 @@ private fun PersonalTermEditorContent(
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
             )
+            AuthorshipLabel(uiState)
             TextField(
                 value = uiState.content,
                 onValueChange = onContentChange,
@@ -235,6 +240,17 @@ private fun PersonalTermEditorContent(
                 minLines = 7,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (search.sourceName != null) {
+                // Debajo del contenido y no arriba de todo: es una ayuda para escribirlo, no el
+                // camino por el que se supone que uno entra.
+                OutlinedButton(onClick = search.onOpen, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                    Text(
+                        "Buscar en ${search.sourceName}",
+                        modifier = Modifier.padding(start = LexidexSpacing.tight),
+                    )
+                }
+            }
             TextField(
                 value = uiState.sourceUrl,
                 onValueChange = onSourceUrlChange,
@@ -288,6 +304,53 @@ private fun PersonalTermEditorContent(
             },
         )
     }
+}
+
+/** Dice de quien es el texto, que es lo que un termino importado no puede decir por si solo. */
+@Composable
+private fun AuthorshipLabel(uiState: PersonalTermEditorUiState) {
+    val from = uiState.importedFrom.orEmpty()
+    val (text, imported) = when (uiState.authorship) {
+        ContentAuthorship.EMPTY -> "Escribilo vos, o traelo de una fuente." to false
+        ContentAuthorship.WRITTEN -> "Escrito por vos." to false
+        ContentAuthorship.IMPORTED -> "Importado de $from, sin editar." to true
+        ContentAuthorship.IMPORTED_EDITED -> "Importado de $from y editado por vos." to false
+    }
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (imported) {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        } else {
+            MaterialTheme.colorScheme.primary
+        },
+    )
+}
+
+/**
+ * Traer una fuente y reemplazar lo que uno escribio son dos decisiones distintas. Mientras haya
+ * texto propio en el formulario, la segunda se pregunta aparte.
+ */
+@Composable
+private fun ReplaceContentDialog(
+    pending: PendingImport,
+    onReplace: () -> Unit,
+    onKeepMine: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ya escribiste algo") },
+        text = {
+            Text(
+                "\"${pending.title}\" trae su propio texto desde ${pending.sourceName}. " +
+                    "Podes reemplazar lo que escribiste, o quedartelo y sumar la fuente como " +
+                    "referencia.",
+            )
+        },
+        confirmButton = { TextButton(onClick = onKeepMine) { Text("Solo agregar la fuente") } },
+        dismissButton = { TextButton(onClick = onReplace) { Text("Reemplazar mi texto") } },
+    )
 }
 
 @Composable

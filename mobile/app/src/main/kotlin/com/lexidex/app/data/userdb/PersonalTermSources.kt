@@ -1,6 +1,7 @@
 package com.lexidex.app.data.userdb
 
 import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
+import com.lexidex.app.domain.TermSource
 import java.net.URI
 import java.security.MessageDigest
 
@@ -48,4 +49,23 @@ fun mergeLegacyPrimarySource(
     return merged.take(MAX_PERSONAL_TERM_SOURCES).mapIndexed { position, source ->
         source.copy(termUid = termUid, position = position, language = source.language.ifBlank { language })
     }
+}
+
+/** El mismo hash que guarda `personal_term_sources.content_sha256`. */
+fun personalContentSha256(content: String): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(content.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+
+/**
+ * La fuente de la que salio este texto, si el texto sigue siendo exactamente el que llego.
+ *
+ * Devuelve null tanto para un texto escrito a mano como para uno importado y despues editado: son
+ * la misma cosa desde el punto de vista de la autoria, porque en los dos casos hay trabajo del
+ * usuario que la fuente no escribio.
+ */
+fun sourceOfContent(content: String, sources: List<TermSource>): TermSource? {
+    if (content.isBlank()) return null
+    val hash = personalContentSha256(content)
+    return sources.firstOrNull { it.contentSha256.isNotBlank() && it.contentSha256 == hash }
 }

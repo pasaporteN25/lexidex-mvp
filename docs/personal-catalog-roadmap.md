@@ -524,11 +524,25 @@ offline de Lexidex salvo que el acuerdo final autorice ese uso. Fuentes oficiale
       repetirla no puede duplicar fuentes.
       Hecho el 2026-08-26 con esquema personal v4, respaldo v2 y payload de
       termino v2; los lectores conservan compatibilidad con respaldo/payload v1.
-- [ ] **5.14** _(M)_ Hacer explicita la autoria personal en el editor: "Escribir
-      termino propio" como camino principal, fuentes opcionales y separacion
-      visible entre texto escrito por el usuario y texto importado. Agregar,
-      quitar o reordenar referencias nunca debe sobrescribir contenido sin una
-      confirmacion separada.
+- [x] **5.14** ✅ Hecho el 2026-08-28. El editor abre con "Escribi tu propio
+      termino" y dice que las fuentes son opcionales; el buscador externo bajo
+      a ser un boton debajo del contenido, que es lo que es: una ayuda para
+      escribirlo, no el camino por el que se entra.
+      Sobre el contenido hay una linea que dice de quien es el texto: "Escrito
+      por vos", "Importado de X, sin editar" o "Importado de X y editado por
+      vos". Importar y despues editar cuenta como propio, porque hay trabajo del
+      usuario que la fuente no escribio.
+      **Importar ya no pisa nada en silencio**: con el formulario vacio la
+      importacion entra sola, pero si hay texto escrito se pregunta aparte, con
+      dos salidas explicitas -"Solo agregar la fuente", que conserva el texto y
+      suma la referencia, y "Reemplazar mi texto"-. Esa es la confirmacion
+      separada que pedia la tarea.
+      La autoria sobrevive al guardado sin guardar dos copias del texto: la
+      fuente primaria guarda el sha256 de lo que trajo (columna que ya existia
+      desde 5.13) y al reabrir se compara contra el contenido actual. Si el
+      texto dejo de ser el suyo, la marca se borra.
+      Seis tests nuevos en `PersonalTermEditorViewModelTest` y verificacion en
+      el emulador contra Wikipedia real.
 - [ ] **5.15** _(L)_ Pipeline para terminos editoriales de Lexidex. Fuente
       versionada y revisable en el repositorio, autor/revisor, referencias y
       licencia obligatorias, validacion de colisiones, y entrada al constructor
