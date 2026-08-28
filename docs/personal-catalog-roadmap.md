@@ -567,12 +567,24 @@ offline de Lexidex salvo que el acuerdo final autorice ese uso. Fuentes oficiale
       construccion; mostrarlos en la aplicacion pide una tabla nueva en el
       esquema, que es una decision aparte y no se tomo aca.
       Nueve tests en `tests/test_editorial_terms.py`.
-- [ ] **5.16** _(S)_ Cambridge sin copia: accion "Abrir en Cambridge" para la
-      consulta actual usando su busqueda web oficial, fuera de la app. No se
-      parsea HTML, no se guarda contenido y no se presenta como fuente importada;
-      es valor inmediato mientras se resuelve la licencia. Cambridge publica un
-      [buscador gratuito](https://dictionary.cambridge.org/us/freesearch.html)
-      que abre los resultados en su sitio.
+- [x] **5.16** ✅ Hecho el 2026-08-28. "Abrir <consulta> en Cambridge" aparece
+      junto a la oferta de agregar el termino, tanto con la busqueda vacia como
+      debajo de la lista de resultados: la consulta actual es la misma en los dos
+      casos.
+      Es deliberadamente lo mas chico posible: se arma una URL y se la abre
+      **afuera de la aplicacion** con un `Intent`. No se pide, no se parsea y no
+      se guarda nada, y por eso tampoco implementa `KnowledgeSource` -lo que
+      entra por ahi se puede guardar, y esto no-. Es el equivalente a que el
+      usuario la busque a mano, con la consulta ya escrita.
+      La URL se arma en `domain/CambridgeLookup.kt` y no en la pantalla para
+      poder fijarla con tests: es lo unico que puede romperse en silencio,
+      porque un error manda al usuario a una pagina de error en vez de a su
+      consulta. Cinco tests cubren la codificacion de espacios, acentos y de los
+      caracteres que partirian la query string.
+      **Verificada de verdad**: Cambridge responde 403 a los fetch automaticos,
+      asi que no se pudo leer su documentacion; se comprobo pidiendo la URL, que
+      devuelve 200 y redirige a `dictionary.cambridge.org/dictionary/english/
+      serendipity`, y en el emulador el boton entrega la consulta al navegador.
 - [ ] **5.17** _(M, condicionada)_ Pedir acceso y evaluar el acuerdo de la API
       de Cambridge antes de escribir el adaptador: diccionarios/idiomas realmente
       disponibles, costo, cuotas, atribucion, transformacion y, sobre todo,

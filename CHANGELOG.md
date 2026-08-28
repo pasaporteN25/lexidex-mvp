@@ -25,6 +25,9 @@ en [`docs/corpus.md`](docs/corpus.md).
   primaria guarda desde 5.13 contra el contenido actual, sin guardar una
   segunda copia del texto para compararlas.
 
+- Una busqueda ofrece tambien "Abrir en Cambridge" (tarea 5.16), que entrega la
+  consulta a su diccionario en el navegador. No se descarga ni se guarda nada:
+  es el atajo a buscarlo a mano, no una fuente importable.
 - Lexidex puede publicar terminos propios (tarea 5.15): un JSON por termino en
   `data/editorial/`, revisable en el diff, con autor, revisor, licencia y al
   menos una referencia obligatorios, y validacion de colisiones contra los otros

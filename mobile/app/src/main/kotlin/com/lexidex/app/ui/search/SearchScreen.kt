@@ -1,5 +1,7 @@
 package com.lexidex.app.ui.search
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -56,6 +59,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.lexidex.app.R
 import com.lexidex.app.domain.TermSummary
+import com.lexidex.app.domain.cambridgeSearchUrl
+import com.lexidex.app.domain.canOpenInCambridge
 import com.lexidex.app.ui.OnResume
 import com.lexidex.app.ui.components.TermRow
 import com.lexidex.app.ui.theme.LexidexSpacing
@@ -267,6 +272,26 @@ private fun SearchResults(
     }
 }
 
+/**
+ * Abre la consulta en el sitio de Cambridge. Fuera de la aplicacion a proposito: nada de lo que
+ * hay del otro lado se pide, se lee ni se guarda aca (tarea 5.16).
+ */
+@Composable
+private fun OpenInCambridge(query: String) {
+    if (!canOpenInCambridge(query)) return
+    val context = LocalContext.current
+    TextButton(
+        onClick = {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cambridgeSearchUrl(query)))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // Un telefono sin navegador es raro pero posible, y no es motivo para caerse.
+            runCatching { context.startActivity(intent) }
+        },
+    ) {
+        Text("Abrir \"$query\" en Cambridge")
+    }
+}
+
 @Composable
 private fun AddSearchedTermFooter(query: String, onAddSearchedTerm: (String) -> Unit) {
     Box(
@@ -275,8 +300,11 @@ private fun AddSearchedTermFooter(query: String, onAddSearchedTerm: (String) -> 
             .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.section),
         contentAlignment = Alignment.Center,
     ) {
-        TextButton(onClick = { onAddSearchedTerm(query) }) {
-            Text("Agregar \"$query\"")
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            TextButton(onClick = { onAddSearchedTerm(query) }) {
+                Text("Agregar \"$query\"")
+            }
+            OpenInCambridge(query)
         }
     }
 }
@@ -398,6 +426,7 @@ private fun NothingFound(query: String, onAddSearchedTerm: (String) -> Unit) {
         ) {
             Text("Agregar \"$query\"")
         }
+        OpenInCambridge(query)
     }
 }
 
