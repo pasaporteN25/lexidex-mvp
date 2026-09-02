@@ -150,6 +150,37 @@ function formatNumber(value) {
   return new Intl.NumberFormat("es-AR").format(value || 0);
 }
 
+/**
+ * La fecha de `retrieved_at` como se lee: dd/MM/yyyy, o "" si no hay o no es una fecha.
+ *
+ * Una fecha sin hora no se convierte de huso a proposito. "2026-08-19" es ese dia; pasarlo por
+ * Date() lo lee como medianoche UTC, que en Buenos Aires cae el 18 y mostraria el dia anterior.
+ */
+function formatRetrievedDate(value) {
+  const raw = (value || "").trim();
+  if (!raw) {
+    return "";
+  }
+  // Se exige la forma antes de parsear: new Date() acepta cosas que no son fechas -"0" es el
+  // primero de enero del 2000- y este valor puede llegar de una sincronizacion o de un respaldo.
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/.exec(raw);
+  if (!iso) {
+    return "";
+  }
+  if (raw.length === 10) {
+    return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(parsed);
+}
+
 function labelFor(group, value) {
   return labels[group]?.[value] || value || "Sin definir";
 }
@@ -436,12 +467,16 @@ function renderSources(term) {
   return sources.map((source) => {
     const href = safeExternalUrl(source.canonical_url || source.url);
     const host = source.host || hostFromUrl(href) || "Fuente";
+    const retrieved = formatRetrievedDate(source.retrieved_at);
     return `
       <div class="source-row">
         <span>${escapeHtml(labelFor("sources", source.source_kind))}</span>
-        ${href
-          ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(host)}</a>`
-          : `<strong>${escapeHtml(host)}</strong>`}
+        <div class="source-detail">
+          ${href
+            ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(host)}</a>`
+            : `<strong>${escapeHtml(host)}</strong>`}
+          ${retrieved ? `<small>Copia del ${escapeHtml(retrieved)}</small>` : ""}
+        </div>
       </div>
     `;
   }).join("");

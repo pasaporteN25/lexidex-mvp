@@ -96,8 +96,11 @@ decidio.
    entrar entre tareas grandes, pero nunca debe demorar el arranque a proposito.
 4. **Articulo completo** (resto de la epica 4) - el mas grande de los que
    quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
-5. **Copias fechadas y versionadas del articulo** (epica 10) - empieza barato
-   (10.1 y 10.2 son fechar y mostrar) y se pone cara al final (10.6).
+5. **Copias fechadas y versionadas del articulo** (epica 10) - la parte barata
+   ya se hizo el 2026-09-02: lo que se importa se fecha (10.1a) y la fecha se
+   lee en la ficha (10.2). Lo que sigue se pone caro rapido: 10.1b obliga a
+   re-enriquecer el paquete entero, y 10.3 en adelante pide una tabla de
+   versiones y una decision sobre el indice FTS.
 6. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
    al final de la epica 7.
 
@@ -1246,7 +1249,7 @@ el flujo funcione.
       comando documentado en `contracts/local-sync/v1/README.md`, que funciona y
       no le cuesta nada al proyecto.
 
-## 10. Copias fechadas del articulo, y mas de una ⬜
+## 10. Copias fechadas del articulo, y mas de una 🔶
 
 Pedido el 2026-08-20. Hoy cada termino guarda **una** copia del extracto y
 **ninguna fecha**: no hay forma de saber de cuando es lo que se lee, ni de
@@ -1261,6 +1264,11 @@ mano.
   en `docs/corpus-schema.sql` pero `tools/enrich_corpus.py` nunca la escribio,
   asi que hoy no hay ninguna fecha por articulo que mostrar. Lo unico fechado es
   `package_meta.created_at`, que es cuando se construyo el paquete entero.
+  **Sigue siendo cierto para el paquete** (eso es 10.1b), pero desde el
+  2026-09-02 ya no lo es para los terminos propios: lo que se importa se fecha
+  al importarlo (10.1a). Aparecio ademas algo que la medicion no habia mirado:
+  el codigo tenia la fecha en la mano al importar -el mismo instante con el que
+  sella el termino- y la descartaba escribiendo `retrievedAt = null`.
 - En el mismo lugar aparecio que `package_meta.package_version` dice
   `0.2.0-seed.1` dentro del paquete v0.4.0: el enriquecimiento no actualizo esa
   fila. La pantalla de opciones muestra la version correcta porque la lee del
@@ -1280,15 +1288,40 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
 
 ### Tareas
 
-- [ ] **10.1** _(Sonnet 5 · M)_ Fechar la copia en origen: que
+- [x] **10.1a** ✅ Hecho el 2026-09-02. Fechar lo que se importa, en Android.
+      `stampImportedContent` escribe `retrieved_at` al lado del `content_sha256`
+      que ya escribia, y se mudo de `CorpusRepository` a `PersonalTermSources`,
+      que es donde vive el resto del marcado de fuentes y donde se puede probar
+      sin Room.
+      **La fecha es la de la copia, no la del guardado.** Volver a guardar el
+      mismo texto conserva la fecha original, porque corregir un titulo no
+      vuelve a traer el articulo; un texto distinto traido de la fuente es una
+      copia nueva y se fecha de nuevo. Cuando el usuario escribe o edita el
+      texto se borra el hash pero **no** la fecha: ya no es una copia, pero
+      haber consultado esa fuente ese dia sigue siendo cierto. Lo que decide si
+      la ficha habla de una copia es el hash, no la fecha.
+      Seis tests nuevos en `PersonalTermSourcesTest` sobre esa regla.
+- [ ] **10.1b** _(Sonnet 5 · M)_ Fechar tambien el paquete: que
       `tools/enrich_corpus.py` escriba `sources.retrieved_at` y
-      `sources.content_sha256`, que ya existen en el esquema y estan vacias.
-      Implica volver a correr el enriquecimiento y cortar un paquete nuevo. Sin
-      esto no hay fecha que mostrar. La parte de `package_meta` que estaba
-      anotada aca ya se hizo (ver arriba); lo que queda es la fecha por
-      articulo.
-- [ ] **10.2** _(Haiku 4.5 · S)_ Mostrar esa fecha en la ficha ("Copia del
-      19/08/2026") en Android y en la web. Es leer un campo que ya viaja.
+      `sources.content_sha256` de los 4.425 terminos importados. Implica volver
+      a correr el enriquecimiento entero y cortar un paquete nuevo, que es la
+      parte cara; el lado de la aplicacion ya sabe mostrarlo (10.2), asi que
+      esto es todo del lado de la herramienta.
+- [x] **10.2** ✅ Hecho el 2026-09-02. En Android la linea de autoria de la
+      ficha ahora dice "Importado de wikipedia.org el 19/08/2026, sin editar", y
+      PROCEDENCIA muestra "consultada el ...". Sin fecha se dice la frase de
+      antes: a los terminos importados antes de 10.1a no se les inventa un dia.
+      El formato sale de `domain/RetrievedDate.kt`, con seis tests: convierte al
+      huso local -una copia de las 22:00 en Buenos Aires es de ese dia y no del
+      siguiente en UTC-, acepta una fecha sin hora, y devuelve null en vez de
+      romper la ficha con lo que no es una fecha, que puede llegar de una
+      sincronizacion o de un respaldo escrito por otro cliente.
+      En la web la fecha aparece en la fuente de la ficha, como "Copia del ...".
+      El mismo cuidado con el parseo hizo falta ahi y por un motivo propio:
+      `new Date("0")` devuelve el ano 2000, asi que se exige forma ISO antes de
+      parsear. Las dos superficies coinciden en los diez casos probados,
+      incluida la basura.
+      **Lo que la web no puede decir todavia** esta anotado en 10.8.
 - [ ] **10.3** _(Opus 5 · L)_ Tabla de versiones en la base de usuario:
       contenido, resumen, fecha de captura, sha256 y cual esta activa, por slug
       + origen. Migracion 2 -> 3 escrita a mano, como la de colecciones.
@@ -1313,6 +1346,15 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
       telefono hay ademas dos decisiones sin tomar: donde corre (hoy no hay
       WorkManager en el proyecto) y cuanto espacio se permite gastar, porque
       guardar varias copias multiplica los 10 MB que ya ocupa el paquete.
+- [ ] **10.8** _(Sonnet 5 · M)_ La web no puede decir "esta copia sigue sin
+      editar", que es lo que en Android habilita la linea de autoria. El backend
+      **guarda y transmite** `content_sha256` y `retrieved_at` -por eso un
+      termino sincronizado del telefono llega fechado y la web lo muestra-, pero
+      nunca los **escribe**: 5.13 y 5.14 se hicieron solo en Android. Hasta que
+      eso se porte, la web fecha la fuente pero no habla de autoria.
+      Ojo con una trampa al portarlo: calcular el sha en el navegador pide
+      `crypto.subtle`, que no existe sobre http en una IP de la LAN aunque si en
+      localhost. O lo calcula el backend, o el hub tiene que estar en https.
 - [ ] **10.7** _(Sonnet 5 · M)_ Verificar a mano: actualizar un termino que
       cambio, uno que no, quedarse con una copia vieja, borrar otra, y correr
       una actualizacion masiva cortandola por la mitad para ver que retoma.

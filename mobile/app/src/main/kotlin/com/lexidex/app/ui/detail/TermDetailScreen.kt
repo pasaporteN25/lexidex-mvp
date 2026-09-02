@@ -279,7 +279,12 @@ private fun AuthorshipLine(term: TermDetail) {
     val text = when {
         source == null && term.sources.isEmpty() -> "Escrito por vos."
         source == null -> "Escrito o editado por vos."
-        else -> "Importado de ${source.host.ifBlank { source.kind }}, sin editar."
+        else -> {
+            // Sin fecha para los que se importaron antes de que se las guardara: se dice lo que se
+            // sabe y nada mas, en vez de inventarles un dia.
+            val on = retrievedDate(source.retrievedAt)?.let { " el $it" }.orEmpty()
+            "Importado de ${source.host.ifBlank { source.kind }}$on, sin editar."
+        }
     }
     Text(
         text,

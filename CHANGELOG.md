@@ -15,6 +15,25 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 ## Sin publicar
 
+### 2026-09-02
+
+#### Agregado
+
+- Lo que importas de una fuente queda fechado (tarea 10.1a). La fecha ya estaba
+  en la mano al importar y se descartaba; ahora se guarda en `retrieved_at`, al
+  lado del hash del contenido. Es la fecha **de la copia**, no la del guardado:
+  volver a guardar el mismo texto la conserva, porque corregir un titulo no
+  vuelve a traer el articulo.
+- La ficha dice de cuando es lo que estas leyendo (tarea 10.2). En Android,
+  "Importado de wikipedia.org el 19/08/2026, sin editar"; en la web, "Copia del
+  19/08/2026" sobre la fuente. A lo importado antes de este cambio no se le
+  inventa una fecha: se muestra la frase de antes.
+
+#### Notas
+
+- Los terminos del paquete todavia no tienen fecha por articulo: eso pide
+  re-enriquecer y cortar un paquete nuevo (tarea 10.1b).
+
 ### 2026-08-28
 
 #### Agregado
