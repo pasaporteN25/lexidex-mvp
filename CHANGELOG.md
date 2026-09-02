@@ -37,8 +37,29 @@ en [`docs/corpus.md`](docs/corpus.md).
   `enrich_corpus.py` fecha al traer, y `--stamp-dates` queda para un paquete
   enriquecido antes.
 
+- Un termino se puede actualizar desde su ficha (tareas 10.3 y 10.4). Lexidex le
+  pide a la fuente la version de hoy, la compara con la copia que ya tenes y
+  guarda una copia nueva **solo si cambio**; si no, te dice "Sin cambios desde el
+  19/08/2026" y no escribe nada. La primera actualizacion guarda ademas el texto
+  que tenias, asi que siempre se puede volver. Se conservan las ultimas cinco
+  copias por termino y nunca se tira la que estas usando.
+- La busqueda sigue a la copia que estas leyendo: si actualizaste un termino, se
+  busca por el texto nuevo y no por el viejo.
+
+#### Cambiado
+
+- Traer un articulo de Wikipedia ahora baja la **introduccion completa** y no el
+  primer parrafo. Era necesario para que actualizar signifique algo: el paquete
+  se construyo con la introduccion entera, asi que comparar contra el resumen
+  corto daba "cambio" siempre. Sobre "Poligenismo" la diferencia eran 563
+  caracteres contra 323. Los terminos propios que crees desde el buscador
+  tambien salen ganando.
+
 #### Notas
 
+- Las copias guardadas todavia no entran al respaldo ni a la sincronizacion
+  (tarea 10.10). Exportar e importar conserva los terminos pero pierde sus
+  copias.
 - El paquete crecio 90 KB (10,25 a 10,34 MB). Se decidio **no** repetir el hash
   del contenido en cada fuente del paquete: costaba 289 KB mas y duplica
   `terms.content_sha256`, que ya esta completo.

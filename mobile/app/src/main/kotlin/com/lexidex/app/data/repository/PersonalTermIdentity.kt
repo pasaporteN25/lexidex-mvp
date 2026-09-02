@@ -6,6 +6,9 @@ import java.util.UUID
 /** Mirrors `create_personal_term`'s uid/slug generation in backend/lexidex_api.py exactly. */
 fun newPersonalTermUid(): String = "usr_" + UUID.randomUUID().toString().replace("-", "")
 
+/** Estable, para que una copia guardada se pueda referenciar desde un respaldo o una sincronizacion. */
+fun newVersionUid(): String = "ver_" + UUID.randomUUID().toString().replace("-", "")
+
 fun personalTermSlug(uid: String, language: String, title: String): String =
     "personal-$language-${slugify(title)}--${uid.substring(4, 12)}"
 

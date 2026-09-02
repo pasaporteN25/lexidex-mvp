@@ -9,11 +9,17 @@ import com.lexidex.app.data.db.entity.TermEntity
 import com.lexidex.app.data.userdb.UserDatabaseProvider
 import com.lexidex.app.data.userdb.LexidexUserDatabase
 import com.lexidex.app.data.userdb.mergeLegacyPrimarySource
+import com.lexidex.app.data.userdb.personalContentSha256
 import com.lexidex.app.data.userdb.stampImportedContent
 import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.CollectionEntity
 import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
 import com.lexidex.app.data.userdb.entity.TermVersionEntity
+import com.lexidex.app.domain.RefreshDecision
+import com.lexidex.app.domain.TermRefresh
+import com.lexidex.app.domain.TermVersion
+import com.lexidex.app.domain.refreshDecision
+import com.lexidex.app.domain.versionsToDrop
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 import com.lexidex.app.domain.CatalogFilter
 import com.lexidex.app.domain.HistoryItem
@@ -704,6 +710,115 @@ class CorpusRepository(
         buildPersonalDetail(userTermDao().getByUid(updated.uid) ?: updated)
     }
 
+    // region Copias fechadas
+
+    /**
+     * Guarda el texto que acaba de llegar de la fuente, o dice que no cambio.
+     *
+     * La red **no** entra aca: el ViewModel la trae y esto decide y escribe. Es la misma division
+     * que usa el minijuego, y es lo que deja probar la decision sin levantar Room ni salir a
+     * internet.
+     *
+     * La primera vez que se actualiza un termino se guarda tambien **el texto de base** como una
+     * copia mas, fechada con lo que sepamos de el. Sin eso, actualizar seria un camino de ida:
+     * el paquete es de solo lectura y no habria adonde volver.
+     */
+    suspend fun storeRefreshedCopy(
+        slug: String,
+        summary: String,
+        content: String,
+        sourceUrl: String,
+        retrievedAt: String,
+    ): Result<TermRefresh> = corpusResult {
+        val detail = requireNotNull(getTermDetail(slug).getOrThrow()) {
+            "No existe el termino $slug"
+        }
+        val versions = versionDao()
+        val stored = versions.forTerm(slug, detail.origin).map { it.toDomain() }
+        val incomingSha = personalContentSha256(content)
+        val activeSince = stored.firstOrNull { it.isActive }?.retrievedAt
+            ?: detail.sources.firstOrNull { it.url == sourceUrl }?.retrievedAt.orEmpty()
+
+        when (
+            val decision = refreshDecision(
+                incomingSha = incomingSha,
+                activeSha = personalContentSha256(detail.content),
+                activeSince = activeSince,
+                stored = stored,
+            )
+        ) {
+            is RefreshDecision.Keep -> TermRefresh.Unchanged(decision.since)
+
+            is RefreshDecision.Reactivate -> {
+                versions.activate(decision.uid)
+                TermRefresh.Updated(decision.retrievedAt)
+            }
+
+            RefreshDecision.Store -> {
+                if (stored.isEmpty()) {
+                    versions.insert(
+                        baseVersion(detail, sourceUrl, fallbackDate = retrievedAt),
+                    )
+                }
+                val fresh = TermVersionEntity(
+                    uid = newVersionUid(),
+                    slug = slug,
+                    origin = detail.origin,
+                    summary = summary,
+                    content = content,
+                    contentSha256 = incomingSha,
+                    retrievedAt = retrievedAt,
+                    sourceUrl = sourceUrl,
+                    isActive = false,
+                    createdAt = nowIso(),
+                )
+                versions.insert(fresh)
+                versions.activate(fresh.uid)
+                dropExcessVersions(slug, detail.origin)
+                TermRefresh.Updated(retrievedAt)
+            }
+        }
+    }
+
+    /** Las copias de un termino, de la mas nueva a la mas vieja. La usara la lista de 10.5. */
+    suspend fun termVersions(slug: String, origin: TermOrigin): Result<List<TermVersion>> =
+        corpusResult { versionDao().forTerm(slug, origin).map { it.toDomain() } }
+
+    /**
+     * El texto que el termino tenia antes de actualizarse, guardado como una copia mas.
+     *
+     * Se fecha con lo que la fuente diga de el; si no dice nada -los terminos importados antes de
+     * 10.1a no tienen fecha- se usa la de esta actualizacion, que al menos no inventa un dia
+     * anterior al que podemos justificar.
+     */
+    private fun baseVersion(
+        detail: TermDetail,
+        sourceUrl: String,
+        fallbackDate: String,
+    ): TermVersionEntity {
+        val known = detail.sources.firstOrNull { it.url == sourceUrl }?.retrievedAt
+        return TermVersionEntity(
+            uid = newVersionUid(),
+            slug = detail.slug,
+            origin = detail.origin,
+            summary = detail.summary,
+            content = detail.content,
+            contentSha256 = personalContentSha256(detail.content),
+            retrievedAt = known?.takeIf { it.isNotBlank() } ?: fallbackDate,
+            sourceUrl = sourceUrl,
+            isActive = false,
+            createdAt = nowIso(),
+        )
+    }
+
+    private suspend fun dropExcessVersions(slug: String, origin: TermOrigin) {
+        val versions = versionDao()
+        val excess = versionsToDrop(versions.forTerm(slug, origin).map { it.toDomain() })
+        if (excess.isNotEmpty()) versions.deleteByUid(excess)
+    }
+
+    // endregion
+
     suspend fun deletePersonalTerm(slug: String): Result<Unit> = corpusResult {
         journaling { database, recorder ->
             val now = nowIso()
@@ -1152,6 +1267,18 @@ private fun PersonalTermSourceEntity.toBackupSource() = BackupTermSource(
  * ser el suyo. Sin el segundo caso, un termino importado y despues reescrito seguiria diciendo
  * que su contenido es de la fuente.
  */
+private fun TermVersionEntity.toDomain() = TermVersion(
+    uid = uid,
+    slug = slug,
+    origin = origin,
+    summary = summary,
+    content = content,
+    contentSha256 = contentSha256,
+    retrievedAt = retrievedAt,
+    sourceUrl = sourceUrl,
+    isActive = isActive,
+)
+
 private fun PersonalTermSourceEntity.toDomain() = TermSource(
     kind = sourceKind,
     url = url,

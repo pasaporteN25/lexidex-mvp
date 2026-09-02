@@ -1,5 +1,6 @@
 package com.lexidex.app.data.knowledge
 
+import java.net.URI
 import java.net.URLEncoder
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -24,6 +25,41 @@ import kotlinx.serialization.json.Json
  * herencia: en una clase que existe justamente para acotar lo que sale a internet, esa es la unica
  * pieza que no conviene aflojar.
  */
+/**
+ * El resultado de busqueda equivalente a un articulo que ya tenemos guardado, para poder volver a
+ * pedirlo (tarea 10.4).
+ *
+ * Actualizar un termino parte de su URL, no de una busqueda: el usuario ya eligio el articulo
+ * alguna vez y volver a buscar por titulo podria traer otro. La URL guarda las dos cosas que
+ * `fetch` necesita, el idioma en el subdominio y el titulo en el path.
+ *
+ * Devuelve null para cualquier cosa que no sea un articulo de Wikipedia -incluido `wikipedia.org`
+ * sin idioma, que no dice de que edicion es-, y ahi la ficha simplemente no ofrece actualizar.
+ */
+fun wikipediaResultFromUrl(url: String): KnowledgeSearchResult? {
+    val parsed = runCatching { URI(url) }.getOrNull() ?: return null
+    if (parsed.scheme != "https" && parsed.scheme != "http") return null
+    val host = parsed.host?.lowercase().orEmpty()
+    if (!host.endsWith(".wikipedia.org")) return null
+    val language = host.removeSuffix(".wikipedia.org")
+    if (language.isBlank() || language.contains('.')) return null
+
+    val path = parsed.path.orEmpty()
+    if (!path.startsWith("/wiki/")) return null
+    // `URI.getPath` ya viene decodificado, asi que "John_P._O%27Neill" llega como el apostrofo:
+    // es la forma que `fetch` vuelve a codificar al armar su pedido.
+    val title = path.removePrefix("/wiki/")
+    if (title.isBlank()) return null
+
+    return KnowledgeSearchResult(
+        sourceId = "wikipedia",
+        externalId = title,
+        title = title.replace('_', ' '),
+        description = "",
+        language = language,
+    )
+}
+
 class WikipediaKnowledgeSource(
     private val getText: suspend (String) -> String = AllowlistedHttpFetcher(
         allowedHosts = setOf(WIKIPEDIA_HOST),
@@ -98,14 +134,55 @@ class WikipediaKnowledgeSource(
         val articleUrl = summary.contentUrls?.desktop?.page?.takeIf { it.isNotBlank() }
             ?: "https://$wikiLanguage.$WIKIPEDIA_HOST/wiki/${encodePathSegment(result.externalId)}"
 
+        // El resumen REST devuelve solo el primer parrafo. El paquete guarda la introduccion
+        // entera, asi que si esto trajera el resumen corto, actualizar un termino del paquete
+        // acortaria su texto y encima diria que el articulo cambio (ver WikipediaExtract.kt).
+        // Si la introduccion no llega -la API respondio pero sin extracto- queda el resumen, que
+        // es peor que nada y mejor que una ficha vacia.
+        val intro = introExtract(wikiLanguage, result.externalId)
+
         return KnowledgeArticle(
             title = summary.title.ifBlank { result.title },
             summary = summary.description.orEmpty(),
-            content = summary.extract,
+            content = intro ?: truncateWikipediaExtract(summary.extract),
             sourceUrl = articleUrl,
             language = summary.lang.ifBlank { wikiLanguage },
         )
     }
+
+    /**
+     * La introduccion completa por la Action API, igual que `tools/enrich_corpus.py`.
+     *
+     * `redirects` la sigue como la sigue el constructor del paquete, para que pedir el mismo
+     * titulo devuelva el mismo articulo de los dos lados.
+     */
+    private suspend fun introExtract(wikiLanguage: String, title: String): String? {
+        val url = "https://$wikiLanguage.$WIKIPEDIA_HOST/w/api.php" +
+            "?action=query&format=json&formatversion=2&prop=extracts" +
+            "&exintro=1&explaintext=1&redirects=1&titles=${encodeQuery(title)}"
+
+        val payload = runCatching { decode(ExtractResponse.serializer(), getText(url)) }
+            .getOrNull()
+            ?: return null
+        val extract = payload.query?.pages
+            ?.firstOrNull { it.missing != true && !it.extract.isNullOrBlank() }
+            ?.extract
+            ?: return null
+        return truncateWikipediaExtract(extract).takeIf { it.isNotBlank() }
+    }
+
+    @Serializable
+    private data class ExtractResponse(val query: ExtractQuery? = null)
+
+    @Serializable
+    private data class ExtractQuery(val pages: List<ExtractPage>? = null)
+
+    @Serializable
+    private data class ExtractPage(
+        val title: String = "",
+        val extract: String? = null,
+        val missing: Boolean? = null,
+    )
 
     private fun <T> decode(deserializer: kotlinx.serialization.DeserializationStrategy<T>, body: String): T =
         try {

@@ -120,7 +120,7 @@ fun LexidexNavHost(
         composable<TermDetailRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<TermDetailRoute>()
             val viewModel = viewModel<TermDetailViewModel>(
-                factory = TermDetailViewModel.factory(repository, route.slug),
+                factory = TermDetailViewModel.factory(repository, route.slug, knowledgeSources),
             )
             TermDetailScreen(
                 viewModel = viewModel,

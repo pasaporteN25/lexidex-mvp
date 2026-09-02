@@ -96,11 +96,12 @@ decidio.
    entrar entre tareas grandes, pero nunca debe demorar el arranque a proposito.
 4. **Articulo completo** (resto de la epica 4) - el mas grande de los que
    quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
-5. **Copias fechadas y versionadas del articulo** (epica 10) - la parte barata
-   ya se hizo el 2026-09-02: lo que se importa se fecha (10.1a), el paquete
-   quedo fechado sin re-traer nada (10.1b) y la fecha se lee en la ficha (10.2).
-   Lo que sigue se pone caro: 10.3 en adelante pide una tabla de versiones en la
-   base de usuario y una decision sobre el indice FTS.
+5. **Copias fechadas y versionadas del articulo** (epica 10) - avanzada el
+   2026-09-02 hasta 10.4 inclusive: se fecha lo que se importa (10.1a) y el
+   paquete (10.1b), la fecha se lee en la ficha (10.2), hay tabla de copias con
+   busqueda sobre la activa (10.3) y se puede actualizar un termino desde su
+   ficha (10.4). Quedan la lista de copias (10.5), la actualizacion masiva
+   (10.6), la verificacion a mano (10.7) y que las copias viajen (10.10).
 6. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
    al final de la epica 7.
 
@@ -1344,19 +1345,51 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
       parsear. Las dos superficies coinciden en los diez casos probados,
       incluida la basura.
       **Lo que la web no puede decir todavia** esta anotado en 10.8.
-- [ ] **10.3** _(Opus 5 · L)_ Tabla de versiones en la base de usuario:
-      contenido, resumen, fecha de captura, sha256 y cual esta activa, por slug
-      + origen. Migracion 2 -> 3 escrita a mano, como la de colecciones.
-      **Decision que hay que tomar aca**: el indice FTS del paquete se armo con
-      el texto del paquete, asi que una copia mas nueva guardada como capa **no
-      seria buscable** salvo que se indexe tambien. Hay que decidir si la
-      busqueda sigue al contenido activo o al empaquetado antes de escribir la
-      tabla.
-- [ ] **10.4** _(Sonnet 5 · M)_ Actualizar **un** termino desde su ficha:
-      pedirlo a la fuente, comparar sha256 con la copia que ya hay, y guardar
-      una version nueva solo si cambio. Si no cambio, decirlo ("sin cambios
-      desde el 19/08") en vez de duplicar. Es la unidad que pidio Lucas para no
-      obligar a actualizar todo.
+- [x] **10.3** ✅ Hecho el 2026-09-02. `term_versions` en la base de usuario,
+      con migracion **4 -> 5** y no 2 -> 3: la base ya iba por la 4 cuando se
+      escribio esta tarea. Una copia guarda texto, resumen, sha256 y la fecha en
+      que se la trajo, referenciada por slug + origen para que sobreviva a que
+      el paquete se reemplace entero, igual que favoritos y colecciones.
+      **Decision tomada con Lucas: la busqueda sigue al contenido activo.** No
+      alcanzo con indexar las copias: los terminos con copia activa ademas se
+      **sacan** de los resultados del catalogo de base, porque si no una palabra
+      que la copia nueva ya no dice los seguiria encontrando por el texto viejo.
+      La ficha ademas mueve la fecha de la fuente a la de la copia activa, para
+      no mostrar texto nuevo debajo de un "consultada el 19/08".
+      Retencion: las ultimas cinco, tirando la mas vieja y **nunca la activa**,
+      porque quedarse en una copia antigua es una eleccion del usuario. El tope
+      no es por espacio -una copia pesa 629 bytes, tres copias extra de los
+      4.425 terminos serian 8 MB- sino para que la lista de 10.5 se pueda leer.
+      Las sentencias de la migracion estan copiadas al pie de la letra del
+      `_Impl` que genera Room: Room crea los triggers del indice FTS al construir
+      la base pero no al migrarla, y despues compara, asi que `docid` en vez de
+      `rowid` bastaba para que fallara al abrir. El test inserta y borra una fila
+      para probar que el indice sigue de verdad a la tabla.
+      **Lo que todavia no hace**: las copias no viajan en el respaldo ni en la
+      sincronizacion (10.10).
+- [x] **10.4** ✅ Hecho el 2026-09-02. Boton "Actualizar desde la fuente" en la
+      ficha, para un termino a la vez. Aparece solo si la URL guardada se puede
+      volver a pedir, y parte de esa URL y no de una busqueda nueva: el usuario
+      ya eligio ese articulo, y buscar de nuevo por titulo podria traer otro.
+      Tres desenlaces: sin cambios -no escribe nada y dice "Sin cambios desde el
+      19/08/2026"-, texto nuevo -lo guarda y lo activa- o texto que ya teniamos
+      guardado inactivo, que se reactiva en vez de duplicarse.
+      La primera actualizacion guarda tambien **el texto de base** como una copia
+      mas. Sin eso actualizar seria un camino de ida: el paquete es de solo
+      lectura y no habria adonde volver.
+      **Un problema que aparecio recien en el emulador y no en los tests**: el
+      paquete se construyo con la introduccion completa del articulo (Action API,
+      `exintro`, recortada a 800 caracteres) y la aplicacion traia el resumen
+      corto del endpoint REST. Sobre "Poligenismo" eso eran 563 caracteres contra
+      323: actualizar acortaba el texto un 43% **y encima decia que el articulo
+      habia cambiado**, con el articulo intacto. Comparar hashes de textos
+      derivados distinto no dice nada. `fetch` ahora pide la introduccion por la
+      Action API igual que `enrich_corpus.py`, y `WikipediaExtract.kt` replica su
+      limpieza y su recorte, con los valores esperados sacados de correr la
+      version de Python. Verificado en el emulador: el mismo termino ahora
+      responde "Sin cambios desde el 19/08/2026" y no guarda ninguna fila.
+      El efecto secundario es bueno: los terminos propios creados desde el
+      buscador tambien traen ahora la introduccion entera y no el primer parrafo.
 - [ ] **10.5** _(Sonnet 5 · M)_ Lista de copias en la ficha: fechas, cual esta
       activa, elegir otra, borrar una. Borrar la activa deja activa la mas
       reciente que quede.
@@ -1368,6 +1401,14 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
       telefono hay ademas dos decisiones sin tomar: donde corre (hoy no hay
       WorkManager en el proyecto) y cuanto espacio se permite gastar, porque
       guardar varias copias multiplica los 10 MB que ya ocupa el paquete.
+- [ ] **10.10** _(Opus 5 · L)_ Que las copias guardadas viajen. Hoy
+      `term_versions` no entra ni al respaldo -exportar e importar pierde las
+      copias, aunque no los terminos- ni al contrato de sincronizacion, que fija
+      su lista de tablas (ADR 0004). El respaldo es lo urgente de los dos, porque
+      es perdida de datos silenciosa; sumarlo pide subir `BACKUP_FORMAT_VERSION`
+      a 3. La sincronizacion es mas cara y ademas hay que decidir si tiene
+      sentido: son copias del mismo articulo publico, y cada dispositivo puede
+      volver a traerlas por su cuenta.
 - [ ] **10.9** _(Haiku 4.5 · S)_ Las fuentes del paquete no llevan
       `license_name`: estan vacias en las 4.539, asi que la ficha dice "CC BY-SA"
       para un termino propio importado de Wikipedia y no lo dice para uno del
@@ -1424,7 +1465,9 @@ esta implementada: ver 5.1.)
   atribucion CC BY-SA antes de guardarlo.
 - Epica 3: si "colecciones" en algun momento necesita compartirse entre
   dispositivos (hoy no, ver 3.1).
-- Epica 10: cuantas copias por termino se guardan como maximo y cuanto espacio
-  se permite gastar; si la busqueda sigue al contenido activo o al empaquetado
-  (ver 10.3); y como se atribuye CC BY-SA cuando se guardan varias copias
+- Epica 10: **decidido el 2026-09-02.** La busqueda sigue al contenido activo
+  (ver 10.3) y se guardan las ultimas cinco copias por termino. El espacio dejo
+  de ser una pregunta al medirlo: una copia pesa 629 bytes de promedio, asi que
+  el tope existe para que la lista sea legible y no por lo que ocupa.
+  Sigue abierto como se atribuye CC BY-SA cuando se guardan varias copias
   fechadas del mismo articulo.

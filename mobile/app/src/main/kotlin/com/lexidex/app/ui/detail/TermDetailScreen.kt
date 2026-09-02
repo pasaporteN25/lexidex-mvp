@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
@@ -33,11 +34,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +81,8 @@ fun TermDetailScreen(
         onLabelClick = onLabelClick,
         onToggleFavorite = viewModel::onToggleFavorite,
         onOpenCollections = viewModel::onOpenCollectionPicker,
+        onRefresh = viewModel::onRefresh,
+        onRefreshMessageShown = viewModel::onRefreshMessageShown,
     )
 
     if (uiState.isCollectionPickerOpen) {
@@ -166,8 +173,19 @@ private fun TermDetailContent(
     onLabelClick: (TermLabelKind, String) -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenCollections: () -> Unit,
+    onRefresh: () -> Unit,
+    onRefreshMessageShown: () -> Unit,
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    // "Sin cambios desde el 19/08" es informacion de un momento, no un estado de la ficha: se dice
+    // y se va, sin dejar un cartel que despues haya que cerrar.
+    LaunchedEffect(uiState.refreshMessage) {
+        val message = uiState.refreshMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        onRefreshMessageShown()
+    }
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {},
@@ -191,6 +209,21 @@ private fun TermDetailContent(
                                 Icons.Default.LibraryAdd,
                                 contentDescription = "Agregar a una coleccion",
                             )
+                        }
+                        if (uiState.canRefresh) {
+                            IconButton(onClick = onRefresh, enabled = !uiState.isRefreshing) {
+                                if (uiState.isRefreshing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.height(20.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Actualizar desde la fuente",
+                                    )
+                                }
+                            }
                         }
                         if (term.editable) {
                             IconButton(onClick = { onEditClick(term.slug) }) {
