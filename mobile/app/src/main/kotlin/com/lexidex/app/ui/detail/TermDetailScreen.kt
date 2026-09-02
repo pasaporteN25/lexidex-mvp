@@ -20,11 +20,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,6 +56,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
+import com.lexidex.app.domain.TermVersion
+import com.lexidex.app.domain.versionLabels
 import com.lexidex.app.ui.components.ChipRole
 import com.lexidex.app.data.userdb.sourceOfContent
 import com.lexidex.app.domain.TermOrigin
@@ -83,6 +88,8 @@ fun TermDetailScreen(
         onOpenCollections = viewModel::onOpenCollectionPicker,
         onRefresh = viewModel::onRefresh,
         onRefreshMessageShown = viewModel::onRefreshMessageShown,
+        onSelectVersion = viewModel::onSelectVersion,
+        onDeleteVersion = viewModel::onDeleteVersion,
     )
 
     if (uiState.isCollectionPickerOpen) {
@@ -175,6 +182,8 @@ private fun TermDetailContent(
     onOpenCollections: () -> Unit,
     onRefresh: () -> Unit,
     onRefreshMessageShown: () -> Unit,
+    onSelectVersion: (String) -> Unit,
+    onDeleteVersion: (String) -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // "Sin cambios desde el 19/08" es informacion de un momento, no un estado de la ficha: se dice
@@ -241,7 +250,14 @@ private fun TermDetailContent(
                     CircularProgressIndicator()
                 }
                 uiState.term != null ->
-                    TermDetailBody(uiState.term, onRelationClick, onLabelClick)
+                    TermDetailBody(
+                        uiState.term,
+                        onRelationClick,
+                        onLabelClick,
+                        uiState.versions,
+                        onSelectVersion,
+                        onDeleteVersion,
+                    )
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         uiState.errorMessage ?: "No se encontro ese termino.",
@@ -258,6 +274,9 @@ private fun TermDetailBody(
     term: TermDetail,
     onRelationClick: (String) -> Unit,
     onLabelClick: (TermLabelKind, String) -> Unit,
+    versions: List<TermVersion>,
+    onSelectVersion: (String) -> Unit,
+    onDeleteVersion: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -288,6 +307,18 @@ private fun TermDetailBody(
         if (term.sources.isNotEmpty()) {
             SectionLabel("PROCEDENCIA")
             term.sources.forEach { source -> SourceRow(source) }
+        }
+        if (versions.isNotEmpty()) {
+            SectionLabel("COPIAS GUARDADAS")
+            val labels = versionLabels(versions)
+            versions.forEach { version ->
+                VersionRow(
+                    version = version,
+                    date = labels[version.uid],
+                    onSelect = { onSelectVersion(version.uid) },
+                    onDelete = { onDeleteVersion(version.uid) },
+                )
+            }
         }
         ProvenanceFootnote(term)
         if (term.relations.isNotEmpty()) {
@@ -449,6 +480,66 @@ private fun SourceRow(source: TermSource) {
             }
         }
         TermChip(text = source.kind, role = ChipRole.Tag)
+    }
+}
+
+/**
+ * Una copia guardada, con la fecha en que se la trajo.
+ *
+ * Tocar la fila cambia cual se lee -y cual se busca-, que es la decision principal; borrar esta
+ * detras de un icono aparte para que no se confundan. La activa no ofrece borrarse desde aca sin
+ * antes elegir otra: hacerlo obligaria a decidir por el usuario cual pasa a leerse, y esa eleccion
+ * es justamente la que esta lista existe para darle.
+ */
+@Composable
+private fun VersionRow(
+    version: TermVersion,
+    date: String?,
+    onSelect: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val title = date?.let { "Copia del $it" } ?: "Copia sin fecha"
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !version.isActive, onClick = onSelect)
+            .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(LexidexSpacing.tight),
+    ) {
+        Icon(
+            if (version.isActive) Icons.Default.CheckCircle else Icons.Outlined.Circle,
+            contentDescription = null,
+            tint = if (version.isActive) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.height(18.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                if (version.isActive) "La que estas leyendo" else "Tocar para leer esta",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (!version.isActive) {
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = date?.let { "Borrar la copia del $it" }
+                        ?: "Borrar la copia sin fecha",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 

@@ -47,3 +47,44 @@ fun versionsToDrop(versions: List<TermVersion>, keep: Int = MAX_STORED_VERSIONS)
     val expendable = versions.filterNot { it.isActive }.sortedBy { it.retrievedAt }
     return expendable.take(versions.size - keep).map { it.uid }
 }
+
+/**
+ * Cual queda activa despues de borrar [deletedUid], o null si no queda ninguna.
+ *
+ * Borrar la copia que se estaba leyendo no puede dejar al termino sin texto, asi que pasa a la mas
+ * reciente de las que quedan: es la que mas se parece a lo que el usuario venia leyendo. Null
+ * significa que se borraron todas, y entonces el termino vuelve a leerse de su texto de base, que
+ * es de donde salio antes de la primera actualizacion.
+ *
+ * Borrar una copia inactiva no cambia nada, y devuelve la que ya estaba activa.
+ */
+fun nextActiveAfterDeleting(versions: List<TermVersion>, deletedUid: String): String? {
+    val remaining = versions.filterNot { it.uid == deletedUid }
+    if (remaining.isEmpty()) return null
+    remaining.firstOrNull { it.isActive }?.let { return it.uid }
+    return remaining.maxByOrNull { it.retrievedAt }?.uid
+}
+
+/**
+ * Con que fecha se nombra cada copia en la lista de la ficha.
+ *
+ * Devuelve solo la fecha y no la frase entera, para que quien la muestre arme "Copia del ..." o
+ * "Borrar la copia del ..." sin que quede una mayuscula en medio de una oracion.
+ *
+ * Normalmente basta el dia. Cuando dos copias caen el mismo -actualizar dos veces en una tarde, que
+ * es justo cuando uno esta comparando- dos renglones identicos no dejan elegir, asi que a esas se
+ * les agrega la hora. Solo a esas: ponersela a todas seria ruido en el caso normal, que es una
+ * copia cada varios meses.
+ */
+fun versionLabels(versions: List<TermVersion>): Map<String, String?> {
+    val days = versions.groupingBy { retrievedDate(it.retrievedAt) }.eachCount()
+    return versions.associate { version ->
+        val day = retrievedDate(version.retrievedAt)
+        val label = when {
+            day == null -> null
+            days.getOrDefault(day, 0) > 1 -> retrievedDateTime(version.retrievedAt) ?: day
+            else -> day
+        }
+        version.uid to label
+    }
+}

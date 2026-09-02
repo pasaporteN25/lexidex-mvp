@@ -34,3 +34,19 @@ fun retrievedDate(retrievedAt: String?, zone: ZoneId = ZoneId.systemDefault()): 
         ?: return null
     return day.format(DAY_MONTH_YEAR)
 }
+
+/**
+ * La misma fecha con la hora, para cuando dos copias caen el mismo dia.
+ *
+ * Solo se usa ahi: la hora no le importa a nadie hasta que dos renglones dicen lo mismo y hay que
+ * elegir entre ellos. Devuelve null con lo que no sea un instante, incluida una fecha sin hora, que
+ * no tiene ninguna que mostrar.
+ */
+fun retrievedDateTime(retrievedAt: String?, zone: ZoneId = ZoneId.systemDefault()): String? {
+    val raw = retrievedAt?.trim().orEmpty()
+    if (raw.isEmpty()) return null
+    val moment = runCatching { Instant.parse(raw).atZone(zone) }.getOrNull() ?: return null
+    return moment.format(DAY_MONTH_YEAR_TIME)
+}
+
+private val DAY_MONTH_YEAR_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")

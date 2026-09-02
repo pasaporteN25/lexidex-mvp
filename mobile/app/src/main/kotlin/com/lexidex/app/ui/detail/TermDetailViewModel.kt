@@ -11,6 +11,7 @@ import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.domain.TermCollection
 import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermRefresh
+import com.lexidex.app.domain.TermVersion
 import com.lexidex.app.domain.retrievedDate
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -40,6 +41,13 @@ data class TermDetailUiState(
     val isRefreshing: Boolean = false,
     /** El resultado de esa consulta, para decirlo y despues olvidarlo. */
     val refreshMessage: String? = null,
+    /**
+     * Las copias guardadas, de la mas nueva a la mas vieja.
+     *
+     * Vacia mientras el termino no se haya actualizado nunca: sin nada que elegir la ficha no
+     * muestra la seccion, que si no seria una lista de un solo elemento sin ninguna decision.
+     */
+    val versions: List<TermVersion> = emptyList(),
 )
 
 class TermDetailViewModel(
@@ -69,6 +77,7 @@ class TermDetailViewModel(
                         )
                     }
                     if (term != null) {
+                        loadVersions(term)
                         repository.recordHistoryView(term.slug, term.origin)
                         repository.isFavorite(term.slug, term.origin).onSuccess { favorite ->
                             _uiState.update { it.copy(isFavorite = favorite) }
@@ -205,6 +214,37 @@ class TermDetailViewModel(
 
     fun onRefreshMessageShown() {
         _uiState.update { it.copy(refreshMessage = null) }
+    }
+
+    private suspend fun loadVersions(term: TermDetail) {
+        val stored = repository.termVersions(term.slug, term.origin).getOrElse { emptyList() }
+        // Con una sola copia no hay eleccion que ofrecer: es el texto que ya se esta leyendo.
+        _uiState.update { it.copy(versions = if (stored.size > 1) stored else emptyList()) }
+    }
+
+    fun onSelectVersion(uid: String) {
+        val term = _uiState.value.term ?: return
+        if (_uiState.value.versions.firstOrNull { it.uid == uid }?.isActive == true) return
+        viewModelScope.launch {
+            repository.activateVersion(uid).fold(
+                onSuccess = { load() },
+                onFailure = { error ->
+                    _uiState.update { it.copy(refreshMessage = error.toUserMessage()) }
+                },
+            )
+        }
+    }
+
+    fun onDeleteVersion(uid: String) {
+        val term = _uiState.value.term ?: return
+        viewModelScope.launch {
+            repository.deleteVersion(term.slug, term.origin, uid).fold(
+                onSuccess = { load() },
+                onFailure = { error ->
+                    _uiState.update { it.copy(refreshMessage = error.toUserMessage()) }
+                },
+            )
+        }
     }
 
     // endregion

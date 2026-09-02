@@ -1390,9 +1390,21 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
       responde "Sin cambios desde el 19/08/2026" y no guarda ninguna fila.
       El efecto secundario es bueno: los terminos propios creados desde el
       buscador tambien traen ahora la introduccion entera y no el primer parrafo.
-- [ ] **10.5** _(Sonnet 5 · M)_ Lista de copias en la ficha: fechas, cual esta
-      activa, elegir otra, borrar una. Borrar la activa deja activa la mas
-      reciente que quede.
+- [x] **10.5** ✅ Hecho el 2026-09-02. Seccion "COPIAS GUARDADAS" en la ficha,
+      con la fecha de cada una, cual se esta leyendo, y tocar para cambiar. Solo
+      aparece con mas de una copia: con una sola no hay eleccion que ofrecer.
+      Borrar la activa deja activa la mas reciente que quede, y borrar la ultima
+      devuelve el termino a su texto de base. La regla se decide **antes** de
+      borrar, porque despues la fila ya no esta para saber si era la activa.
+      La activa no ofrece borrarse: hacerlo obligaria a elegir por el usuario
+      cual pasa a leerse, que es justo la decision que esta lista le da.
+      Dos copias del mismo dia llevan tambien la hora. Se vio en el emulador:
+      actualizar dos veces en una tarde dejaba dos renglones identicos entre los
+      que no se podia elegir. Solo las repetidas la llevan; ponersela a todas
+      seria ruido en el caso normal, que es una copia cada varios meses.
+      Verificado en el emulador de punta a punta: cambiar de copia cambia el
+      texto **y da vuelta la linea de autoria sola**, porque el hash de la copia
+      activa vuelve a coincidir con el de la fuente.
 - [ ] **10.6** _(Opus 5 · L)_ Actualizacion masiva desde opciones, y es la
       tarea pesada: **por lotes, lenta, asincronica, cancelable y capaz de
       retomar**. El antecedente esta medido en la epica 4: ~4.500 pedidos

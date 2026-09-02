@@ -18,6 +18,7 @@ import com.lexidex.app.data.userdb.entity.TermVersionEntity
 import com.lexidex.app.domain.RefreshDecision
 import com.lexidex.app.domain.TermRefresh
 import com.lexidex.app.domain.TermVersion
+import com.lexidex.app.domain.nextActiveAfterDeleting
 import com.lexidex.app.domain.refreshDecision
 import com.lexidex.app.domain.versionsToDrop
 import com.lexidex.app.data.userdb.entity.UserTermEntity
@@ -780,9 +781,27 @@ class CorpusRepository(
         }
     }
 
-    /** Las copias de un termino, de la mas nueva a la mas vieja. La usara la lista de 10.5. */
+    /** Las copias de un termino, de la mas nueva a la mas vieja. */
     suspend fun termVersions(slug: String, origin: TermOrigin): Result<List<TermVersion>> =
         corpusResult { versionDao().forTerm(slug, origin).map { it.toDomain() } }
+
+    /** Deja [uid] como la copia que se lee y se busca. */
+    suspend fun activateVersion(uid: String): Result<Unit> =
+        corpusResult { versionDao().activate(uid) }
+
+    /**
+     * Borra una copia y deja activa la que corresponda.
+     *
+     * Se decide **antes** de borrar, porque despues la fila ya no esta para saber si era la activa.
+     * Borrar la ultima que quedaba devuelve el termino a su texto de base.
+     */
+    suspend fun deleteVersion(slug: String, origin: TermOrigin, uid: String): Result<Unit> =
+        corpusResult {
+            val versions = versionDao()
+            val next = nextActiveAfterDeleting(versions.forTerm(slug, origin).map { it.toDomain() }, uid)
+            versions.deleteByUid(listOf(uid))
+            if (next != null) versions.activate(next)
+        }
 
     /**
      * El texto que el termino tenia antes de actualizarse, guardado como una copia mas.
