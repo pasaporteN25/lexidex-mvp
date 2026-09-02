@@ -48,6 +48,10 @@ interface TermDao {
     @Query("SELECT * FROM terms WHERE slug = :slug LIMIT 1")
     suspend fun getBySlug(slug: String): TermEntity?
 
+    /** Varios de una vez, para no hacer una consulta por cada resultado de busqueda. */
+    @Query("SELECT * FROM terms WHERE slug IN (:slugs)")
+    suspend fun bySlugs(slugs: List<String>): List<TermEntity>
+
     @Query("SELECT * FROM terms WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): TermEntity?
 

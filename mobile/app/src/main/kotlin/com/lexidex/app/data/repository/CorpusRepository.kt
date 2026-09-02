@@ -13,6 +13,7 @@ import com.lexidex.app.data.userdb.stampImportedContent
 import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.CollectionEntity
 import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
+import com.lexidex.app.data.userdb.entity.TermVersionEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 import com.lexidex.app.domain.CatalogFilter
 import com.lexidex.app.domain.HistoryItem
@@ -117,21 +118,90 @@ class CorpusRepository(
         if (matchQuery.isBlank()) {
             emptyList()
         } else {
-            val packageResults = termDao().search(matchQuery, DEFAULT_SEARCH_LIMIT, 0).map { it.toSummary() }
-            val personalResults = userTermDao().search(matchQuery, DEFAULT_SEARCH_LIMIT, 0).map { it.toSummary() }
-            packageResults + personalResults
+            val versions = versionDao()
+            // Los terminos con una copia activa se buscan por esa copia y **se sacan del catalogo
+            // de base**: si no, una palabra que la copia nueva ya no dice seguiria encontrandolos
+            // por el texto viejo, que no es el que se va a leer.
+            val overriddenPackage = versions.overriddenSlugs(TermOrigin.PACKAGE).toSet()
+            val overriddenPersonal = versions.overriddenSlugs(TermOrigin.PERSONAL).toSet()
+
+            val packageResults = termDao().search(matchQuery, DEFAULT_SEARCH_LIMIT, 0)
+                .filterNot { it.slug in overriddenPackage }
+                .map { it.toSummary() }
+            val personalResults = userTermDao().search(matchQuery, DEFAULT_SEARCH_LIMIT, 0)
+                .filterNot { it.slug in overriddenPersonal }
+                .map { it.toSummary() }
+            val versionResults = summariesForVersions(versions.search(matchQuery, DEFAULT_SEARCH_LIMIT))
+
+            versionResults + packageResults + personalResults
+        }
+    }
+
+    /**
+     * El resumen de los terminos cuya copia activa coincidio con la busqueda.
+     *
+     * La copia guarda el texto pero no el titulo ni el idioma, que no cambian al actualizar, asi
+     * que se los pide al termino de base y solo se reemplaza lo que la copia si tiene.
+     */
+    private suspend fun summariesForVersions(hits: List<TermVersionEntity>): List<TermSummary> {
+        if (hits.isEmpty()) return emptyList()
+        val byOrigin = hits.groupBy { it.origin }
+        val packageBase = byOrigin[TermOrigin.PACKAGE]
+            ?.let { rows -> termDao().bySlugs(rows.map { it.slug }).associateBy { it.slug } }
+            .orEmpty()
+        val personalBase = byOrigin[TermOrigin.PERSONAL]
+            ?.let { rows -> userTermDao().bySlugs(rows.map { it.slug }).associateBy { it.slug } }
+            .orEmpty()
+
+        return hits.mapNotNull { version ->
+            val base = when (version.origin) {
+                TermOrigin.PACKAGE -> packageBase[version.slug]?.toSummary()
+                TermOrigin.PERSONAL -> personalBase[version.slug]?.toSummary()
+            }
+            // Una copia sin termino de base quedo colgada -el paquete cambio y el slug ya no esta-
+            // y no hay nada que mostrar; 10.6 se ocupa de limpiarlas.
+            base?.copy(summary = version.summary.ifBlank { base.summary })
         }
     }
 
     /** Personal terms win on a slug collision, matching `get_catalog_term` in backend/lexidex_api.py. */
     suspend fun getTermDetail(slug: String): Result<TermDetail?> = corpusResult {
         val personal = userTermDao().getBySlug(slug)
-        if (personal != null) {
+        val detail = if (personal != null) {
             buildPersonalDetail(personal)
         } else {
             val dao = termDao()
             dao.getBySlug(slug)?.let { buildDetail(dao, it) }
         }
+        detail?.let { withActiveVersion(it) }
+    }
+
+    /**
+     * Reemplaza el texto por la copia activa, si el termino tiene una.
+     *
+     * Tambien mueve la fecha de la fuente de la que salio esa copia. Es lo que evita que la ficha
+     * muestre el texto nuevo debajo de un "consultada el 19/08": las dos cosas tienen que hablar
+     * de la misma copia, que es justamente lo que la epica vino a arreglar.
+     *
+     * Un termino sin copias guardadas se lee de su texto de base y no paga ninguna consulta de
+     * mas mas alla de esta, que es un indice por slug + origen.
+     */
+    private suspend fun withActiveVersion(detail: TermDetail): TermDetail {
+        val version = versionDao().active(detail.slug, detail.origin) ?: return detail
+        return detail.copy(
+            summary = version.summary.ifBlank { detail.summary },
+            content = version.content,
+            sources = detail.sources.map { source ->
+                if (source.url == version.sourceUrl && version.sourceUrl.isNotBlank()) {
+                    source.copy(
+                        retrievedAt = version.retrievedAt,
+                        contentSha256 = version.contentSha256,
+                    )
+                } else {
+                    source
+                }
+            },
+        )
     }
 
     /** The same term for everyone on a given day: a stable rank across both catalogs, package first. */
@@ -951,6 +1021,7 @@ class CorpusRepository(
     private suspend fun favoriteDao() = userDatabaseProvider.get().favoriteDao()
     private suspend fun historyDao() = userDatabaseProvider.get().historyDao()
     private suspend fun collectionDao() = userDatabaseProvider.get().collectionDao()
+    private suspend fun versionDao() = userDatabaseProvider.get().termVersionDao()
 
     private suspend fun buildDetail(dao: TermDao, term: TermEntity): TermDetail {
         // id is nullable only because Room requires that type for an INTEGER PRIMARY KEY rowid

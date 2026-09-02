@@ -23,6 +23,10 @@ interface UserTermDao {
     @Query("SELECT * FROM user_terms WHERE slug = :slug LIMIT 1")
     suspend fun getBySlug(slug: String): UserTermEntity?
 
+    /** Varios de una vez, para no hacer una consulta por cada resultado de busqueda. */
+    @Query("SELECT * FROM user_terms WHERE slug IN (:slugs)")
+    suspend fun bySlugs(slugs: List<String>): List<UserTermEntity>
+
     @Query("SELECT * FROM user_terms WHERE uid = :uid LIMIT 1")
     suspend fun getByUid(uid: String): UserTermEntity?
 

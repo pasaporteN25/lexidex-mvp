@@ -118,6 +118,76 @@ class UserDatabaseMigrationTest {
         assertEquals(1L, scalarLong(connection, "SELECT COUNT(*) FROM collection_terms WHERE collection_id = 999"))
     }
 
+    /**
+     * Las sentencias de la 4 -> 5 estan copiadas del `_Impl` que genera Room, asi que lo que hay
+     * que probar no es que corran sino que **el indice quede vivo**: el trigger es la parte que
+     * se copia mal sin que nada se queje hasta que una busqueda no encuentra lo que existe.
+     */
+    @Test
+    fun `v5 adds the versions table with a working search index`() = runTest {
+        MIGRATION_2_3.migrate(connection)
+        MIGRATION_3_4.migrate(connection)
+        MIGRATION_4_5.migrate(connection)
+
+        connection.execSQL(
+            """
+            INSERT INTO term_versions
+              (uid, slug, origin, summary, content, content_sha256, retrieved_at, source_url,
+               is_active, created_at)
+            VALUES
+              ('ver_1', 'poligenismo', 'package', 'teoria', 'El poligenismo sostiene una hipotesis',
+               'abc123', '2026-08-19T23:28:52Z', 'https://es.wikipedia.org/wiki/Poligenismo',
+               1, '2026-09-02T00:00:00Z')
+            """.trimIndent(),
+        )
+
+        // Si el trigger AFTER INSERT no se copio bien, la fila existe y el indice esta vacio.
+        assertEquals(
+            1L,
+            scalarLong(
+                connection,
+                "SELECT COUNT(*) FROM term_versions_fts WHERE term_versions_fts MATCH 'poligenismo'",
+            ),
+        )
+        // El tokenizador tiene que ser el mismo que el de los otros dos indices, o buscar sin
+        // acentos encontraria en una tabla y no en la otra.
+        assertEquals(
+            1L,
+            scalarLong(
+                connection,
+                "SELECT COUNT(*) FROM term_versions_fts WHERE term_versions_fts MATCH 'hipótesis'",
+            ),
+        )
+
+        connection.execSQL("DELETE FROM term_versions WHERE uid = 'ver_1'")
+
+        // Y si el BEFORE DELETE no se copio bien, el indice sigue devolviendo lo que ya no esta.
+        assertEquals(
+            0L,
+            scalarLong(
+                connection,
+                "SELECT COUNT(*) FROM term_versions_fts WHERE term_versions_fts MATCH 'poligenismo'",
+            ),
+        )
+    }
+
+    @Test
+    fun `v5 does not touch what was already there`() = runTest {
+        seedLegacyData(connection)
+
+        MIGRATION_2_3.migrate(connection)
+        MIGRATION_3_4.migrate(connection)
+        val termsBefore = scalarLong(connection, "SELECT COUNT(*) FROM user_terms")
+        val revisionBefore = scalarLong(connection, "SELECT revision FROM user_terms")
+
+        MIGRATION_4_5.migrate(connection)
+
+        assertEquals(termsBefore, scalarLong(connection, "SELECT COUNT(*) FROM user_terms"))
+        assertEquals(revisionBefore, scalarLong(connection, "SELECT revision FROM user_terms"))
+        // Un termino que nunca se actualizo no tiene copias: la tabla nace vacia.
+        assertEquals(0L, scalarLong(connection, "SELECT COUNT(*) FROM term_versions"))
+    }
+
     private fun createLegacyV2Schema(connection: SQLiteConnection) {
         connection.execSQL(
             """

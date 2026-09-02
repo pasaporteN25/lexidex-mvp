@@ -322,6 +322,45 @@ internal val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+/**
+ * Copias fechadas del texto de un termino (tarea 10.3).
+ *
+ * Solo agrega: no toca ni una fila de lo que ya habia, porque un termino que nunca se actualizo no
+ * tiene copias guardadas y se sigue leyendo de su texto de base. Por eso no hace falta migrar
+ * datos, solo crear las tablas.
+ *
+ * El indice FTS se crea a mano con sus tres triggers porque Room los genera al crear la base desde
+ * cero, no al migrar una que ya existe. Los nombres y la forma son los que Room espera encontrar
+ * despues, o la validacion de esquema al abrir fallaria.
+ */
+/**
+ * Copias fechadas del texto de un termino (tarea 10.3).
+ *
+ * Solo agrega: no toca una sola fila de lo que ya habia. Un termino que nunca se actualizo no
+ * tiene copias guardadas y se sigue leyendo de su texto de base, asi que no hay datos que migrar.
+ *
+ * **Las sentencias son las que genera Room, copiadas al pie de la letra** desde
+ * `LexidexUserDatabase_Impl.createAllTables`. Room crea las tablas y los triggers del indice FTS
+ * al construir la base desde cero, pero no al migrar una que ya existe, y despues compara lo que
+ * encuentra contra lo que habria creado el: una diferencia tan chica como `docid` en vez de
+ * `rowid` en un trigger hace fallar la validacion al abrir. Si el esquema de `TermVersionEntity`
+ * cambia, hay que volver a copiarlas de ahi y no editarlas a mano.
+ */
+internal val MIGRATION_4_5 = object : Migration(4, 5) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("CREATE TABLE IF NOT EXISTS `term_versions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `uid` TEXT NOT NULL, `slug` TEXT NOT NULL, `origin` TEXT NOT NULL, `summary` TEXT NOT NULL, `content` TEXT NOT NULL, `content_sha256` TEXT NOT NULL, `retrieved_at` TEXT NOT NULL, `source_url` TEXT NOT NULL, `is_active` INTEGER NOT NULL, `created_at` TEXT NOT NULL)")
+        connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_term_versions_uid` ON `term_versions` (`uid`)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_term_versions_slug_origin` ON `term_versions` (`slug`, `origin`)")
+        connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_term_versions_slug_origin_content_sha256` ON `term_versions` (`slug`, `origin`, `content_sha256`)")
+        connection.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS `term_versions_fts` USING FTS5(`summary`, `content`, tokenize=`unicode61 remove_diacritics 2`, content=`term_versions`)")
+        connection.execSQL("CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_term_versions_fts_BEFORE_UPDATE BEFORE UPDATE ON `term_versions` BEGIN DELETE FROM `term_versions_fts` WHERE `rowid`=OLD.`rowid`; END")
+        connection.execSQL("CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_term_versions_fts_BEFORE_DELETE BEFORE DELETE ON `term_versions` BEGIN DELETE FROM `term_versions_fts` WHERE `rowid`=OLD.`rowid`; END")
+        connection.execSQL("CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_term_versions_fts_AFTER_UPDATE AFTER UPDATE ON `term_versions` BEGIN INSERT INTO `term_versions_fts`(`rowid`, `summary`, `content`) VALUES (NEW.`rowid`, NEW.`summary`, NEW.`content`); END")
+        connection.execSQL("CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_term_versions_fts_AFTER_INSERT AFTER INSERT ON `term_versions` BEGIN INSERT INTO `term_versions_fts`(`rowid`, `summary`, `content`) VALUES (NEW.`rowid`, NEW.`summary`, NEW.`content`); END")
+    }
+}
+
+
 private fun isHttpUrlForMigration(value: String): Boolean = try {
     val uri = URI(value)
     uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()
@@ -376,7 +415,7 @@ class UserDatabaseProvider(
             )
                 .setDriver(BundledSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
         }
     }

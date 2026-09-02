@@ -8,6 +8,7 @@ import com.lexidex.app.data.userdb.dao.FavoriteDao
 import com.lexidex.app.data.userdb.dao.HistoryDao
 import com.lexidex.app.data.userdb.dao.PersonalTermSourceDao
 import com.lexidex.app.data.userdb.dao.SyncStorageDao
+import com.lexidex.app.data.userdb.dao.TermVersionDao
 import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.CollectionEntity
 import com.lexidex.app.data.userdb.entity.CollectionTermEntity
@@ -17,6 +18,8 @@ import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
 import com.lexidex.app.data.userdb.entity.SyncJournalEntity
 import com.lexidex.app.data.userdb.entity.SyncReplicaCursorEntity
 import com.lexidex.app.data.userdb.entity.SyncTombstoneEntity
+import com.lexidex.app.data.userdb.entity.TermVersionEntity
+import com.lexidex.app.data.userdb.entity.TermVersionFtsEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 import com.lexidex.app.data.userdb.entity.UserTermFtsEntity
 
@@ -37,8 +40,10 @@ import com.lexidex.app.data.userdb.entity.UserTermFtsEntity
         SyncJournalEntity::class,
         SyncReplicaCursorEntity::class,
         SyncTombstoneEntity::class,
+        TermVersionEntity::class,
+        TermVersionFtsEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 @ColumnTypeConverters(StringListConverter::class, TermOriginConverter::class)
@@ -49,4 +54,5 @@ abstract class LexidexUserDatabase : RoomDatabase() {
     abstract fun historyDao(): HistoryDao
     abstract fun collectionDao(): CollectionDao
     abstract fun syncStorageDao(): SyncStorageDao
+    abstract fun termVersionDao(): TermVersionDao
 }
