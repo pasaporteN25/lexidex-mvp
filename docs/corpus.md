@@ -114,7 +114,7 @@ Referencias oficiales:
 Reconstruir el paquete semilla:
 
 ```bash
-python tools/build_corpus.py data/raw/palabras.txt data/packages/palabras-v0.4.0-enriched.1 --raw-copy data/raw/palabras.txt --package-id lexidex.palabras --package-version 0.4.0-enriched.1
+python tools/build_corpus.py data/raw/palabras.txt data/packages/palabras-v0.5.0-dated.1 --raw-copy data/raw/palabras.txt --package-id lexidex.palabras --package-version 0.5.0-dated.1
 ```
 
 `build_corpus.py` produce un catalogo semilla: titulo y procedencia, sin
@@ -122,8 +122,18 @@ extracto. Para dejarlo como la version vigente hay que enriquecerlo despues,
 que es la pasada que sale a Wikipedia y reescribe el manifiesto:
 
 ```bash
-python tools/enrich_corpus.py data/packages/palabras-v0.4.0-enriched.1/lexidex.sqlite --package-version 0.4.0-enriched.1
-python tools/enrich_corpus.py data/packages/palabras-v0.4.0-enriched.1/lexidex.sqlite --categories --package-version 0.4.0-enriched.1
+python tools/enrich_corpus.py data/packages/palabras-v0.5.0-dated.1/lexidex.sqlite --package-version 0.5.0-dated.1
+python tools/enrich_corpus.py data/packages/palabras-v0.5.0-dated.1/lexidex.sqlite --categories --package-version 0.5.0-dated.1
+```
+
+El enriquecimiento fecha cada fuente con el instante en que trajo su extracto,
+asi que un paquete construido de cero ya sale fechado. Para uno enriquecido
+antes de que eso existiera, `--stamp-dates` copia la fecha desde
+`terms.updated_at` -que es ese mismo instante- **sin volver a pedir nada a la
+red y sin cambiar una palabra del contenido**:
+
+```bash
+python tools/enrich_corpus.py data/packages/<paquete>/lexidex.sqlite --stamp-dates --package-version <version>
 ```
 
 Ejecutar las pruebas:

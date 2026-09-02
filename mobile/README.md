@@ -11,7 +11,7 @@ Studio (`mobile/settings.gradle.kts`, `mobile/build.gradle.kts`,
 ## Contrato offline
 
 La aplicacion instala localmente el paquete versionado
-`data/packages/palabras-v0.4.0-enriched.1/` (bundleado como asset en
+`data/packages/palabras-v0.5.0-dated.1/` (bundleado como asset en
 `mobile/app/src/main/assets/packages/`) y verifica su checksum contra
 `manifest.json` antes de activarlo, con el mismo criterio fail-closed que
 `verify_package_checksum` en `backend/lexidex_api.py`: ver

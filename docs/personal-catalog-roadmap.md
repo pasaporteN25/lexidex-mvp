@@ -97,10 +97,10 @@ decidio.
 4. **Articulo completo** (resto de la epica 4) - el mas grande de los que
    quedan, y el unico que obliga a sanear HTML en vez de solo escapar.
 5. **Copias fechadas y versionadas del articulo** (epica 10) - la parte barata
-   ya se hizo el 2026-09-02: lo que se importa se fecha (10.1a) y la fecha se
-   lee en la ficha (10.2). Lo que sigue se pone caro rapido: 10.1b obliga a
-   re-enriquecer el paquete entero, y 10.3 en adelante pide una tabla de
-   versiones y una decision sobre el indice FTS.
+   ya se hizo el 2026-09-02: lo que se importa se fecha (10.1a), el paquete
+   quedo fechado sin re-traer nada (10.1b) y la fecha se lee en la ficha (10.2).
+   Lo que sigue se pone caro: 10.3 en adelante pide una tabla de versiones en la
+   base de usuario y una decision sobre el indice FTS.
 6. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
    al final de la epica 7.
 
@@ -1264,9 +1264,9 @@ mano.
   en `docs/corpus-schema.sql` pero `tools/enrich_corpus.py` nunca la escribio,
   asi que hoy no hay ninguna fecha por articulo que mostrar. Lo unico fechado es
   `package_meta.created_at`, que es cuando se construyo el paquete entero.
-  **Sigue siendo cierto para el paquete** (eso es 10.1b), pero desde el
-  2026-09-02 ya no lo es para los terminos propios: lo que se importa se fecha
-  al importarlo (10.1a). Aparecio ademas algo que la medicion no habia mirado:
+  **Dejo de ser cierto el 2026-09-02**, en las dos puntas: lo que se importa se
+  fecha al importarlo (10.1a) y el paquete quedo fechado con la fecha real de
+  cada extracto (10.1b). Aparecio ademas algo que la medicion no habia mirado:
   el codigo tenia la fecha en la mano al importar -el mismo instante con el que
   sella el termino- y la descartaba escribiendo `retrievedAt = null`.
 - En el mismo lugar aparecio que `package_meta.package_version` dice
@@ -1301,12 +1301,34 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
       haber consultado esa fuente ese dia sigue siendo cierto. Lo que decide si
       la ficha habla de una copia es el hash, no la fecha.
       Seis tests nuevos en `PersonalTermSourcesTest` sobre esa regla.
-- [ ] **10.1b** _(Sonnet 5 · M)_ Fechar tambien el paquete: que
-      `tools/enrich_corpus.py` escriba `sources.retrieved_at` y
-      `sources.content_sha256` de los 4.425 terminos importados. Implica volver
-      a correr el enriquecimiento entero y cortar un paquete nuevo, que es la
-      parte cara; el lado de la aplicacion ya sabe mostrarlo (10.2), asi que
-      esto es todo del lado de la herramienta.
+- [x] **10.1b** ✅ Hecho el 2026-09-02. El paquete vigente pasa a ser
+      **v0.5.0-dated.1**, con los 4.425 terminos enriquecidos fechados.
+      `enrich_corpus.py` ahora fecha cada fuente al traer su extracto, con el
+      mismo instante que sella el termino, asi que todo paquete cortado de aca
+      en adelante sale fechado solo.
+      Para el paquete que ya existia se agrego `--stamp-dates`, que **no vuelve
+      a pedir nada a Wikipedia**: `terms.updated_at` *es* el instante en que se
+      trajo el extracto, porque la misma sentencia que guardo el contenido
+      escribio esa marca. Copiarlo es exacto y no una aproximacion. Re-traer los
+      4.425 articulos habria dado la fecha de hoy en vez de la real y ademas
+      habria cambiado el texto de todos ellos, que es una decision de producto
+      -actualizar el corpus- y no algo que deba viajar escondido en una tarea
+      sobre fechas. Verificado: 0 terminos con contenido, resumen o titulo
+      distinto contra el v0.4.0.
+      Une por `canonical_url` y no por `url`, porque `url` guarda la forma
+      percent-encoded y los 69 titulos con apostrofo (`John_P._O%27Neill`) no
+      coincidirian con `terms.source_url`.
+      **No escribe `sources.content_sha256`**, aunque la tarea lo pedia. Medido:
+      la fecha cuesta 90 KB y ese hash 289 KB mas, y en el paquete duplica
+      `terms.content_sha256`, que ya esta completo en los 4.425. Un termino
+      enriquecido tiene una sola fuente de la que salio el contenido, asi que el
+      hash por fuente no distingue nada que el del termino no distinga. En los
+      terminos personales si hace falta -pueden tener varias fuentes y el texto
+      se puede editar- y ahi lo escribe la aplicacion.
+      El paquete quedo en 10,34 MB (desde 10,25) y el manifiesto ademas se
+      limpio solo: el v0.4.0 publicado repetia la nota de extractos quince
+      veces, porque la deduplicacion de `finalize_package` se escribio despues.
+      Seis tests nuevos en `tests/test_enrich_corpus.py`.
 - [x] **10.2** ✅ Hecho el 2026-09-02. En Android la linea de autoria de la
       ficha ahora dice "Importado de wikipedia.org el 19/08/2026, sin editar", y
       PROCEDENCIA muestra "consultada el ...". Sin fecha se dice la frase de
@@ -1346,6 +1368,13 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
       telefono hay ademas dos decisiones sin tomar: donde corre (hoy no hay
       WorkManager en el proyecto) y cuanto espacio se permite gastar, porque
       guardar varias copias multiplica los 10 MB que ya ocupa el paquete.
+- [ ] **10.9** _(Haiku 4.5 · S)_ Las fuentes del paquete no llevan
+      `license_name`: estan vacias en las 4.539, asi que la ficha dice "CC BY-SA"
+      para un termino propio importado de Wikipedia y no lo dice para uno del
+      paquete que viene del mismo lugar. La atribucion no falta -el modelo del
+      manifiesto es que la URL de origen la cumple, y esa esta- pero la ficha se
+      contradice entre un catalogo y el otro. Lo escribe `build_corpus.py` al
+      construir, junto a `source_kind`.
 - [ ] **10.8** _(Sonnet 5 · M)_ La web no puede decir "esta copia sigue sin
       editar", que es lo que en Android habilita la linea de autoria. El backend
       **guarda y transmite** `content_sha256` y `retrieved_at` -por eso un

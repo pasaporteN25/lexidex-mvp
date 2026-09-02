@@ -9,7 +9,7 @@ por fecha de trabajo. Cuando salga la primera version, lo que este en "Sin
 publicar" pasa a `## [0.1.0] - fecha`.
 
 El paquete de conocimiento se versiona **aparte** de la aplicacion, con su
-propio ciclo (`0.4.0-enriched.1` hoy): esos numeros aparecen aca como cambios de
+propio ciclo (`0.5.0-dated.1` hoy): esos numeros aparecen aca como cambios de
 datos, no como versiones del producto. La politica de retencion de paquetes esta
 en [`docs/corpus.md`](docs/corpus.md).
 
@@ -29,10 +29,22 @@ en [`docs/corpus.md`](docs/corpus.md).
   19/08/2026" sobre la fuente. A lo importado antes de este cambio no se le
   inventa una fecha: se muestra la frase de antes.
 
+- Los 4.425 terminos del paquete tambien tienen fecha (tarea 10.1b). El paquete
+  vigente pasa a ser **v0.5.0-dated.1**. La fecha es la real de cada extracto,
+  no la de hoy: sale de `terms.updated_at`, que es el instante en que se trajo.
+  No se volvio a pedir nada a Wikipedia y no cambio una palabra del contenido
+  -verificado termino a termino contra el v0.4.0-. De aca en adelante
+  `enrich_corpus.py` fecha al traer, y `--stamp-dates` queda para un paquete
+  enriquecido antes.
+
 #### Notas
 
-- Los terminos del paquete todavia no tienen fecha por articulo: eso pide
-  re-enriquecer y cortar un paquete nuevo (tarea 10.1b).
+- El paquete crecio 90 KB (10,25 a 10,34 MB). Se decidio **no** repetir el hash
+  del contenido en cada fuente del paquete: costaba 289 KB mas y duplica
+  `terms.content_sha256`, que ya esta completo.
+- El manifiesto del v0.4.0 repetia quince veces la nota de extractos, una por
+  cada cierre de paquete anterior a la deduplicacion de `finalize_package`. El
+  v0.5.0 la trae una sola vez.
 
 ### 2026-08-28
 

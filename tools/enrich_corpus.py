@@ -432,14 +432,28 @@ def enrich(database, limit=0, dry_run=False, sleep_seconds=DEFAULT_SLEEP_SECONDS
                 stats["ok"] += 1
 
                 if not dry_run:
+                    digest = hashlib.sha256(encoded).hexdigest()
+                    # El mismo instante en las dos tablas, calculado una sola vez: `retrieved_at`
+                    # significa cuando se trajo este texto, que es cuando se lo guarda.
+                    now = time.strftime(TIMESTAMP_FORMAT, time.gmtime())
                     conn.execute(
                         """
                         UPDATE terms
                         SET summary = ?, content = ?, content_sha256 = ?, status = 'enriched',
-                            revision = revision + 1, updated_at = strftime(?, 'now')
+                            revision = revision + 1, updated_at = ?
                         WHERE id = ?
                         """,
-                        (summary, content, hashlib.sha256(encoded).hexdigest(), TIMESTAMP_FORMAT, row["id"]),
+                        (summary, content, digest, now, row["id"]),
+                    )
+                    # La fuente de la que salio el extracto queda fechada. El hash no se repite
+                    # aca: ver `stamp_source_dates` para por que en el paquete sobra.
+                    conn.execute(
+                        """
+                        UPDATE sources
+                        SET retrieved_at = ?
+                        WHERE term_id = ? AND canonical_url = ?
+                        """,
+                        (now, row["id"], row["source_url"]),
                     )
 
             if not dry_run:
@@ -481,6 +495,45 @@ EXTRACT_LIMITATION = (
     "Los extractos provienen de Wikipedia (CC BY-SA); cada termino conserva su URL de origen "
     "como atribucion. Se guarda solo la introduccion, recortada en limite de oracion."
 )
+
+
+def stamp_source_dates(conn):
+    """
+    Fecha las fuentes de un paquete que se enriquecio antes de que la fecha se guardara.
+
+    **No vuelve a pedir nada a Wikipedia.** `terms.updated_at` *es* el instante en que se trajo el
+    extracto, porque la misma sentencia que guardo el contenido escribio esa marca; copiarlo es
+    exacto y no una aproximacion. Traer los articulos de nuevo daria otra fecha -la de hoy- y
+    ademas cambiaria el texto de 4.425 terminos, que es una decision de producto aparte y no algo
+    que deba viajar escondido en una tarea sobre fechas.
+
+    Se une por `canonical_url` y no por `url`: las dos guardan la misma direccion, pero `url`
+    conserva la forma percent-encoded, asi que los titulos con apostrofo
+    (`John_P._O%27Neill`) no coincidirian con `terms.source_url`. Son 69 en el paquete v0.4.0.
+
+    **Escribe la fecha y no el hash**, aunque `sources.content_sha256` exista. Medido sobre el
+    paquete v0.4.0: la fecha cuesta 90 KB y el hash 289 KB mas, y en el paquete ese hash duplica
+    `terms.content_sha256`, que ya esta completo en los 4.425 terminos enriquecidos. Un termino
+    enriquecido del paquete tiene una sola fuente de la que salio el contenido -la que apunta
+    `terms.source_url`, que es la clave de union de aca-, asi que el hash por fuente no distingue
+    nada que el del termino no distinga. En los terminos personales si hace falta, porque pueden
+    tener varias fuentes y el usuario puede editar el texto; ahi lo escribe la aplicacion.
+
+    Solo toca fuentes sin fecha, asi que correrlo dos veces no pisa nada.
+    """
+    return conn.execute(
+        """
+        UPDATE sources
+        SET retrieved_at = (SELECT t.updated_at FROM terms t WHERE t.id = sources.term_id)
+        WHERE retrieved_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM terms t
+            WHERE t.id = sources.term_id
+              AND t.content <> ''
+              AND t.source_url = sources.canonical_url
+          )
+        """
+    ).rowcount
 
 
 def stamp_package_version(conn, package_version):
@@ -586,7 +639,33 @@ def main():
         action="store_true",
         help="reaplica el filtro a las categorias ya guardadas, sin salir a la red",
     )
+    parser.add_argument(
+        "--stamp-dates",
+        action="store_true",
+        help="fecha las fuentes ya enriquecidas desde terms.updated_at, sin salir a la red",
+    )
     args = parser.parse_args()
+
+    if args.stamp_dates:
+        conn = sqlite3.connect(args.database)
+        try:
+            stamped = stamp_source_dates(conn)
+            conn.commit()
+            undated = conn.execute(
+                "SELECT COUNT(*) FROM sources WHERE retrieved_at IS NULL"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        stats = {"fuentes_fechadas": stamped, "fuentes_sin_fecha": undated}
+        # Mismo cuidado que abajo: sin nada que guardar no se reescribe el paquete, porque
+        # `VACUUM` no produce los mismos bytes dos veces y cambiaria el checksum de una version
+        # ya publicada (ADR 0001).
+        if stamped:
+            stats["paquete"] = finalize_package(args.database, args.package_version)
+        else:
+            stats["paquete"] = "sin cambios, no se reescribe"
+        print(json.dumps(stats, indent=2, ensure_ascii=False))
+        return
 
     if args.clean_categories:
         conn = sqlite3.connect(args.database)
