@@ -23,6 +23,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -104,6 +105,11 @@ fun OptionsScreen(viewModel: OptionsViewModel, onBack: () -> Unit) {
                     onKeepLocal = viewModel::onKeepLocal,
                     onKeepHub = viewModel::onKeepHub,
                     onKeepBoth = viewModel::onKeepBoth,
+                )
+                BulkRefreshSection(
+                    bulk = uiState.bulk,
+                    onStart = viewModel::onStartBulkRefresh,
+                    onCancel = viewModel::onCancelBulkRefresh,
                 )
                 SourcesSection(storage)
             }
@@ -522,6 +528,71 @@ private fun ImportPreviewLine(label: String, value: String) {
 
 private fun counted(quantity: Int, singular: String, plural: String): String =
     if (quantity == 1) singular else plural
+
+/**
+ * Revisar todos los terminos de una vez contra su fuente.
+ *
+ * Se dice que puede tardar y que se puede cortar, porque las dos cosas son ciertas: son miles de
+ * terminos pedidos de a veinte, con esperas cuando la fuente pide esperar. Lo que **no** se promete
+ * es que siga en segundo plano, porque no lo hace.
+ */
+@Composable
+private fun BulkRefreshSection(
+    bulk: BulkRefreshUiState,
+    onStart: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Section("ACTUALIZAR TODO") {
+        Explanation(
+            "Le pregunta a la fuente de cada termino si su articulo cambio, de a veinte por " +
+                "pedido. Guarda una copia nueva solo cuando cambio. Puede tardar; se puede " +
+                "cortar y sigue desde donde iba mientras no cierres la aplicacion.",
+        )
+        if (bulk.isRunning) {
+            LinearProgressIndicator(
+                progress = { bulk.progress.percent / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+            )
+            Text(
+                "${bulk.progress.processed} de ${bulk.progress.total} revisados" +
+                    if (bulk.progress.updated > 0) ", ${bulk.progress.updated} con copia nueva" else "",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = LexidexSpacing.panel),
+            )
+            OutlinedButton(
+                onClick = onCancel,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+            ) {
+                Text("Cortar")
+            }
+        } else {
+            Button(
+                onClick = onStart,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+            ) {
+                Text(if (bulk.canResume) "Seguir desde donde iba" else "Revisar todos los terminos")
+            }
+        }
+        bulk.message?.let { message ->
+            Text(
+                message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(
+                    horizontal = LexidexSpacing.panel,
+                    vertical = LexidexSpacing.tight,
+                ),
+            )
+        }
+    }
+}
 
 @Composable
 private fun SourcesSection(storage: StorageInfo) {

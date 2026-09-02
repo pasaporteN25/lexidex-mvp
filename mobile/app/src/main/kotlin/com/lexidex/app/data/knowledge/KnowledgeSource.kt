@@ -154,6 +154,22 @@ interface KnowledgeSource {
 
     suspend fun fetch(result: KnowledgeSearchResult): KnowledgeArticle
 
+    /**
+     * Varios articulos de una sola vez, indexados por `externalId`.
+     *
+     * Existe porque actualizar en masa de a un pedido por termino no escala: la epica 4 lo midio
+     * contra Wikipedia real y **39 de los primeros 60 fallaron con 429**. Una fuente que sepa
+     * responder de a lotes deberia hacerlo aca; la implementacion por defecto cae en [fetch] uno
+     * por uno, que es correcto aunque sea el camino lento.
+     *
+     * Un articulo que la fuente no devuelva simplemente no aparece en el mapa: no es un error de
+     * todo el lote, es un termino que no se pudo actualizar.
+     */
+    suspend fun fetchAll(results: List<KnowledgeSearchResult>): Map<String, KnowledgeArticle> =
+        results.mapNotNull { result ->
+            runCatching { result.externalId to fetch(result) }.getOrNull()
+        }.toMap()
+
     companion object {
         const val DEFAULT_SEARCH_LIMIT = 10
     }

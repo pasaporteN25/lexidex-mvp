@@ -15,7 +15,14 @@ import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.CollectionEntity
 import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
 import com.lexidex.app.data.userdb.entity.TermVersionEntity
+import com.lexidex.app.data.db.dao.RefreshableTermRow
+import com.lexidex.app.data.knowledge.KnowledgeArticle
+import com.lexidex.app.data.knowledge.wikipediaResultFromUrl
+import com.lexidex.app.domain.BulkRefreshProgress
+import com.lexidex.app.domain.RefreshBatch
+import com.lexidex.app.domain.RefreshCandidate
 import com.lexidex.app.domain.RefreshDecision
+import com.lexidex.app.domain.planRefreshBatches
 import com.lexidex.app.domain.TermRefresh
 import com.lexidex.app.domain.TermVersion
 import com.lexidex.app.domain.nextActiveAfterDeleting
@@ -836,6 +843,86 @@ class CorpusRepository(
         if (excess.isNotEmpty()) versions.deleteByUid(excess)
     }
 
+    /**
+     * Todos los terminos que la actualizacion masiva puede revisar.
+     *
+     * Un termino cuya URL no se puede volver a pedir -no es de Wikipedia, o no dice de que edicion
+     * es- queda afuera aca y no como un fallo en el medio del recorrido.
+     */
+    suspend fun refreshCandidates(): Result<List<RefreshCandidate>> = corpusResult {
+        val fromPackage = termDao().refreshableTerms().mapNotNull { it.toCandidate(TermOrigin.PACKAGE) }
+        val fromPersonal = userTermDao().refreshableTerms().mapNotNull { it.toCandidate(TermOrigin.PERSONAL) }
+        fromPackage + fromPersonal
+    }
+
+    /**
+     * Recorre los candidatos pidiendolos de a lotes y guardando solo lo que cambio.
+     *
+     * La red entra por [fetchBatch], igual que en la actualizacion de a uno: aca se decide y se
+     * guarda. Cancelar es cancelar la corrutina, y [onProgress] se llama despues de cada termino
+     * para que la pantalla pueda mostrar por donde va.
+     *
+     * [startAt] permite retomar, pero es una **optimizacion y no una condicion**: como no se
+     * escribe nada para un termino que no cambio, volver a empezar desde cero es correcto, solo
+     * mas lento. Eso es lo que hace que perder el cursor -porque el sistema mato el proceso- no
+     * rompa nada.
+     */
+    suspend fun refreshAll(
+        candidates: List<RefreshCandidate>,
+        resumeFrom: BulkRefreshProgress = BulkRefreshProgress(),
+        now: () -> String = { nowIso() },
+        fetchBatch: suspend (RefreshBatch) -> Map<String, KnowledgeArticle>,
+        onProgress: suspend (BulkRefreshProgress) -> Unit = {},
+    ): Result<BulkRefreshProgress> = corpusResult {
+        val ordered = planRefreshBatches(candidates).flatMap { it.candidates }
+        val startAt = resumeFrom.processed
+        // Los contadores vienen de la pasada anterior y siguen sumando: un barrido cortado y
+        // retomado es un solo barrido, y decir "206 revisados, 40 sin cambios" haria desaparecer
+        // los 126 de antes.
+        var progress = resumeFrom.copy(total = ordered.size)
+        if (startAt >= ordered.size) return@corpusResult progress
+
+        for (batch in planRefreshBatches(ordered.drop(startAt))) {
+            // `runCatching` no sirve aca: se traga la CancellationException y el recorrido seguiria
+            // sin red, contando como fallidos todos los terminos que quedaban. Se vio en el
+            // emulador -cortar a los 186 terminos reportaba 4.470 revisados- y por eso la
+            // cancelacion se deja pasar y solo se absorbe el fallo de la fuente.
+            val articles = try {
+                fetchBatch(batch)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                emptyMap()
+            }
+            for (candidate in batch.candidates) {
+                val article = articles[candidate.externalId]
+                progress = if (article == null) {
+                    // El lote entero pudo fallar, o este articulo no vino. En los dos casos es un
+                    // termino que no se pudo revisar, no un motivo para cortar el recorrido.
+                    progress.copy(processed = progress.processed + 1, failed = progress.failed + 1)
+                } else {
+                    val outcome = storeRefreshedCopy(
+                        slug = candidate.slug,
+                        summary = article.summary,
+                        content = article.content,
+                        sourceUrl = article.sourceUrl,
+                        retrievedAt = now(),
+                    ).getOrNull()
+                    when (outcome) {
+                        is TermRefresh.Updated ->
+                            progress.copy(processed = progress.processed + 1, updated = progress.updated + 1)
+                        is TermRefresh.Unchanged ->
+                            progress.copy(processed = progress.processed + 1, unchanged = progress.unchanged + 1)
+                        null ->
+                            progress.copy(processed = progress.processed + 1, failed = progress.failed + 1)
+                    }
+                }
+                onProgress(progress)
+            }
+        }
+        progress
+    }
+
     // endregion
 
     suspend fun deletePersonalTerm(slug: String): Result<Unit> = corpusResult {
@@ -1286,6 +1373,18 @@ private fun PersonalTermSourceEntity.toBackupSource() = BackupTermSource(
  * ser el suyo. Sin el segundo caso, un termino importado y despues reescrito seguiria diciendo
  * que su contenido es de la fuente.
  */
+/** Null cuando la URL guardada no se puede volver a pedir; ese termino no es candidato. */
+private fun RefreshableTermRow.toCandidate(origin: TermOrigin): RefreshCandidate? {
+    val result = wikipediaResultFromUrl(sourceUrl) ?: return null
+    return RefreshCandidate(
+        slug = slug,
+        origin = origin,
+        sourceUrl = sourceUrl,
+        externalId = result.externalId,
+        language = result.language,
+    )
+}
+
 private fun TermVersionEntity.toDomain() = TermVersion(
     uid = uid,
     slug = slug,

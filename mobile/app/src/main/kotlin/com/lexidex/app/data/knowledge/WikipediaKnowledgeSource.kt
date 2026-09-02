@@ -2,6 +2,7 @@ package com.lexidex.app.data.knowledge
 
 import java.net.URI
 import java.net.URLEncoder
+import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -65,6 +66,8 @@ class WikipediaKnowledgeSource(
         allowedHosts = setOf(WIKIPEDIA_HOST),
         userAgent = USER_AGENT,
     )::getText,
+    /** Cuanto se espera ante el primer 429. Entra por aca para que un test no espere de verdad. */
+    private val firstBackoffMillis: Long = 1_000,
 ) : KnowledgeSource {
     override val descriptor = KnowledgeSourceDescriptor(
         id = SOURCE_ID,
@@ -151,6 +154,89 @@ class WikipediaKnowledgeSource(
     }
 
     /**
+     * Hasta veinte articulos del mismo idioma en un solo pedido.
+     *
+     * Es el mismo pedido que hace `tools/enrich_corpus.py` al construir el paquete: la Action API
+     * acepta `exlimit=20`, y usarlo es la diferencia entre 222 pedidos y 4.425. Ante un **429** -que
+     * es una peticion de esperar y no un fallo del articulo- reintenta con espera creciente, igual
+     * que la herramienta.
+     *
+     * Titulos de idiomas distintos en la misma llamada serian un error de programacion: cada
+     * edicion de Wikipedia es otra API. `planRefreshBatches` es quien garantiza que no pase.
+     */
+    override suspend fun fetchAll(results: List<KnowledgeSearchResult>): Map<String, KnowledgeArticle> {
+        if (results.isEmpty()) return emptyMap()
+        val languages = results.map { wikipediaLanguage(it.language) }.distinct()
+        require(languages.size == 1) { "Un lote no puede mezclar idiomas: $languages" }
+        val wikiLanguage = languages.single()
+
+        val titles = results.map { it.externalId }
+        val url = "https://$wikiLanguage.$WIKIPEDIA_HOST/w/api.php" +
+            "?action=query&format=json&formatversion=2&prop=extracts%7Cdescription" +
+            "&exintro=1&explaintext=1&exlimit=${titles.size}&redirects=1" +
+            "&titles=${encodeQuery(titles.joinToString("|"))}"
+
+        val payload = fetchWithBackoff(url) ?: return emptyMap()
+        val pages = payload.query?.pages.orEmpty().filter { it.missing != true }
+
+        // MediaWiki normaliza y redirige, asi que el titulo que vuelve puede no ser el que se pidio.
+        val rewrites = buildMap {
+            payload.query?.normalized.orEmpty().forEach { put(it.from, it.to) }
+            payload.query?.redirects.orEmpty().forEach { put(it.from, it.to) }
+        }
+        val byFinalTitle = pages.associateBy { it.title }
+
+        return results.mapNotNull { result ->
+            val finalTitle = resolveRewrites(result.externalId, rewrites)
+            val page = byFinalTitle[finalTitle] ?: return@mapNotNull null
+            val content = truncateWikipediaExtract(page.extract.orEmpty())
+            if (content.isBlank()) return@mapNotNull null
+            result.externalId to KnowledgeArticle(
+                title = page.title.ifBlank { result.title },
+                summary = page.description.orEmpty(),
+                content = content,
+                sourceUrl = "https://$wikiLanguage.$WIKIPEDIA_HOST/wiki/" +
+                    encodePathSegment(finalTitle.replace(' ', '_')),
+                language = wikiLanguage,
+            )
+        }.toMap()
+    }
+
+    /** Sigue la cadena de reescrituras hasta el titulo final, sin morir en un ciclo. */
+    private fun resolveRewrites(title: String, rewrites: Map<String, String>): String {
+        val seen = mutableSetOf<String>()
+        var current = title
+        while (current in rewrites && seen.add(current)) {
+            current = rewrites.getValue(current)
+        }
+        return current
+    }
+
+    /**
+     * Reintenta solo ante 429, que es la fuente pidiendo que esperemos.
+     *
+     * Cualquier otro fallo se devuelve como "este lote no vino": insistir contra un 404 o un 500 no
+     * lo va a arreglar, y la actualizacion masiva tiene que poder seguir con el resto.
+     */
+    private suspend fun fetchWithBackoff(url: String): ExtractResponse? {
+        var wait = firstBackoffMillis
+        repeat(MAX_BACKOFF_ATTEMPTS) { attempt ->
+            try {
+                return decode(ExtractResponse.serializer(), getText(url))
+            } catch (error: KnowledgeSourceError.Unavailable) {
+                if (error.statusCode != TOO_MANY_REQUESTS || attempt == MAX_BACKOFF_ATTEMPTS - 1) {
+                    return null
+                }
+                delay(wait)
+                wait *= 2
+            } catch (error: KnowledgeSourceError) {
+                return null
+            }
+        }
+        return null
+    }
+
+    /**
      * La introduccion completa por la Action API, igual que `tools/enrich_corpus.py`.
      *
      * `redirects` la sigue como la sigue el constructor del paquete, para que pedir el mismo
@@ -175,12 +261,20 @@ class WikipediaKnowledgeSource(
     private data class ExtractResponse(val query: ExtractQuery? = null)
 
     @Serializable
-    private data class ExtractQuery(val pages: List<ExtractPage>? = null)
+    private data class ExtractQuery(
+        val pages: List<ExtractPage>? = null,
+        val normalized: List<TitleRewrite>? = null,
+        val redirects: List<TitleRewrite>? = null,
+    )
+
+    @Serializable
+    private data class TitleRewrite(val from: String = "", val to: String = "")
 
     @Serializable
     private data class ExtractPage(
         val title: String = "",
         val extract: String? = null,
+        val description: String? = null,
         val missing: Boolean? = null,
     )
 
@@ -192,6 +286,8 @@ class WikipediaKnowledgeSource(
         }
 
     private companion object {
+        const val TOO_MANY_REQUESTS = 429
+        const val MAX_BACKOFF_ATTEMPTS = 4
         const val SOURCE_ID = "wikipedia"
         const val WIKIPEDIA_HOST = "wikipedia.org"
         const val USER_AGENT = "Lexidex/0.1 (aplicacion personal de consulta offline)"

@@ -4,6 +4,7 @@ import androidx.room3.Dao
 import androidx.room3.Delete
 import androidx.room3.Insert
 import androidx.room3.Query
+import com.lexidex.app.data.db.dao.RefreshableTermRow
 import androidx.room3.Update
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 
@@ -26,6 +27,16 @@ interface UserTermDao {
     /** Varios de una vez, para no hacer una consulta por cada resultado de busqueda. */
     @Query("SELECT * FROM user_terms WHERE slug IN (:slugs)")
     suspend fun bySlugs(slugs: List<String>): List<UserTermEntity>
+
+    /** Los terminos propios que se pueden volver a pedir. Ver `TermDao.refreshableTerms`. */
+    @Query(
+        """
+        SELECT slug, source_url AS sourceUrl FROM user_terms
+        WHERE source_url LIKE '%wikipedia.org/wiki/%'
+        ORDER BY slug
+        """,
+    )
+    suspend fun refreshableTerms(): List<RefreshableTermRow>
 
     @Query("SELECT * FROM user_terms WHERE uid = :uid LIMIT 1")
     suspend fun getByUid(uid: String): UserTermEntity?

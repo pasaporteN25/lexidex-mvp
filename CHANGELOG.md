@@ -43,6 +43,11 @@ en [`docs/corpus.md`](docs/corpus.md).
   19/08/2026" y no escribe nada. La primera actualizacion guarda ademas el texto
   que tenias, asi que siempre se puede volver. Se conservan las ultimas cinco
   copias por termino y nunca se tira la que estas usando.
+- Opciones puede revisar **todos** los terminos de una vez (tareas 10.6a a
+  10.6c): le pregunta a Wikipedia de a veinte por pedido, espera cuando la fuente
+  pide esperar, y guarda una copia solo donde el articulo cambio. Muestra por
+  donde va, se puede cortar y sigue desde ahi. Corre mientras tengas la pantalla
+  abierta; si cerras la aplicacion, volver a empezar no rompe nada, solo tarda.
 - La ficha lista las copias guardadas (tarea 10.5): la fecha de cada una, cual
   estas leyendo, y tocar otra para cambiar. Podes borrar las que no quieras; si
   borras la que estabas leyendo pasa a la mas reciente que quede, y si las borras

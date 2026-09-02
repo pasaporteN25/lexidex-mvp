@@ -6,6 +6,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lexidex.app.data.knowledge.KnowledgeSource
+import com.lexidex.app.domain.BulkRefreshProgress
+import com.lexidex.app.domain.bulkRefreshSummary
+import com.lexidex.app.data.knowledge.KnowledgeSearchResult
 import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.data.repository.InvalidPersonalCatalogBackupException
 import com.lexidex.app.data.repository.MAX_BACKUP_BYTES
@@ -21,6 +24,8 @@ import com.lexidex.app.domain.backup.toJson
 import com.lexidex.app.ui.toUserMessage
 import com.lexidex.app.ui.viewModelFactoryOf
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -48,7 +53,26 @@ data class OptionsUiState(
     val importMessage: String? = null,
     val importFailed: Boolean = false,
     val sync: SyncUiState = SyncUiState(),
+    val bulk: BulkRefreshUiState = BulkRefreshUiState(),
 )
+
+/**
+ * La actualizacion masiva como la ve la pantalla.
+ *
+ * Por donde va se conserva al salir y volver a Opciones dentro de la misma sesion.
+ * **No sobrevive a que el sistema mate el proceso**, y no hace falta que lo haga: como no se
+ * escribe nada para un termino que no cambio, volver a empezar es correcto y solo cuesta tiempo.
+ * Prometer mas pediria trabajo en segundo plano, que es la dependencia que el proyecto no tomo
+ * (ver la tarea 9.11).
+ */
+data class BulkRefreshUiState(
+    val isRunning: Boolean = false,
+    val progress: BulkRefreshProgress = BulkRefreshProgress(),
+    val message: String? = null,
+) {
+    /** True cuando quedo un barrido a medio hacer y el boton tiene que ofrecer seguirlo. */
+    val canResume: Boolean get() = !isRunning && progress.processed > 0 && !progress.isDone
+}
 
 /**
  * La sincronizacion como la ve la pantalla.
@@ -114,6 +138,7 @@ class OptionsViewModel(
     private val _uiState = MutableStateFlow(OptionsUiState())
     val uiState: StateFlow<OptionsUiState> = _uiState.asStateFlow()
     private var pendingImportText: String? = null
+    private var bulkJob: Job? = null
 
     init {
         refresh()
@@ -453,6 +478,85 @@ class OptionsViewModel(
 
     private fun counted(quantity: Int, singular: String, plural: String): String =
         "$quantity ${if (quantity == 1) singular else plural}"
+
+    // region Actualizacion masiva
+
+    /**
+     * Recorre todos los terminos que se pueden volver a pedir y guarda solo lo que cambio.
+     *
+     * Corre mientras la pantalla viva. Cancelar es cancelar el job, y lo hecho hasta ahi ya esta
+     * guardado: cada termino se resuelve entero antes de pasar al siguiente, asi que cortar en el
+     * medio no deja nada a medio escribir.
+     */
+    fun onStartBulkRefresh() {
+        if (bulkJob?.isActive == true) return
+        val source = knowledgeSources.firstOrNull { it.id == "wikipedia" } ?: return
+
+        bulkJob = viewModelScope.launch {
+            _uiState.update { it.copy(bulk = it.bulk.copy(isRunning = true, message = null)) }
+            val candidates = repository.refreshCandidates().getOrElse { error ->
+                _uiState.update {
+                    it.copy(bulk = it.bulk.copy(isRunning = false, message = error.toUserMessage()))
+                }
+                return@launch
+            }
+
+            val outcome = repository.refreshAll(
+                candidates = candidates,
+                resumeFrom = _uiState.value.bulk.progress,
+                fetchBatch = { batch ->
+                    source.fetchAll(
+                        batch.candidates.map { candidate ->
+                            KnowledgeSearchResult(
+                                sourceId = source.id,
+                                externalId = candidate.externalId,
+                                title = candidate.externalId.replace('_', ' '),
+                                description = "",
+                                language = candidate.language,
+                            )
+                        },
+                    )
+                },
+                onProgress = { progress ->
+                    _uiState.update { it.copy(bulk = it.bulk.copy(progress = progress)) }
+                },
+            )
+
+            val progress = outcome.getOrElse { _uiState.value.bulk.progress }
+            _uiState.update {
+                it.copy(
+                    bulk = it.bulk.copy(
+                        isRunning = false,
+                        // Terminado, se limpia: el proximo pedido es un barrido nuevo desde cero.
+                        progress = if (progress.isDone) BulkRefreshProgress() else progress,
+                        message = bulkRefreshSummary(progress, cancelled = false),
+                    ),
+                )
+            }
+            refresh()
+        }
+    }
+
+    fun onCancelBulkRefresh() {
+        val running = bulkJob ?: return
+        if (!running.isActive) return
+        bulkJob = null
+        // Se espera a que el job termine antes de resumir: cancelar es asincronico, y contar sin
+        // esperar dejaria el resumen un termino o dos atras de lo que de verdad se hizo.
+        viewModelScope.launch {
+            running.cancelAndJoin()
+            _uiState.update {
+                it.copy(
+                    bulk = it.bulk.copy(
+                        isRunning = false,
+                        message = bulkRefreshSummary(it.bulk.progress, cancelled = true),
+                    ),
+                )
+            }
+        }
+    }
+
+    // endregion
 
     companion object {
         fun factory(

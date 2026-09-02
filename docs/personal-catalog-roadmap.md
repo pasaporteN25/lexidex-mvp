@@ -100,8 +100,9 @@ decidio.
    2026-09-02 hasta 10.4 inclusive: se fecha lo que se importa (10.1a) y el
    paquete (10.1b), la fecha se lee en la ficha (10.2), hay tabla de copias con
    busqueda sobre la activa (10.3) y se puede actualizar un termino desde su
-   ficha (10.4). Quedan la lista de copias (10.5), la actualizacion masiva
-   (10.6), la verificacion a mano (10.7) y que las copias viajen (10.10).
+   ficha (10.4), lista de copias para elegir y borrar (10.5) y actualizacion
+   masiva por lotes desde Opciones (10.6a a 10.6c). Quedan la verificacion a
+   mano (10.7) y que las copias viajen en el respaldo (10.10).
 6. **Cargar un txt o json desde la aplicacion** - anotado como "mas adelante"
    al final de la epica 7.
 
@@ -1405,14 +1406,47 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
       Verificado en el emulador de punta a punta: cambiar de copia cambia el
       texto **y da vuelta la linea de autoria sola**, porque el hash de la copia
       activa vuelve a coincidir con el de la fuente.
-- [ ] **10.6** _(Opus 5 · L)_ Actualizacion masiva desde opciones, y es la
-      tarea pesada: **por lotes, lenta, asincronica, cancelable y capaz de
-      retomar**. El antecedente esta medido en la epica 4: ~4.500 pedidos
-      sueltos hacen que Wikipedia devuelva 429 muy rapido (39 de 60 fallaron en
-      la primera prueba) y la Action API acepta 20 titulos por consulta. En el
-      telefono hay ademas dos decisiones sin tomar: donde corre (hoy no hay
-      WorkManager en el proyecto) y cuanto espacio se permite gastar, porque
-      guardar varias copias multiplica los 10 MB que ya ocupa el paquete.
+**La 10.6 se partio en tres el 2026-09-02**, porque eran tres problemas
+distintos: como se planifica el trabajo, como se le pide a la fuente, y como se
+lo mira y se lo corta. Las dos decisiones que estaban anotadas como pendientes se
+resolvieron: el espacio dejo de ser una pregunta al medirlo (629 bytes por copia)
+y **donde corre** sigue el criterio de la 9.11, que es no prometer trabajo en
+segundo plano mientras el proyecto no tome `androidx.work`.
+
+- [x] **10.6a** ✅ Hecho el 2026-09-02. El plan, sin red ni Room:
+      `planRefreshBatches` agrupa los candidatos en pedidos de veinte -el tope de
+      `exlimit` de la Action API- y **nunca mezcla idiomas en un pedido**, porque
+      cada edicion de Wikipedia es otra API. Conserva el orden dentro de cada
+      idioma, que es de lo que depende que retomar por posicion no saltee nada.
+      `BulkRefreshProgress` cuenta terminos y no lotes, porque "1.240 de 4.425"
+      se puede seguir y "62 de 222 lotes" no. Nueve tests.
+- [x] **10.6b** ✅ Hecho el 2026-09-02. El pedido y el recorrido.
+      `KnowledgeSource.fetchAll` es nuevo en la interfaz, con implementacion por
+      defecto de a uno para que otra fuente no tenga que hacer nada; Wikipedia lo
+      resuelve en un pedido por lote y **reintenta solo ante 429**, que es la
+      fuente pidiendo esperar y no un fallo del articulo. Sigue las
+      redirecciones y normalizaciones de MediaWiki, como el constructor del
+      paquete, para que el titulo que vuelve sea el que se pidio.
+      `CorpusRepository.refreshAll` recorre y guarda reusando la decision de
+      10.4, asi que un termino que no cambio no escribe nada. Eso ademas es lo
+      que hace que **perder el cursor no rompa nada**: volver a empezar es
+      correcto, solo mas lento.
+- [x] **10.6c** ✅ Hecho el 2026-09-02. "ACTUALIZAR TODO" en Opciones, con
+      barra de avance, cuenta de revisados y de copias nuevas, y "Cortar". Al
+      cortar, el boton pasa a "Seguir desde donde iba" y los contadores siguen
+      sumando: un barrido cortado y retomado es un solo barrido.
+      Corre mientras la pantalla viva y **no se promete mas que eso**: sin
+      `androidx.work` no hay forma de que sobreviva a que el sistema mate el
+      proceso, y prometerlo seria lo que la 9.11 decidio no hacer.
+      **Dos bugs que aparecieron recien en el emulador contra Wikipedia real**:
+      cortar reportaba "4.470 revisados" en vez de 186, porque `runCatching` se
+      traga la `CancellationException` y el recorrido seguia sin red contando
+      como fallidos todos los terminos que quedaban; y al retomar, el resumen
+      desglosaba solo la ultima pasada ("206 revisados, 40 sin cambios"), asi que
+      los contadores ahora se acumulan. Verificado: 71 revisados, retomar, 171
+      revisados y 171 sin cambios.
+      Auditado sobre los datos que dejo el barrido: ningun termino con mas de
+      cinco copias y ninguno sin exactamente una activa.
 - [ ] **10.10** _(Opus 5 · L)_ Que las copias guardadas viajen. Hoy
       `term_versions` no entra ni al respaldo -exportar e importar pierde las
       copias, aunque no los terminos- ni al contrato de sincronizacion, que fija
@@ -1440,6 +1474,15 @@ colecciones. Es lo que hace que sobrevivan a una migracion de paquete.
 - [ ] **10.7** _(Sonnet 5 · M)_ Verificar a mano: actualizar un termino que
       cambio, uno que no, quedarse con una copia vieja, borrar otra, y correr
       una actualizacion masiva cortandola por la mitad para ver que retoma.
+
+      **Ya se hizo todo eso durante 10.4, 10.5 y 10.6c**, contra Wikipedia real
+      en el emulador, y encontro cuatro problemas que los tests no veian: el
+      resumen corto contra la introduccion completa, dos copias del mismo dia
+      indistinguibles, `runCatching` tragandose la cancelacion, y el resumen que
+      no acumulaba al retomar. Lo que queda de esta tarea es la mano de Lucas
+      sobre su propio telefono, y un test instrumentado en `androidTest` para la
+      cancelacion, que es el unico de los cuatro que puede volver sin que nadie
+      se entere y no se puede probar en la JVM porque necesita Room.
 
 ## 11. Splash nativa de Android, sin demora artificial ⬜
 

@@ -52,6 +52,22 @@ interface TermDao {
     @Query("SELECT * FROM terms WHERE slug IN (:slugs)")
     suspend fun bySlugs(slugs: List<String>): List<TermEntity>
 
+    /**
+     * Los terminos que se pueden volver a pedir, con lo minimo para planificar.
+     *
+     * Sin el contenido a proposito: planificar 4.425 terminos no deberia cargar 4.425 textos en
+     * memoria para despues descartar casi todos. El orden por slug es estable entre corridas, que
+     * es de lo que depende retomar donde se corto.
+     */
+    @Query(
+        """
+        SELECT slug, source_url AS sourceUrl FROM terms
+        WHERE source_url LIKE '%wikipedia.org/wiki/%'
+        ORDER BY slug
+        """,
+    )
+    suspend fun refreshableTerms(): List<RefreshableTermRow>
+
     @Query("SELECT * FROM terms WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): TermEntity?
 
@@ -242,3 +258,7 @@ interface TermDao {
     )
     suspend fun getRelatedTerms(termId: Long): List<RelatedTermRow>
 }
+
+
+/** Proyeccion de [TermDao.refreshableTerms]: alcanza para armar un `RefreshCandidate`. */
+data class RefreshableTermRow(val slug: String, val sourceUrl: String)
