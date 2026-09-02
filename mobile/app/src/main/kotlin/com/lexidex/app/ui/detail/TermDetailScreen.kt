@@ -52,6 +52,7 @@ import com.lexidex.app.ui.components.ChipRole
 import com.lexidex.app.data.userdb.sourceOfContent
 import com.lexidex.app.domain.TermOrigin
 import com.lexidex.app.domain.TermLabelKind
+import com.lexidex.app.domain.retrievedDate
 import com.lexidex.app.ui.components.TermChip
 import com.lexidex.app.ui.components.chipRole
 import com.lexidex.app.ui.components.label
@@ -403,7 +404,7 @@ private fun SourceRow(source: TermSource) {
             )
             val meta = listOfNotNull(
                 source.licenseName.ifBlank { null },
-                source.retrievedAt?.ifBlank { null },
+                retrievedDate(source.retrievedAt)?.let { "consultada el $it" },
             ).joinToString(" · ")
             if (meta.isNotBlank()) {
                 Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -58,6 +58,48 @@ fun personalContentSha256(content: String): String =
         .joinToString("") { "%02x".format(it) }
 
 /**
+ * Marca en la fuente de la que salio el texto su hash y **cuando** se copio.
+ *
+ * La fecha es la de esa copia, no la de este guardado. Si el texto sigue siendo el mismo que ya
+ * estaba marcado se conserva la fecha original: corregirle el titulo a un termino no vuelve a
+ * traer el articulo, y decir que la copia es de hoy seria falso.
+ *
+ * Cuando el texto deja de venir de la fuente -porque el usuario lo escribio o lo edito- se borra
+ * el hash pero **no** la fecha: haber consultado esa fuente ese dia sigue siendo cierto. Lo que
+ * decide si la ficha habla de una copia es el hash, no la fecha.
+ *
+ * Solo se marca la primera fuente, que es la que el modelo actual trata como origen del contenido.
+ */
+fun stampImportedContent(
+    sources: List<PersonalTermSourceEntity>,
+    content: String,
+    contentCameFromSource: Boolean,
+    now: String,
+): List<PersonalTermSourceEntity> {
+    if (sources.isEmpty()) return sources
+    val hash = if (contentCameFromSource && content.isNotBlank()) {
+        personalContentSha256(content)
+    } else {
+        ""
+    }
+    return sources.mapIndexed { position, source ->
+        if (position == 0) {
+            source.copy(contentSha256 = hash, retrievedAt = copiedAt(source, hash, now))
+        } else {
+            source
+        }
+    }
+}
+
+private fun copiedAt(source: PersonalTermSourceEntity, hash: String, now: String): String? = when {
+    // El texto ya no es el de la fuente: se conserva el dia en que igual se la consulto.
+    hash.isEmpty() -> source.retrievedAt
+    // Es la misma copia que ya estaba fechada; se guardo otra cosa del termino, no el articulo.
+    hash == source.contentSha256 && !source.retrievedAt.isNullOrBlank() -> source.retrievedAt
+    else -> now
+}
+
+/**
  * La fuente de la que salio este texto, si el texto sigue siendo exactamente el que llego.
  *
  * Devuelve null tanto para un texto escrito a mano como para uno importado y despues editado: son

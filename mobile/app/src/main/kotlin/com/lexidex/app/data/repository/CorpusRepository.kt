@@ -9,7 +9,7 @@ import com.lexidex.app.data.db.entity.TermEntity
 import com.lexidex.app.data.userdb.UserDatabaseProvider
 import com.lexidex.app.data.userdb.LexidexUserDatabase
 import com.lexidex.app.data.userdb.mergeLegacyPrimarySource
-import com.lexidex.app.data.userdb.personalContentSha256
+import com.lexidex.app.data.userdb.stampImportedContent
 import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.CollectionEntity
 import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
@@ -587,6 +587,7 @@ class CorpusRepository(
                 mergeLegacyPrimarySource(uid, term.language, term.sourceUrl, emptyList()),
                 term.content,
                 input.contentCameFromSource,
+                now,
             )
             database.personalTermSourceDao().replaceForTerm(uid, sources)
             recorder.termUpserted(term, sources, now)
@@ -623,6 +624,7 @@ class CorpusRepository(
                 ),
                 updated.content,
                 input.contentCameFromSource,
+                updated.updatedAt,
             )
             val projected = updated.copy(sourceUrl = sources.firstOrNull()?.url.orEmpty())
             database.userTermDao().update(projected)
@@ -1079,22 +1081,6 @@ private fun PersonalTermSourceEntity.toBackupSource() = BackupTermSource(
  * ser el suyo. Sin el segundo caso, un termino importado y despues reescrito seguiria diciendo
  * que su contenido es de la fuente.
  */
-private fun stampImportedContent(
-    sources: List<PersonalTermSourceEntity>,
-    content: String,
-    contentCameFromSource: Boolean,
-): List<PersonalTermSourceEntity> {
-    if (sources.isEmpty()) return sources
-    val hash = if (contentCameFromSource && content.isNotBlank()) {
-        personalContentSha256(content)
-    } else {
-        ""
-    }
-    return sources.mapIndexed { position, source ->
-        if (position == 0) source.copy(contentSha256 = hash) else source
-    }
-}
-
 private fun PersonalTermSourceEntity.toDomain() = TermSource(
     kind = sourceKind,
     url = url,
