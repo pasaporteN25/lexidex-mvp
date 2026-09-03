@@ -27,7 +27,7 @@ from local_sync_contract import DEVICE_ID_PATTERN, MAX_SYNC_REQUEST_BYTES
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
 DEFAULT_PACKAGE_DB = (
-    ROOT / "data" / "packages" / "palabras-v0.5.0-dated.1" / "lexidex.sqlite"
+    ROOT / "data" / "packages" / "palabras-v0.5.1-licensed.1" / "lexidex.sqlite"
 )
 DEFAULT_DB = DEFAULT_PACKAGE_DB if DEFAULT_PACKAGE_DB.exists() else ROOT / "lexidex.sqlite"
 DEFAULT_USER_DB = ROOT / "data" / "user" / "lexidex-user.sqlite"
@@ -543,6 +543,50 @@ def legacy_source_payload(term_uid, language, url):
         "retrieved_at": None,
         "content_sha256": "",
     }
+
+
+def personal_content_sha256(content):
+    """El mismo hash que guarda `personal_term_sources.content_sha256` del lado de Android."""
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def stamp_imported_content(sources, content, content_came_from_source, now):
+    """
+    Marca en la fuente de la que salio el texto su hash y cuando se copio.
+
+    Es la misma regla que `stampImportedContent` en Android, y tiene que serlo: los dos lados
+    escriben en el mismo esquema y se sincronizan entre si, asi que si difirieran, un termino
+    editado en la web y leido en el telefono diria una autoria distinta.
+
+    La fecha es la de la copia y no la del guardado: si el texto sigue siendo el que ya estaba
+    marcado se conserva la original, porque corregir un titulo no vuelve a traer el articulo.
+    Cuando el texto deja de venir de la fuente se borra el hash pero **no** la fecha: ya no es una
+    copia, pero haber consultado esa fuente ese dia sigue siendo cierto.
+    """
+    if not sources:
+        return sources
+    digest = personal_content_sha256(content) if content_came_from_source and content else ""
+    first = dict(sources[0])
+    if not digest:
+        retrieved = first.get("retrieved_at")
+    elif digest == first.get("content_sha256") and first.get("retrieved_at"):
+        retrieved = first["retrieved_at"]
+    else:
+        retrieved = now
+    first["content_sha256"] = digest
+    first["retrieved_at"] = retrieved
+    return [first, *sources[1:]]
+
+
+def source_of_content(content, sources):
+    """La fuente de la que salio este texto, si el texto sigue siendo exactamente el que llego."""
+    if not content:
+        return None
+    digest = personal_content_sha256(content)
+    for source in sources:
+        if source.get("content_sha256") and source["content_sha256"] == digest:
+            return source
+    return None
 
 
 def legacy_sources_for_edit(conn, term_uid, language, source_url):
@@ -1100,6 +1144,31 @@ def enrich_term(conn, term, canonical, include_details=True):
     return data
 
 
+def personal_term_authorship(user_conn, data):
+    """
+    De quien es el texto de un termino propio, resuelto en el servidor.
+
+    Lo calcula aca y no el navegador porque comparar el contenido con su hash pide `crypto.subtle`,
+    que no existe sobre http en una IP de la LAN aunque si en localhost: dejarselo al cliente
+    ataria la autoria a que el hub tenga TLS.
+    """
+    sources = [
+        dict_from_row(source)
+        for source in user_conn.execute(
+            "SELECT * FROM personal_term_sources WHERE term_uid = ? ORDER BY position",
+            (data["uid"],),
+        )
+    ]
+    origin = source_of_content(data.get("content") or "", sources)
+    if origin is None:
+        return {"kind": "written" if not sources else "edited", "host": "", "retrieved_at": None}
+    return {
+        "kind": "imported",
+        "host": urlparse(origin["url"]).hostname or origin["source_kind"],
+        "retrieved_at": origin.get("retrieved_at"),
+    }
+
+
 def personal_term_from_row(user_conn, row, include_details=True):
     data = dict_from_row(row)
     data["origin"] = "personal"
@@ -1116,6 +1185,7 @@ def personal_term_from_row(user_conn, row, include_details=True):
     if include_details:
         data["notes"] = [data.pop("notes")] if data.get("notes") else []
         data["sources"] = []
+        data["authorship"] = personal_term_authorship(user_conn, data)
         for source in user_conn.execute(
             "SELECT * FROM personal_term_sources WHERE term_uid = ? ORDER BY position",
             (data["uid"],),
@@ -1739,6 +1809,10 @@ def validate_term_payload(payload):
         ),
         "tags_json": json.dumps(validate_list(payload, "tags"), ensure_ascii=False),
         "notes": validate_string(payload, "notes", 5000),
+        # Lo dice el cliente porque es el unico que sabe si el usuario toco el texto despues de
+        # traerlo. El hash lo calcula el servidor: `crypto.subtle` no existe sobre http en una IP
+        # de la LAN, asi que pedirselo al navegador ataria la autoria a que el hub tenga TLS.
+        "content_came_from_source": bool(payload.get("content_came_from_source")),
     }
 
 
@@ -1846,7 +1920,12 @@ def create_personal_term(package_conn, user_conn, payload):
             slug,
             created_at=now,
             updated_at=now,
-            sources=legacy_sources_for_edit(user_conn, uid, values["language"], values["source_url"]),
+            sources=stamp_imported_content(
+                legacy_sources_for_edit(user_conn, uid, values["language"], values["source_url"]),
+                values["content"],
+                values["content_came_from_source"],
+                now,
+            ),
         ),
         base_revision=0,
         changed_at=now,
@@ -1886,8 +1965,13 @@ def update_personal_term(package_conn, user_conn, slug, payload):
             current["slug"],
             created_at=current["created_at"],
             updated_at=now,
-            sources=legacy_sources_for_edit(
-                user_conn, current["uid"], values["language"], values["source_url"]
+            sources=stamp_imported_content(
+                legacy_sources_for_edit(
+                    user_conn, current["uid"], values["language"], values["source_url"]
+                ),
+                values["content"],
+                values["content_came_from_source"],
+                now,
             ),
         ),
         base_revision=current["revision"],

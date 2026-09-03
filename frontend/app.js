@@ -11,7 +11,15 @@ const state = {
   stats: null,
   snackbarTimer: null,
   // { kind: "category" | "tag", value: string } - el filtro que se aplica tocando un chip.
-  label: null
+  label: null,
+  /**
+   * El texto tal como lo trajo la fuente, mientras el formulario esta abierto.
+   *
+   * Es lo unico que el navegador puede saber y el servidor no: si el usuario toco el texto despues
+   * de importarlo. El hash lo calcula el backend, porque `crypto.subtle` no existe sobre http en
+   * una IP de la LAN y la autoria no puede depender de que el hub tenga TLS.
+   */
+  importedContent: null
 };
 
 const elements = {
@@ -455,6 +463,29 @@ function chipList(items, className = "", kind = "") {
   }).join("");
 }
 
+/**
+ * De quien es el texto, dicho donde uno lo lee.
+ *
+ * Solo para terminos propios: los del paquete son todos importados y decirlo en cada uno seria
+ * ruido, igual que en Android. El backend resuelve la comparacion y manda `authorship` ya hecho.
+ */
+function renderAuthorship(term) {
+  const authorship = term.authorship;
+  if (!authorship || term.origin !== "personal") {
+    return "";
+  }
+  if (authorship.kind === "imported") {
+    const when = formatRetrievedDate(authorship.retrieved_at);
+    const host = authorship.host || "la fuente";
+    const dated = when ? ` el ${escapeHtml(when)}` : "";
+    return `<p class="authorship">Importado de ${escapeHtml(host)}${dated}, sin editar.</p>`;
+  }
+  if (authorship.kind === "edited") {
+    return '<p class="authorship authorship-own">Escrito o editado por vos.</p>';
+  }
+  return '<p class="authorship authorship-own">Escrito por vos.</p>';
+}
+
 function renderSources(term) {
   const sources = term.sources?.length
     ? term.sources
@@ -502,7 +533,7 @@ function renderDetail(term, related) {
   const registryId = term.display_id || `#${String(term.id || 0).padStart(4, "0")}`;
   const summary = term.summary || "Referencia catalogada; contenido pendiente de enriquecimiento.";
   const content = term.content
-    ? `<p class="record-content">${escapeHtml(term.content)}</p>`
+    ? `${renderAuthorship(term)}<p class="record-content">${escapeHtml(term.content)}</p>`
     : '<p class="quiet">La identidad y la procedencia estan disponibles, pero este paquete todavia no incluye el cuerpo del articulo.</p>';
   const notes = (term.notes || []).length
     ? `<section><h3>Notas privadas</h3><div class="note-block">${term.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div></section>`
@@ -832,6 +863,7 @@ async function importLookupResult(item) {
     setFormValue("summary", article.summary);
     setFormValue("content", article.content);
     setFormValue("source_url", article.source_url);
+    state.importedContent = article.content;
     resetLookup();
     elements.termFormError.textContent = "";
   } catch (error) {
@@ -841,6 +873,9 @@ async function importLookupResult(item) {
 
 function openTermDialog(term = null) {
   state.editingSlug = term?.slug || null;
+  // Abrir el formulario olvida lo importado antes: un termino que se edita sin volver a buscar no
+  // acaba de traer nada de ninguna fuente.
+  state.importedContent = null;
   elements.termForm.reset();
   elements.termFormError.textContent = "";
   resetLookup();
@@ -878,7 +913,11 @@ function formPayload() {
     source_url: formField("source_url").value,
     categories: formField("categories").value,
     tags: formField("tags").value,
-    notes: formField("notes").value
+    notes: formField("notes").value,
+    // Sin editar significa exactamente igual: una coma de mas ya es trabajo del usuario que la
+    // fuente no escribio, y decir "sin editar" ahi seria falso.
+    content_came_from_source:
+      state.importedContent !== null && formField("content").value === state.importedContent
   };
 }
 

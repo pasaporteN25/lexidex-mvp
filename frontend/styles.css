@@ -958,6 +958,18 @@ button {
   text-underline-offset: 3px;
 }
 
+.authorship {
+  margin-bottom: 6px;
+  color: var(--ink-soft);
+  font-size: var(--text-compact);
+  font-weight: 700;
+}
+
+/* Lo escrito por el usuario se destaca; lo importado es el caso comun y va en gris. */
+.authorship-own {
+  color: var(--teal);
+}
+
 /* La fuente y la fecha de la copia comparten la segunda columna de la grilla. */
 .source-detail {
   min-width: 0;
