@@ -5,6 +5,7 @@ import com.lexidex.app.data.userdb.sourceFromLegacyUrl
 import com.lexidex.app.domain.backup.BACKUP_FORMAT_NAME
 import com.lexidex.app.domain.backup.BACKUP_FORMAT_VERSION
 import com.lexidex.app.domain.backup.BackupCollection
+import com.lexidex.app.domain.backup.BackupTermVersion
 import com.lexidex.app.domain.backup.BackupTerm
 import com.lexidex.app.domain.backup.BackupTermRef
 import com.lexidex.app.domain.backup.BackupTermSource
@@ -18,6 +19,10 @@ const val MAX_BACKUP_BYTES = 10 * 1024 * 1024
 private const val MAX_BACKUP_TERMS = 10_000
 private const val MAX_BACKUP_REFERENCES = 50_000
 private const val MAX_BACKUP_COLLECTIONS = 2_000
+// Cinco copias por termino sobre el tope de terminos, mas margen para las del paquete.
+private const val MAX_BACKUP_VERSIONS = 60_000
+private const val MAX_VERSION_CONTENT = 20_000
+private val VERSION_UID_PATTERN = Regex("^ver_[a-f0-9]{32}$")
 private const val MAX_BACKUP_COLLECTION_MEMBERS = 100_000
 private const val MAX_COLLECTION_NAME = 80
 private const val MAX_LIST_ITEMS = 30
@@ -47,13 +52,14 @@ data class PersonalCatalogImportSummary(
     val collectionsAdded: Int,
     val collectionsUpdated: Int,
     val membersAdded: Int,
+    val versionsAdded: Int,
     val skippedConflicts: Int,
     val omittedPersonalReferences: Int,
     val pendingPackageReferences: Int,
 ) {
     val totalChanges: Int
         get() = termsAdded + termsUpdated + favoritesAdded + historyAdded +
-            collectionsAdded + collectionsUpdated + membersAdded
+            collectionsAdded + collectionsUpdated + membersAdded + versionsAdded
 }
 
 data class InstalledPackageSnapshot(
@@ -74,6 +80,9 @@ data class PersonalCatalogImportPlan(
     val collectionsToAdd: List<BackupCollection>,
     val collectionsToUpdate: List<BackupCollection>,
     val membersToAdd: List<PlannedCollectionMember>,
+    val versionsToAdd: List<BackupTermVersion>,
+    /** Los uid que quedan activos, ya resueltos: ver [planVersions]. */
+    val versionsToActivate: List<String>,
     val summary: PersonalCatalogImportSummary,
 ) {
     val hasNoChanges: Boolean get() = summary.totalChanges == 0
@@ -130,6 +139,9 @@ fun validatedPersonalCatalogBackupFromJson(text: String): PersonalCatalogBackup 
 
     val favorites = parsed.favorites.map { validateReference(it, "favoritos") }
     val history = parsed.history.map { validateReference(it, "historial") }
+    requireMaximum(parsed.versions.size, MAX_BACKUP_VERSIONS, "copias guardadas")
+    val versions = parsed.versions.map(::validateVersion)
+    requireUnique(versions, { it.uid }, "Hay dos copias con el mismo uid.")
     val collections = parsed.collections.map(::validateCollection)
     requireUnique(collections, { it.uid }, "Hay dos colecciones con el mismo uid.")
     requireUnique(
@@ -142,7 +154,44 @@ fun validatedPersonalCatalogBackupFromJson(text: String): PersonalCatalogBackup 
         favorites = newestReferences(favorites),
         history = newestReferences(history),
         collections = collections,
+        versions = versions,
     )
+}
+
+/**
+ * Que copias agrega un respaldo, y cual queda activa en cada termino.
+ *
+ * Una copia es la misma copia si es el mismo texto del mismo termino, asi que se compara por
+ * `slug` + `origen` + `sha256` y no por uid: dos dispositivos que trajeron el mismo articulo el
+ * mismo dia generaron uids distintos para lo mismo, y por uid entrarian las dos.
+ *
+ * **Importar no cambia lo que estas leyendo.** Si el termino ya tenia copias, la activa sigue
+ * siendo la local; el respaldo solo suma las que faltaban. Solo cuando el termino no tenia ninguna
+ * -el caso de restaurar en un telefono nuevo- se respeta la que el archivo marcaba activa, y si el
+ * archivo no marcaba ninguna se toma la mas reciente, que es la misma regla que usa borrar.
+ */
+fun planVersions(
+    incoming: List<BackupTermVersion>,
+    current: List<BackupTermVersion>,
+): Pair<List<BackupTermVersion>, List<String>> {
+    fun key(version: BackupTermVersion) = Triple(version.slug, version.origin, version.contentSha256)
+
+    val known = current.mapTo(mutableSetOf(), ::key)
+    val toAdd = mutableListOf<BackupTermVersion>()
+    for (version in incoming) {
+        if (known.add(key(version))) toAdd += version
+    }
+
+    val termsWithLocalCopies = current.mapTo(mutableSetOf()) { it.slug to it.origin }
+    val toActivate = toAdd
+        .filterNot { (it.slug to it.origin) in termsWithLocalCopies }
+        .groupBy { it.slug to it.origin }
+        .mapNotNull { (_, versions) ->
+            val chosen = versions.firstOrNull { it.isActive }
+                ?: versions.maxByOrNull { it.retrievedAt }
+            chosen?.uid
+        }
+    return toAdd to toActivate
 }
 
 /**
@@ -276,6 +325,8 @@ fun planPersonalCatalogImport(
         }
     }
 
+    val (versionsToAdd, versionsToActivate) = planVersions(incoming.versions, current.versions)
+
     val summary = PersonalCatalogImportSummary(
         exportedAt = incoming.exportedAt,
         fileTerms = incoming.terms.size,
@@ -289,6 +340,7 @@ fun planPersonalCatalogImport(
         collectionsAdded = collectionsToAdd.size,
         collectionsUpdated = collectionsToUpdate.size,
         membersAdded = membersToAdd.size,
+        versionsAdded = versionsToAdd.size,
         skippedConflicts = conflicts,
         omittedPersonalReferences = omittedPersonalReferences,
         pendingPackageReferences = pendingPackageReferences,
@@ -302,6 +354,8 @@ fun planPersonalCatalogImport(
         collectionsToAdd = collectionsToAdd,
         collectionsToUpdate = collectionsToUpdate,
         membersToAdd = membersToAdd,
+        versionsToAdd = versionsToAdd,
+        versionsToActivate = versionsToActivate,
         summary = summary,
     )
 }
@@ -422,6 +476,27 @@ private fun validateBackupSources(
         invalidBackup("El enlace de fuente no coincide con la fuente primaria.")
     }
     return validated
+}
+
+private fun validateVersion(version: BackupTermVersion): BackupTermVersion {
+    if (!VERSION_UID_PATTERN.matches(version.uid)) {
+        invalidBackup("Una copia guardada tiene un uid invalido.")
+    }
+    if (version.origin !in setOf("package", "personal")) {
+        invalidBackup("Una copia guardada tiene un origen invalido.")
+    }
+    if (version.slug.isBlank() || version.slug.length > 200) {
+        invalidBackup("Una copia guardada apunta a un slug invalido.")
+    }
+    if (version.content.isBlank() || version.content.length > MAX_VERSION_CONTENT) {
+        invalidBackup("Una copia guardada no tiene un contenido valido.")
+    }
+    if (!SHA256_PATTERN.matches(version.contentSha256)) {
+        invalidBackup("Una copia guardada tiene un hash invalido.")
+    }
+    requireInstant(version.retrievedAt, "la fecha de una copia guardada")
+    requireInstant(version.createdAt, "la fecha de una copia guardada")
+    return version
 }
 
 private fun validateCollection(collection: BackupCollection): BackupCollection {

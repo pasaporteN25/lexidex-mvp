@@ -41,7 +41,7 @@ docker inspect --format '{{json .State.Health}}' $(docker compose ps -q lexidex)
 ## 2. Que el paquete este montado de solo lectura
 
 ```bash
-docker compose exec lexidex python -c "open('/app/data/packages/palabras-v0.5.0-dated.1/lexidex.sqlite','ab')"
+docker compose exec lexidex python -c "open('/app/data/packages/palabras-v0.5.1-licensed.1/lexidex.sqlite','ab')"
 ```
 
 **Que esperar.** Tiene que fallar con `Read-only file system`. El ADR 0001 dice que un paquete

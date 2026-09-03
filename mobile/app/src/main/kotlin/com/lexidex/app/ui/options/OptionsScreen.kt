@@ -435,6 +435,10 @@ private fun ImportBackupDialog(
                         counted(preview.membersAdded, "1 miembro nuevo", "${preview.membersAdded} miembros nuevos"),
                 )
                 ImportPreviewLine(
+                    "Copias guardadas",
+                    counted(preview.versionsAdded, "1 nueva", "${preview.versionsAdded} nuevas"),
+                )
+                ImportPreviewLine(
                     "Actividad",
                     counted(preview.favoritesAdded, "1 favorito", "${preview.favoritesAdded} favoritos") + " · " +
                         counted(preview.historyAdded, "1 vista nueva", "${preview.historyAdded} vistas nuevas"),

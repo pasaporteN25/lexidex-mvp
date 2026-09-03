@@ -1447,21 +1447,41 @@ segundo plano mientras el proyecto no tome `androidx.work`.
       revisados y 171 sin cambios.
       Auditado sobre los datos que dejo el barrido: ningun termino con mas de
       cinco copias y ninguno sin exactamente una activa.
-- [ ] **10.10** _(Opus 5 · L)_ Que las copias guardadas viajen. Hoy
-      `term_versions` no entra ni al respaldo -exportar e importar pierde las
-      copias, aunque no los terminos- ni al contrato de sincronizacion, que fija
-      su lista de tablas (ADR 0004). El respaldo es lo urgente de los dos, porque
-      es perdida de datos silenciosa; sumarlo pide subir `BACKUP_FORMAT_VERSION`
-      a 3. La sincronizacion es mas cara y ademas hay que decidir si tiene
-      sentido: son copias del mismo articulo publico, y cada dispositivo puede
-      volver a traerlas por su cuenta.
-- [ ] **10.9** _(Haiku 4.5 · S)_ Las fuentes del paquete no llevan
-      `license_name`: estan vacias en las 4.539, asi que la ficha dice "CC BY-SA"
-      para un termino propio importado de Wikipedia y no lo dice para uno del
-      paquete que viene del mismo lugar. La atribucion no falta -el modelo del
-      manifiesto es que la URL de origen la cumple, y esa esta- pero la ficha se
-      contradice entre un catalogo y el otro. Lo escribe `build_corpus.py` al
-      construir, junto a `source_kind`.
+- [x] **10.10a** ✅ Hecho el 2026-09-03. Las copias viajan en el respaldo.
+      `BACKUP_FORMAT_VERSION` pasa a **3**; un respaldo de la version 2 se sigue
+      leyendo y simplemente no trae copias, que es lo que pasaba antes de que
+      existieran.
+      Al importar, una copia es la misma copia si es el mismo texto del mismo
+      termino, asi que se compara por slug + origen + sha256 y **no por uid**:
+      dos telefonos que trajeron el mismo articulo le pusieron uids distintos a
+      lo mismo, y por uid entrarian las dos.
+      **Importar no cambia lo que estas leyendo.** Si el termino ya tenia copias,
+      la activa sigue siendo la local y el respaldo solo suma las que faltaban.
+      Solo cuando el termino no tenia ninguna -restaurar en un telefono nuevo- se
+      respeta la que el archivo marcaba activa, y sin ninguna marcada se toma la
+      mas reciente, la misma regla que usa borrar.
+      Verificado de punta a punta en el emulador: 23 copias exportadas, `pm
+      clear`, importadas, 23 recuperadas en 12 terminos con exactamente una
+      activa cada uno y las 23 en el indice de busqueda.
+      Siete tests de la regla mas dos del formato.
+- [ ] **10.10b** _(Opus 5 · L)_ Que las copias viajen tambien por la
+      sincronizacion. Es lo caro de los dos y hay que decidir antes si tiene
+      sentido: son copias del mismo articulo publico, cada dispositivo puede
+      volver a traerlas por su cuenta, y sumarlas al contrato (ADR 0004) fija una
+      lista de tablas que despues no se cambia gratis. Con el respaldo cubierto,
+      ya no hay perdida de datos silenciosa.
+- [x] **10.9** ✅ Hecho el 2026-09-03. El paquete vigente pasa a ser
+      **v0.5.1-licensed.1**, con `license_name` en 4.480 de las 4.539 fuentes.
+      `build_corpus.py` la escribe al construir segun el proyecto de origen, y
+      `enrich_corpus.py --stamp-licenses` la completa en un paquete ya
+      construido, sin salir a la red: el dato se deduce del `source_kind` que ya
+      estaba guardado. Mismo patron que `--stamp-dates`.
+      **Las 59 que quedan vacias son `source_kind = 'web'`**, URLs sueltas que no
+      declaran ninguna licencia que podamos afirmar. Dejarlas en blanco es lo
+      correcto: inventar una seria peor que no decir nada.
+      Verificado: contenido sin cambios y fechas intactas contra el v0.5.0, y en
+      el emulador un termino del paquete ahora lee "CC BY-SA · consultada el
+      19/08/2026", igual que uno propio.
 - [ ] **10.8** _(Sonnet 5 · M)_ La web no puede decir "esta copia sigue sin
       editar", que es lo que en Android habilita la linea de autoria. El backend
       **guarda y transmite** `content_sha256` y `retrieved_at` -por eso un

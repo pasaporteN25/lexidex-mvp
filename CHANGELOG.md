@@ -9,11 +9,29 @@ por fecha de trabajo. Cuando salga la primera version, lo que este en "Sin
 publicar" pasa a `## [0.1.0] - fecha`.
 
 El paquete de conocimiento se versiona **aparte** de la aplicacion, con su
-propio ciclo (`0.5.0-dated.1` hoy): esos numeros aparecen aca como cambios de
+propio ciclo (`0.5.1-licensed.1` hoy): esos numeros aparecen aca como cambios de
 datos, no como versiones del producto. La politica de retencion de paquetes esta
 en [`docs/corpus.md`](docs/corpus.md).
 
 ## Sin publicar
+
+### 2026-09-03
+
+#### Agregado
+
+- Las copias guardadas entran al respaldo (tarea 10.10a). Exportar e importar ya
+  no las pierde. El formato pasa a la version 3; un respaldo viejo se sigue
+  leyendo. Importar **no cambia lo que estas leyendo**: suma las copias que te
+  faltaban y respeta la que tenias activa, salvo en un telefono nuevo donde no
+  habia ninguna.
+
+#### Cambiado
+
+- El paquete vigente pasa a ser **v0.5.1-licensed.1** (tarea 10.9): sus fuentes
+  ahora declaran "CC BY-SA" cuando vienen de un proyecto de Wikimedia, asi que la
+  ficha dice lo mismo para un termino del paquete que para uno propio traido del
+  mismo lugar. Las 59 URLs sueltas quedan sin licencia, porque no declaran
+  ninguna que se pueda afirmar.
 
 ### 2026-09-02
 

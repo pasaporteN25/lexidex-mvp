@@ -53,6 +53,7 @@ class SourceSeed:
     canonical_url: str
     host: str
     language: str
+    license_name: str = ""
 
 
 @dataclass
@@ -201,6 +202,24 @@ def canonical_query(query):
     return urlencode(sorted(values), doseq=True)
 
 
+# Los proyectos de Wikimedia publican su contenido bajo CC BY-SA; el resto de las URLs sueltas no
+# declaran ninguna licencia que podamos afirmar, y decir una que no sabemos seria peor que callar.
+WIKIMEDIA_LICENSE = "CC BY-SA"
+WIKIMEDIA_PROJECTS = ("wikipedia", "wikcionario", "wiktionary", "wikiquote", "wikisource")
+
+
+def license_for_source_kind(source_kind):
+    """
+    La licencia que corresponde declarar para una fuente del paquete.
+
+    Existe porque la ficha se contradecia entre catalogos: un termino propio importado de Wikipedia
+    mostraba "CC BY-SA" y uno del paquete, del mismo lugar, no mostraba nada. La atribucion nunca
+    falto -la URL de origen la cumple, que es el modelo que declara el manifiesto- pero el que lee
+    no tiene por que notar esa diferencia.
+    """
+    return WIKIMEDIA_LICENSE if source_kind in WIKIMEDIA_PROJECTS else ""
+
+
 def canonical_generic_url(raw_url):
     parts = urlsplit(raw_url)
     if parts.scheme.casefold() not in {"http", "https"} or not parts.hostname:
@@ -269,6 +288,7 @@ def parse_url_seed(raw_url):
         canonical_url=canonical_url,
         host=host,
         language=language,
+        license_name=license_for_source_kind(source_kind),
     )
     return term, source
 
@@ -505,8 +525,8 @@ def insert_database(db_path, schema_path, parsed, import_record, package_meta, e
             cursor = connection.execute(
                 """
                 INSERT INTO sources (
-                  uid, term_id, source_kind, url, canonical_url, host, language
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                  uid, term_id, source_kind, url, canonical_url, host, language, license_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     source.uid,
@@ -516,6 +536,7 @@ def insert_database(db_path, schema_path, parsed, import_record, package_meta, e
                     source.canonical_url,
                     source.host,
                     source.language,
+                    source.license_name,
                 ),
             )
             source_ids[source.uid] = cursor.lastrowid

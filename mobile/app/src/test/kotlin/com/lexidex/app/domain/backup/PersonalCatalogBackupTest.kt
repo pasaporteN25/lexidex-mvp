@@ -58,6 +58,45 @@ class PersonalCatalogBackupTest {
     )
 
     @Test
+    fun `the stored copies travel with the backup`() {
+        val dated = backup.copy(
+            versions = listOf(
+                BackupTermVersion(
+                    uid = "ver_" + "a".repeat(32),
+                    slug = "poligenismo",
+                    origin = "package",
+                    summary = "teoria",
+                    content = "El poligenismo sostiene otra cosa.",
+                    contentSha256 = "b".repeat(64),
+                    retrievedAt = "2026-08-19T23:28:52Z",
+                    sourceUrl = "https://es.wikipedia.org/wiki/Poligenismo",
+                    isActive = true,
+                    createdAt = "2026-09-02T00:00:00Z",
+                ),
+            ),
+        )
+
+        val restored = personalCatalogBackupFromJson(dated.toJson())
+
+        assertEquals(dated.versions, restored.versions)
+    }
+
+    @Test
+    fun `a version 2 backup still reads, it just has no copies`() {
+        // Un respaldo escrito antes de que las copias existieran no puede dejar de importarse.
+        val v2 = backup.toJson().replace(
+            "\"version\": $BACKUP_FORMAT_VERSION",
+            "\"version\": 2",
+        )
+
+        val restored = personalCatalogBackupFromJson(v2)
+
+        assertEquals(2, restored.version)
+        assertTrue(restored.versions.isEmpty())
+        assertEquals(backup.terms, restored.terms)
+    }
+
+    @Test
     fun `the file says what it is and which version it speaks`() {
         val json = backup.toJson()
 

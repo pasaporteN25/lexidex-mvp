@@ -41,6 +41,7 @@ import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
 import com.lexidex.app.domain.TermSummary
 import com.lexidex.app.domain.backup.BackupCollection
+import com.lexidex.app.domain.backup.BackupTermVersion
 import com.lexidex.app.domain.backup.BackupTerm
 import com.lexidex.app.domain.backup.BackupTermRef
 import com.lexidex.app.domain.backup.BackupTermSource
@@ -478,6 +479,20 @@ class CorpusRepository(
             history = database.historyDao().listAllForBackup().map {
                 BackupTermRef(it.termSlug, it.termOrigin.wireValue(), it.viewedAt)
             },
+            versions = database.termVersionDao().allForBackup().map { version ->
+                BackupTermVersion(
+                    uid = version.uid,
+                    slug = version.slug,
+                    origin = version.origin.wireValue(),
+                    summary = version.summary,
+                    content = version.content,
+                    contentSha256 = version.contentSha256,
+                    retrievedAt = version.retrievedAt,
+                    sourceUrl = version.sourceUrl,
+                    isActive = version.isActive,
+                    createdAt = version.createdAt,
+                )
+            },
             collections = collections.map { collection ->
                 BackupCollection(
                     uid = collection.uid,
@@ -564,6 +579,14 @@ class CorpusRepository(
             if (stored.sourceUrl != projected) termDao.update(projectedTerm)
             recorder.termUpserted(projectedTerm, sources, projectedTerm.updatedAt)
         }
+
+        val versionDao = database.termVersionDao()
+        plan.versionsToAdd.forEach { version ->
+            versionDao.insert(version.toEntity())
+        }
+        // Activar despues de insertar todas, porque `activate` apaga las otras del mismo termino:
+        // hacerlo en el medio dejaria activa la ultima insertada y no la que corresponde.
+        plan.versionsToActivate.forEach { uid -> versionDao.activate(uid) }
 
         val collectionDao = database.collectionDao()
         plan.collectionsToAdd.forEach { collection ->
@@ -1405,6 +1428,21 @@ private fun PersonalTermSourceEntity.toDomain() = TermSource(
     licenseName = licenseName,
     retrievedAt = retrievedAt,
     contentSha256 = contentSha256,
+)
+
+private fun BackupTermVersion.toEntity() = TermVersionEntity(
+    uid = uid,
+    slug = slug,
+    origin = if (origin == "personal") TermOrigin.PERSONAL else TermOrigin.PACKAGE,
+    summary = summary,
+    content = content,
+    contentSha256 = contentSha256,
+    retrievedAt = retrievedAt,
+    sourceUrl = sourceUrl,
+    // La activa la decide el plan, no el archivo: importar no deberia cambiarte lo que estas
+    // leyendo en un termino que ya tenias.
+    isActive = false,
+    createdAt = createdAt,
 )
 
 private fun BackupCollection.toEntity() = CollectionEntity(

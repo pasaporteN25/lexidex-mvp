@@ -30,6 +30,9 @@ from urllib.parse import unquote, urlencode, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(ROOT / "tools"))
+
+import build_corpus  # noqa: E402
 
 import lexidex_api as api  # noqa: E402
 
@@ -536,6 +539,24 @@ def stamp_source_dates(conn):
     ).rowcount
 
 
+def stamp_source_licenses(conn):
+    """
+    Completa `sources.license_name` en un paquete construido antes de que se escribiera.
+
+    Es el mismo caso que `stamp_source_dates`: el dato se deduce de lo que ya esta guardado -el
+    `source_kind` dice de que proyecto vino- asi que no hace falta pedir nada ni rehacer el paquete
+    desde el txt. Solo toca las que estan vacias, asi que correrlo dos veces no pisa nada.
+    """
+    projects = ", ".join("?" for _ in build_corpus.WIKIMEDIA_PROJECTS)
+    return conn.execute(
+        f"""
+        UPDATE sources SET license_name = ?
+        WHERE license_name = '' AND source_kind IN ({projects})
+        """,
+        (build_corpus.WIKIMEDIA_LICENSE, *build_corpus.WIKIMEDIA_PROJECTS),
+    ).rowcount
+
+
 def stamp_package_version(conn, package_version):
     """
     Re-sella `package_meta.package_version` dentro de la base.
@@ -640,11 +661,34 @@ def main():
         help="reaplica el filtro a las categorias ya guardadas, sin salir a la red",
     )
     parser.add_argument(
+        "--stamp-licenses",
+        action="store_true",
+        help="completa sources.license_name segun el proyecto de origen, sin salir a la red",
+    )
+    parser.add_argument(
         "--stamp-dates",
         action="store_true",
         help="fecha las fuentes ya enriquecidas desde terms.updated_at, sin salir a la red",
     )
     args = parser.parse_args()
+
+    if args.stamp_licenses:
+        conn = sqlite3.connect(args.database)
+        try:
+            stamped = stamp_source_licenses(conn)
+            conn.commit()
+            missing = conn.execute(
+                "SELECT COUNT(*) FROM sources WHERE license_name = ''"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        stats = {"licencias_escritas": stamped, "fuentes_sin_licencia": missing}
+        if stamped:
+            stats["paquete"] = finalize_package(args.database, args.package_version)
+        else:
+            stats["paquete"] = "sin cambios, no se reescribe"
+        print(json.dumps(stats, indent=2, ensure_ascii=False))
+        return
 
     if args.stamp_dates:
         conn = sqlite3.connect(args.database)

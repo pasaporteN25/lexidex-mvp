@@ -5,7 +5,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /** Version escrita hoy; el importador mantiene lectores explicitos para las versiones anteriores. */
-const val BACKUP_FORMAT_VERSION = 2
+const val BACKUP_FORMAT_VERSION = 3
 
 /** Marca del archivo, para reconocerlo antes de intentar leerlo (lo va a necesitar 9.2). */
 const val BACKUP_FORMAT_NAME = "lexidex-personal-catalog"
@@ -32,6 +32,33 @@ data class PersonalCatalogBackup(
     /** Una entrada por termino, su vista mas reciente: es lo que muestra la pantalla de historial. */
     val history: List<BackupTermRef> = emptyList(),
     val collections: List<BackupCollection> = emptyList(),
+    /**
+     * Las copias fechadas de cada termino (tarea 10.3), desde la version 3.
+     *
+     * Un respaldo de la version 2 no las trae y se lee igual: la lista queda vacia y los terminos
+     * vuelven con su texto, que es lo que pasaba antes de que existieran.
+     */
+    val versions: List<BackupTermVersion> = emptyList(),
+)
+
+/**
+ * Una copia guardada del texto de un termino.
+ *
+ * Referencia el termino por `slug` + `origin` y no por uid, porque una copia puede ser de un
+ * termino del paquete, que no tiene fila en la base de usuario.
+ */
+@Serializable
+data class BackupTermVersion(
+    val uid: String,
+    val slug: String,
+    val origin: String,
+    val summary: String = "",
+    val content: String,
+    val contentSha256: String,
+    val retrievedAt: String,
+    val sourceUrl: String = "",
+    val isActive: Boolean = false,
+    val createdAt: String,
 )
 
 @Serializable

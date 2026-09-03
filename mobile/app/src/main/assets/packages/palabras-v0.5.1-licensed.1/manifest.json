@@ -1,9 +1,9 @@
 {
   "artifacts": {
     "database": {
-      "bytes": 10846208,
+      "bytes": 10883072,
       "file": "lexidex.sqlite",
-      "sha256": "4c087322b420d55c2958e3589099da909ca1a25dccdb2bff5043e14a8b799102"
+      "sha256": "1259086aed20643cc237d5cafe24fc7267407687a6135a06f762c0ef9e8b8baa"
     },
     "import_report": {
       "bytes": 3420,
@@ -52,7 +52,7 @@
     "Los extractos provienen de Wikipedia (CC BY-SA); cada termino conserva su URL de origen como atribucion. Se guarda solo la introduccion, recortada en limite de oracion."
   ],
   "package_id": "lexidex.palabras",
-  "package_version": "0.5.0-dated.1",
+  "package_version": "0.5.1-licensed.1",
   "parser_version": "1.0.0",
   "schema_version": 1,
   "source": {
