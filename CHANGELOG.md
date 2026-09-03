@@ -19,6 +19,10 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Agregado
 
+- El codigo de emparejamiento se puede **escanear con la camara** (tarea 9.13).
+  El hub ahora lo dibuja como QR ademas de mostrarlo como texto, y pegarlo a mano
+  sigue funcionando igual: es el mismo codigo por otra puerta. Sin camara o sin
+  permiso, la aplicacion te manda a pegarlo.
 - Lexidex abre con su propia pantalla de inicio (tareas 11.1 y 11.2): el icono de
   ficha sobre el verde de la aplicacion, dibujado por el sistema desde que se
   toca el icono. **No es una espera artificial**: dura exactamente lo que tarda

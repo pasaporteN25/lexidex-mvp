@@ -958,6 +958,22 @@ button {
   text-underline-offset: 3px;
 }
 
+/* El QR se escanea desde la pantalla: fondo blanco siempre, tambien en tema oscuro, porque un
+   codigo sobre fondo oscuro obliga al lector a invertir y muchos no lo hacen. */
+.pairing-qr {
+  margin-top: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #ffffff;
+  line-height: 0;
+}
+
+.pairing-qr svg {
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+}
+
 .authorship {
   margin-bottom: 6px;
   color: var(--ink-soft);

@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
 
 import local_sync_engine
+import qr_encoder
 import local_sync_security
 from local_sync_contract import DEVICE_ID_PATTERN, MAX_SYNC_REQUEST_BYTES
 
@@ -2631,7 +2632,11 @@ class LexidexHandler(BaseHTTPRequestHandler):
             payload = self.store.security.start_pairing(
                 f"{scheme}://{host}/api/sync/v1/exchange"
             )
-            self.send_json(200, payload)
+            # El QR viaja junto al payload y no como pedido aparte: son la misma cosa mirada de
+            # dos formas, y un segundo pedido podria traer el codigo de otro emparejamiento si el
+            # usuario apreto dos veces.
+            compact = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+            self.send_json(200, dict(payload, qr_svg=qr_encoder.to_svg(qr_encoder.encode(compact))))
         except local_sync_engine.SyncEngineError as error:
             self.send_json(error.status, local_sync_engine.error_document(error))
 

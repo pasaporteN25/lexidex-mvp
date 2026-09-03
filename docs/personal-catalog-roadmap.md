@@ -1236,13 +1236,50 @@ el flujo funcione.
       canonico para probar Room y no miente sobre el entorno. Mientras tanto lo
       que queda descubierto es una llamada a DAO por operacion.
 
-- [ ] **9.13** _(Sonnet 5 · M)_ Escanear el codigo de emparejamiento con la
-      camara en vez de pegarlo. **Aprobada el 2026-08-25**: se puede agregar la
-      dependencia de camara al modulo Android. Falta elegir entre CameraX + ML
-      Kit y ZXing, agregar el permiso, y dibujar el QR del lado del hub, que hoy
-      muestra el codigo como texto. El formato del payload ya es el definitivo,
-      asi que esto cambia **como** entra, no que entra: pegar el codigo tiene que
-      seguir funcionando como alternativa cuando la camara no este disponible.
+- [x] **9.13** ✅ Hecho el 2026-09-03. La camara escanea el codigo, y pegar sigue
+      estando: lo que entra por el QR es exactamente el mismo texto y lo valida
+      el mismo emparejamiento, asi que no hay un camino aparte que auditar.
+      **Eleccion de biblioteca: CameraX + `com.google.zxing:core`**, y no ML Kit.
+      ML Kit bundled agrega varios MB al APK y la version liviana depende de los
+      servicios de Google, que es una dependencia de red y de plataforma en una
+      aplicacion que se define por funcionar sin conexion. zxing core es el
+      decodificador solo, sin interfaz propia, asi que el dialogo se ve como el
+      resto de Lexidex en vez de como la Activity de otra biblioteca.
+      El permiso es `CAMERA` con `uses-feature required=false`: un telefono sin
+      camara no tiene por que quedar afuera cuando pegar hace lo mismo. Sin
+      permiso, el dialogo lo dice y manda a pegar.
+      `QrDecoder` se separo de la pantalla porque es lo unico que se puede probar
+      sin camara. Siete tests, sobre lo que de verdad se rompe: el `rowStride`
+      -la camara alinea las filas y pasarle el ancho equivocado inclina la
+      imagen-, la inversion para un hub en tema oscuro, y que un buffer truncado
+      no explote desde adentro de zxing.
+
+      **El QR del lado del hub obligo a escribir un codificador** (`backend/
+      qr_encoder.py`, ~400 lineas), porque el backend sigue siendo solo
+      biblioteca estandar: es la misma regla que congelo 9.10 y 9.14. Alcance
+      chico a proposito: modo byte, correccion L, versiones 1 a 20, que es lo que
+      el payload necesita (231 a 323 bytes segun haya certificado, versiones 10 a
+      12) con margen.
+      **Se verifica decodificandolo con zxing desde los tests de Android**
+      (`QrEncoderFixtureTest`), que es la unica prueba que dice algo: un
+      codificador propio puede producir algo que parece un QR y que ningun lector
+      entiende, y comprobarlo con un decodificador propio seria circular. Cinco
+      fixtures, incluido **un payload que emitio el hub corriendo**.
+      Escribirlo encontro tres bugs que ningun test estructural habria visto: el
+      BCH del formato y el de la version calculados con un bucle mal cortado, los
+      quince bits del formato colocados al reves -el bit 14 va primero-, y el
+      reparto de la segunda copia corrido uno, que ademas pisaba el modulo
+      oscuro. Once tests mas en `tests/test_qr_encoder.py` sobre la estructura y
+      los valores que publica la norma.
+      El SVG viaja dentro de la respuesta de `/api/sync/v1/pairing` y no como
+      pedido aparte, porque son la misma cosa y dos pedidos podrian devolver
+      codigos de emparejamientos distintos. Se dibuja sobre blanco siempre,
+      tambien en tema oscuro, porque muchos lectores no invierten.
+
+      **Lo que falta verificar a mano**: apuntar un telefono de verdad a la
+      pantalla. En el emulador se comprobo que la camara se ata y entrega cuadros
+      -se ve la escena virtual- y que denegar el permiso manda a pegar, pero la
+      escena virtual no puede mostrar un QR nuestro.
 
 - [ ] **9.14** _(Sonnet 5 · S)_ Generar el certificado TLS del hub sin salir a
       buscar `openssl`. **Congelada por decision del 2026-08-25**: pide

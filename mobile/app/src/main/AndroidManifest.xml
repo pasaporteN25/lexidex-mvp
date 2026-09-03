@@ -8,6 +8,11 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Solo para escanear el codigo de emparejamiento. `required=false` a proposito: pegar el
+         codigo hace lo mismo, asi que un telefono sin camara no tiene por que quedar afuera. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
     <application
         android:name=".LexidexApplication"
         android:allowBackup="true"

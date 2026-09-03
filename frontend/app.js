@@ -34,6 +34,7 @@ const elements = {
   storagePanel: document.querySelector("#storagePanel"),
   pairButton: document.querySelector("#pairButton"),
   pairingCode: document.querySelector("#pairingCode"),
+  pairingQr: document.querySelector("#pairingQr"),
   pairingHint: document.querySelector("#pairingHint"),
   deviceList: document.querySelector("#deviceList"),
   themeToggle: document.querySelector("#themeToggle"),
@@ -1132,7 +1133,13 @@ async function showPairingCode() {
   elements.pairButton.disabled = true;
   try {
     const offer = await api("/api/sync/v1/pairing", { method: "POST" });
-    elements.pairingCode.textContent = JSON.stringify(offer, null, 2);
+    // El SVG lo arma el hub y llega como texto; se inserta tal cual porque es nuestro y no del
+    // usuario, y porque volver a dibujarlo aca obligaria a tener un codificador de QR en el
+    // navegador para nada.
+    const { qr_svg: qr, ...code } = offer;
+    elements.pairingQr.innerHTML = qr || "";
+    elements.pairingQr.hidden = !qr;
+    elements.pairingCode.textContent = JSON.stringify(code, null, 2);
     elements.pairingCode.hidden = false;
     elements.pairingHint.hidden = false;
   } catch (error) {

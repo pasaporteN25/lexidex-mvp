@@ -47,6 +47,8 @@ import com.lexidex.app.data.repository.PersonalCatalogImportSummary
 import com.lexidex.app.data.sync.RefusedChange
 import com.lexidex.app.ui.OnResume
 import com.lexidex.app.ui.theme.LexidexSpacing
+import com.lexidex.app.ui.sync.QrScannerDialog
+import com.lexidex.app.ui.sync.deviceCanScan
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -257,6 +259,11 @@ private fun SyncSection(
 ) {
     var code by rememberSaveable { mutableStateOf("") }
     val deviceLabel = remember { "${Build.MANUFACTURER} ${Build.MODEL}".trim() }
+    var scanning by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    // Se pregunta una vez: si el telefono no tiene camara, el boton no aparece en vez de aparecer
+    // y fallar al tocarlo.
+    val canScan = remember { deviceCanScan(context) }
 
     Section("SINCRONIZACION") {
         Explanation(
@@ -295,8 +302,20 @@ private fun SyncSection(
             }
         } else {
             Explanation(
-                "En la computadora, abri Lexidex y pedi el codigo de emparejamiento. Pegalo aca.",
+                "En la computadora, abri Lexidex y pedi el codigo de emparejamiento. " +
+                    "Escanealo con la camara o pegalo aca.",
             )
+            if (canScan) {
+                OutlinedButton(
+                    onClick = { scanning = true },
+                    enabled = !sync.isPairing,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+                ) {
+                    Text("Escanear el codigo")
+                }
+            }
             OutlinedTextField(
                 value = code,
                 onValueChange = { code = it },
@@ -318,6 +337,19 @@ private fun SyncSection(
                     .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
             ) {
                 Text(if (sync.isPairing) "Emparejando..." else "Emparejar")
+            }
+
+            if (scanning) {
+                QrScannerDialog(
+                    onScanned = { scanned ->
+                        scanning = false
+                        // Lo que entra por la camara es el mismo texto que se pega a mano y lo
+                        // valida el mismo emparejamiento: no hay un camino aparte que auditar.
+                        onPair(scanned, deviceLabel)
+                        code = ""
+                    },
+                    onDismiss = { scanning = false },
+                )
             }
         }
 
