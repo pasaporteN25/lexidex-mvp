@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
                 repository = application.corpusRepository,
                 knowledgeSources = application.knowledgeSources,
                 syncRepository = application.syncRepository,
+                sourceSelectionStore = application.sourceSelectionStore,
             )
         }
     }

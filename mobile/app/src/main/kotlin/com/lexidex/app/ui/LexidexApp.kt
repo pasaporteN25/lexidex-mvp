@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lexidex.app.data.knowledge.KnowledgeSource
+import com.lexidex.app.data.knowledge.SourceSelectionStore
 import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.data.sync.SyncRepository
 import com.lexidex.app.ui.navigation.LexidexNavHost
@@ -25,6 +26,7 @@ fun LexidexApp(
     repository: CorpusRepository,
     knowledgeSources: List<KnowledgeSource> = emptyList(),
     syncRepository: SyncRepository,
+    sourceSelectionStore: SourceSelectionStore? = null,
 ) {
     LexidexTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -34,7 +36,12 @@ fun LexidexApp(
             val readiness by readinessViewModel.state.collectAsStateWithLifecycle()
             when (val state = readiness) {
                 AppReadiness.Loading -> LoadingGate()
-                AppReadiness.Ready -> LexidexNavHost(repository, knowledgeSources, syncRepository)
+                AppReadiness.Ready -> LexidexNavHost(
+                    repository = repository,
+                    knowledgeSources = knowledgeSources,
+                    syncRepository = syncRepository,
+                    sourceSelectionStore = sourceSelectionStore,
+                )
                 is AppReadiness.Error -> ErrorGate(state.message)
             }
         }

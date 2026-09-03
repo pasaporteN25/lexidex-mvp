@@ -4,6 +4,7 @@ import android.app.Application
 import com.lexidex.app.data.corpus.CorpusDatabaseProvider
 import com.lexidex.app.data.knowledge.KnowledgeSource
 import com.lexidex.app.data.knowledge.KnowledgeSourceRegistry
+import com.lexidex.app.data.knowledge.SourceSelectionStore
 import com.lexidex.app.data.knowledge.WikipediaKnowledgeSource
 import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.data.sync.KeystoreSyncBindingStore
@@ -46,4 +47,7 @@ class LexidexApplication : Application() {
         KnowledgeSourceRegistry(listOf(WikipediaKnowledgeSource()))
     }
     val knowledgeSources: List<KnowledgeSource> by lazy { knowledgeSourceRegistry.all }
+
+    /** Que fuentes consulta el buscador; es una preferencia de este telefono (tarea 5.18). */
+    val sourceSelectionStore by lazy { SourceSelectionStore(this) }
 }

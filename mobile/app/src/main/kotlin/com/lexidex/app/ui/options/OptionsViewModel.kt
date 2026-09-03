@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lexidex.app.data.knowledge.KnowledgeSource
+import com.lexidex.app.data.knowledge.SourceSelectionStore
+import com.lexidex.app.domain.SourceSelection
 import com.lexidex.app.domain.BulkRefreshProgress
 import com.lexidex.app.domain.bulkRefreshSummary
 import com.lexidex.app.data.knowledge.KnowledgeSearchResult
@@ -54,7 +56,22 @@ data class OptionsUiState(
     val importFailed: Boolean = false,
     val sync: SyncUiState = SyncUiState(),
     val bulk: BulkRefreshUiState = BulkRefreshUiState(),
+    val sources: SourcesUiState = SourcesUiState(),
 )
+
+/**
+ * Que fuentes externas se consultan al buscar.
+ *
+ * [ids] va en paralelo a los nombres que ya muestra la pantalla: el usuario elige por nombre y la
+ * seleccion se guarda por id, que es lo estable.
+ */
+data class SourcesUiState(
+    val ids: List<String> = emptyList(),
+    val names: List<String> = emptyList(),
+    val selection: SourceSelection = SourceSelection.ALL,
+) {
+    val chosenCount: Int get() = selection.count(ids)
+}
 
 /**
  * La actualizacion masiva como la ve la pantalla.
@@ -134,6 +151,7 @@ class OptionsViewModel(
     private val repository: CorpusRepository,
     private val knowledgeSources: List<KnowledgeSource>,
     private val syncRepository: SyncRepository,
+    private val selectionStore: SourceSelectionStore? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(OptionsUiState())
     val uiState: StateFlow<OptionsUiState> = _uiState.asStateFlow()
@@ -143,6 +161,35 @@ class OptionsViewModel(
     init {
         refresh()
         refreshSync()
+        loadSources()
+    }
+
+    private fun loadSources() {
+        val ids = knowledgeSources.map { it.id }
+        _uiState.update {
+            it.copy(
+                sources = SourcesUiState(
+                    ids = ids,
+                    names = knowledgeSources.map { source -> source.displayName },
+                    selection = selectionStore?.load(ids) ?: SourceSelection.default(ids),
+                ),
+            )
+        }
+    }
+
+    fun onToggleSource(id: String, active: Boolean) {
+        val sources = _uiState.value.sources
+        val updated = sources.selection.with(id, active, sources.ids)
+        selectionStore?.save(updated)
+        _uiState.update { it.copy(sources = it.sources.copy(selection = updated)) }
+    }
+
+    /** "Todas" incluye las que se registren despues, y por eso se guarda como una eleccion aparte. */
+    fun onSelectAllSources(all: Boolean) {
+        val sources = _uiState.value.sources
+        val updated = if (all) SourceSelection.ALL else SourceSelection.default(sources.ids)
+        selectionStore?.save(updated)
+        _uiState.update { it.copy(sources = it.sources.copy(selection = updated)) }
     }
 
     private fun refreshSync() {
@@ -563,8 +610,11 @@ class OptionsViewModel(
             repository: CorpusRepository,
             knowledgeSources: List<KnowledgeSource>,
             syncRepository: SyncRepository,
+            selectionStore: SourceSelectionStore? = null,
         ): ViewModelProvider.Factory =
-            viewModelFactoryOf { OptionsViewModel(repository, knowledgeSources, syncRepository) }
+            viewModelFactoryOf {
+                OptionsViewModel(repository, knowledgeSources, syncRepository, selectionStore)
+            }
     }
 }
 

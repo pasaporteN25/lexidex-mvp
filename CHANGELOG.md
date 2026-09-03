@@ -19,6 +19,12 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Agregado
 
+- Se puede elegir en que fuentes busca Lexidex al crear un termino: una, un grupo
+  o todas (tarea 5.18). **Todas nunca es lo que viene puesto**, porque cada
+  fuente elegida es un pedido mas y datos que se gastan; la pantalla dice cuantas
+  se van a consultar. Si una no contesta, te lo dice en vez de dejarte creer que
+  el articulo no existe, y el mismo articulo traido por dos fuentes se muestra
+  una sola vez. Con una sola fuente registrada la pantalla se ve igual que antes.
 - El codigo de emparejamiento se puede **escanear con la camara** (tarea 9.13).
   El hub ahora lo dibuja como QR ademas de mostrarlo como texto, y pegarlo a mano
   sigue funcionando igual: es el mismo codigo por otra puerta. Sin camara o sin

@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -113,7 +114,12 @@ fun OptionsScreen(viewModel: OptionsViewModel, onBack: () -> Unit) {
                     onStart = viewModel::onStartBulkRefresh,
                     onCancel = viewModel::onCancelBulkRefresh,
                 )
-                SourcesSection(storage)
+                SourcesSection(
+                    storage = storage,
+                    sources = uiState.sources,
+                    onToggle = viewModel::onToggleSource,
+                    onSelectAll = viewModel::onSelectAllSources,
+                )
             }
         }
     }
@@ -631,17 +637,66 @@ private fun BulkRefreshSection(
 }
 
 @Composable
-private fun SourcesSection(storage: StorageInfo) {
+private fun SourcesSection(
+    storage: StorageInfo,
+    sources: SourcesUiState,
+    onToggle: (String, Boolean) -> Unit,
+    onSelectAll: (Boolean) -> Unit,
+) {
     Section("FUENTES EXTERNAS") {
         if (storage.knowledgeSources.isEmpty()) {
             Explanation("Ninguna habilitada: la aplicacion no sale a la red.")
-        } else {
-            Explanation(
-                "Solo se consultan cuando buscas explicitamente al crear un termino. " +
-                    "El resto de la aplicacion funciona sin conexion.",
-            )
-            storage.knowledgeSources.forEach { name -> Field("Habilitada", name) }
+            return@Section
         }
+        Explanation(
+            "Solo se consultan cuando buscas explicitamente al crear un termino. " +
+                "El resto de la aplicacion funciona sin conexion.",
+        )
+        // El costo a la vista: cada fuente elegida es un pedido mas por busqueda. Es lo que
+        // convierte "gasta datos" en algo que se puede ver antes de elegir.
+        if (sources.chosenCount > 1) {
+            Explanation(
+                "Cada busqueda consulta ${sources.chosenCount} fuentes, y gasta datos por cada una.",
+            )
+        }
+        if (sources.ids.size <= 1) {
+            // Con una sola fuente no hay nada que elegir, y un interruptor que no se puede apagar
+            // -porque quedarse sin ninguna dejaria el buscador mudo- seria peor que decirlo.
+            storage.knowledgeSources.forEach { name -> Field("Habilitada", name) }
+            return@Section
+        }
+        sources.ids.forEachIndexed { index, id ->
+            SourceToggle(
+                name = sources.names.getOrElse(index) { id },
+                checked = sources.selection.contains(id, sources.ids),
+                enabled = !sources.selection.isAll,
+                onCheckedChange = { active -> onToggle(id, active) },
+            )
+        }
+        SourceToggle(
+            name = "Todas, incluidas las que se agreguen",
+            checked = sources.selection.isAll,
+            enabled = true,
+            onCheckedChange = onSelectAll,
+        )
+    }
+}
+
+@Composable
+private fun SourceToggle(
+    name: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.tight),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 

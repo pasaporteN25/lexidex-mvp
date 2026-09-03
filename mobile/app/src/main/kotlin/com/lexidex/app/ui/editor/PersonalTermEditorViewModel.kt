@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lexidex.app.data.knowledge.KnowledgeSearchResult
 import com.lexidex.app.data.knowledge.KnowledgeSource
+import com.lexidex.app.data.knowledge.MultiSourceSearch
+import com.lexidex.app.domain.SourceSelection
 import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.data.userdb.sourceOfContent
 import com.lexidex.app.data.repository.PersonalTermInput
@@ -116,10 +118,20 @@ class PersonalTermEditorViewModel(
 
     val isEditing: Boolean get() = editSlug != null
 
+    private val multiSearch = MultiSourceSearch(knowledgeSources)
+
     /** Null when no source is configured, which hides the lookup entry point entirely. */
     private val knowledgeSource: KnowledgeSource? = knowledgeSources.firstOrNull()
 
     val knowledgeSourceName: String? get() = knowledgeSource?.displayName
+
+    /**
+     * Cuantas fuentes se van a consultar con la seleccion actual.
+     *
+     * Se muestra antes de buscar porque es lo unico que convierte "esto gasta datos" en algo que
+     * se puede ver: con una fuente no dice nada, con cinco cambia la decision.
+     */
+    fun sourcesToQuery(selection: SourceSelection): Int = selection.count(multiSearch.availableIds)
 
     init {
         if (editSlug != null) {
@@ -205,16 +217,29 @@ class PersonalTermEditorViewModel(
      * Explicit submit rather than search-as-you-type: each call is a request to someone else's
      * service, so it fires when the user asks for it, not on every keystroke.
      */
-    fun onSubmitSearch() {
-        val source = knowledgeSource ?: return
+    fun onSubmitSearch(selection: SourceSelection = SourceSelection.default(multiSearch.availableIds)) {
+        if (knowledgeSource == null) return
         val state = _uiState.value
         if (!state.canSubmitSearch) return
         viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true, searchErrorMessage = null) }
-            suspendRunCatching { source.search(state.searchQuery, state.language) }.fold(
-                onSuccess = { results ->
+            suspendRunCatching {
+                multiSearch.search(state.searchQuery, state.language, selection)
+            }.fold(
+                onSuccess = { answer ->
                     _uiState.update {
-                        it.copy(isSearching = false, hasSearched = true, searchResults = results)
+                        it.copy(
+                            isSearching = false,
+                            hasSearched = true,
+                            searchResults = answer.results,
+                            // Una fuente que no contesto se dice, en vez de dejar creer que el
+                            // articulo no existe.
+                            searchErrorMessage = if (answer.failed.isEmpty()) {
+                                null
+                            } else {
+                                "No contesto: " + answer.failed.joinToString(", ") + "."
+                            },
+                        )
                     }
                 },
                 onFailure = { error ->

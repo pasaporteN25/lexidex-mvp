@@ -596,10 +596,36 @@ offline de Lexidex salvo que el acuerdo final autorice ese uso. Fuentes oficiale
       permiso de almacenamiento offline. Solo si esas respuestas cierran,
       implementar el adaptador en el backend/hub para no exponer la clave. **No
       hacer scraping** ni usar la clave de evaluacion en una version distribuida.
-- [ ] **5.18** _(L)_ Permitir elegir una fuente, un grupo de fuentes o todas.
-      Antes de habilitar `Todas`, definir deduplicacion entre fuentes, limites de
-      concurrencia y pedidos, cancelacion, latencia esperable y una indicacion
-      visible del consumo de datos; no debe convertirse en la opcion por defecto.
+- [x] **5.18** ✅ Hecho el 2026-09-03. `SourceSelection` guarda si se consulta una
+      fuente, un grupo o todas, y `MultiSourceSearch` la ejecuta. La eleccion vive
+      en `SharedPreferences`, como la vinculacion del hub: es una preferencia de
+      este telefono, no un dato del catalogo, y que otro dispositivo consulte
+      otras fuentes es correcto.
+      **"Todas" no es el default y no puede serlo**: el valor inicial es la
+      primera fuente sola, y apagar la ultima que quedaba devuelve esa primera en
+      vez de dejar el buscador mudo. "Todas" se guarda como marcador y no como la
+      lista de hoy, para que registrar una fuente nueva la incluya sin que el
+      usuario tenga que volver a pedirlo.
+      Lo que la tarea pedia definir antes de habilitarlo, con un test cada uno:
+      **deduplicacion** por titulo plegado + idioma -no por `externalId`, que cada
+      fuente numera a su manera-, ganando la primera fuente registrada;
+      **concurrencia** acotada a tres, que es lo que evita repetir el 429 que
+      midio la epica 4; **aislamiento de fallos**, porque quedarse sin resultados
+      porque una de tres no contesto seria peor que util, y se dice cual fallo;
+      y **cancelacion**, dejando pasar la `CancellationException` en vez de
+      contarla como "fallaron todas", que es el error que aparecio en 10.6c.
+      El plegado de acentos usa `foldedKey` y no `normalizedKey`: para un termino
+      propio "hipotesis" e "hipótesis" son dos terminos que el usuario escribio,
+      pero entre fuentes son la misma entrada escrita por dos catalogos.
+      El consumo de datos se dice antes de buscar -"cada busqueda consulta N
+      fuentes"- que es lo unico que lo vuelve visible.
+
+      **Con una sola fuente registrada esto casi no se ve, y es correcto que no
+      se vea.** El selector aparece recien con dos o mas; con una, la pantalla
+      sigue diciendo "Habilitada: Wikipedia" como antes, porque un interruptor
+      que no se puede apagar seria peor que una linea que informa. Lo que queda
+      construido y probado -con fuentes falsas- es el mecanismo, para que agregar
+      la segunda fuente (5.17) sea registrarla y nada mas.
 
 ## 6. Pantalla de opciones: de donde sale y donde se guarda la informacion ✅
 
