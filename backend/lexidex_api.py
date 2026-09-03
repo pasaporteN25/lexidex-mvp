@@ -2287,21 +2287,47 @@ def wikipedia_search(query, language, limit):
     """
     Candidatos para crear un termino, buscando primero en el idioma pedido.
 
-    Si ese idioma no devuelve nada se repite en ingles, que es donde esta casi todo lo tecnico.
-    Solo si no devuelve nada: los resultados de dos idiomas **no se mezclan**. Mezclarlos pondria
-    al lado dos articulos que no son el mismo, ordenados por una relevancia que no es comparable
-    entre ediciones, y el usuario elegiria a ciegas. Cada resultado se queda con el idioma en el
-    que aparecio, que despues es el que queda fijado al importarlo.
+    Si esa edicion no tiene el titulo exacto se consulta ingles para distinguir resultados apenas
+    relacionados de un articulo que solo existe alli. Las listas no se mezclan porque sus rankings
+    no son comparables: la inglesa reemplaza a la primaria solo cuando contiene el titulo exacto (o
+    cuando la primaria estaba vacia). Cada resultado conserva el idioma que luego queda fijado.
     """
     text = (query or "").strip()
     if not text:
         return []
     safe_limit = max(1, min(int(limit or KNOWLEDGE_SEARCH_LIMIT), KNOWLEDGE_MAX_SEARCH_LIMIT))
     primary = wikipedia_language(language)
-    results = wikipedia_search_in(primary, text, safe_limit)
-    if results or primary == KNOWLEDGE_SECONDARY_LANGUAGE:
+    results = prioritize_exact_wikipedia_title(
+        wikipedia_search_in(primary, text, safe_limit), text
+    )
+    if primary == KNOWLEDGE_SECONDARY_LANGUAGE or has_exact_wikipedia_title(results, text):
         return results
-    return wikipedia_search_in(KNOWLEDGE_SECONDARY_LANGUAGE, text, safe_limit)
+
+    try:
+        english = prioritize_exact_wikipedia_title(
+            wikipedia_search_in(KNOWLEDGE_SECONDARY_LANGUAGE, text, safe_limit), text
+        )
+    except ApiError:
+        # La comprobacion adicional no debe ocultar resultados validos que ya llegaron.
+        if results:
+            return results
+        raise
+    if not results or has_exact_wikipedia_title(english, text):
+        return english
+    return results
+
+
+def has_exact_wikipedia_title(results, query):
+    expected = normalized_key(query)
+    return any(normalized_key(item.get("title") or "") == expected for item in results)
+
+
+def prioritize_exact_wikipedia_title(results, query):
+    expected = normalized_key(query)
+    for index, item in enumerate(results):
+        if normalized_key(item.get("title") or "") == expected:
+            return [item, *results[:index], *results[index + 1 :]]
+    return results
 
 
 def wikipedia_search_in(lang, text, safe_limit):

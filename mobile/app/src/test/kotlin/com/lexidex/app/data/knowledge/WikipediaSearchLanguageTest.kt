@@ -20,6 +20,14 @@ private class ScriptedFetcher(private val pagesByLanguage: Map<String, String>) 
 
 private fun page(key: String) = """{"pages":[{"key":"$key","title":"$key","description":""}]}"""
 
+private fun pages(vararg titles: String): String = titles.joinToString(
+    prefix = """{"pages":[""",
+    postfix = "]}",
+) { title ->
+    val key = title.replace(' ', '_')
+    """{"key":"$key","title":"$title","description":""}"""
+}
+
 class WikipediaSearchLanguageTest {
     @Test
     fun `wikipedia declares the capabilities that make it safe to register`() {
@@ -83,6 +91,29 @@ class WikipediaSearchLanguageTest {
         // al lado articulos que no son el mismo.
         assertEquals(1, fetcher.asked.size)
         assertEquals(listOf("es"), results.map { it.language })
+    }
+
+    @Test
+    fun `an exact english title wins over related spanish results`() = runTest {
+        val fetcher = ScriptedFetcher(
+            mapOf(
+                "es" to pages("Command & Conquer", "Command & Conquer 3: Tiberium Wars"),
+                "en" to pages(
+                    "Command & Conquer",
+                    "Command & Conquer 4: Tiberian Twilight",
+                    "Tiberium",
+                ),
+            ),
+        )
+        val source = WikipediaKnowledgeSource(fetcher::getText)
+
+        val results = source.search("Command & Conquer 4: Tiberian Twilight", "es", 10)
+
+        assertEquals(2, fetcher.asked.size)
+        assertTrue(fetcher.asked[1].startsWith("https://en."))
+        assertTrue(fetcher.asked[1].contains("Command+%26+Conquer+4%3A+Tiberian+Twilight"))
+        assertEquals("Command & Conquer 4: Tiberian Twilight", results.first().title)
+        assertTrue(results.all { it.language == "en" })
     }
 
     @Test

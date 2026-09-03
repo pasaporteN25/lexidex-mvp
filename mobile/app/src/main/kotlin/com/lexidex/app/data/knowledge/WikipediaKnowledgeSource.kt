@@ -2,6 +2,8 @@ package com.lexidex.app.data.knowledge
 
 import java.net.URI
 import java.net.URLEncoder
+import java.text.Normalizer
+import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -89,21 +91,47 @@ class WikipediaKnowledgeSource(
     )
 
     /**
-     * Busca en el idioma pedido y, solo si no devuelve nada, repite en ingles.
+     * Busca primero en el idioma pedido. Si esa edicion no tiene el titulo exacto, consulta ingles
+     * para distinguir resultados meramente relacionados de un articulo que solo existe alli.
      *
-     * Los resultados de dos idiomas **no se mezclan**: cada edicion ordena por una relevancia que
-     * no es comparable con la otra, asi que una lista mezclada pondria lado a lado articulos que
-     * no son el mismo y el usuario elegiria a ciegas. Cada resultado se queda con el idioma en el
-     * que aparecio, que es el que despues queda fijado al importar el articulo.
+     * Las relevancias de dos ediciones no son comparables, por lo que nunca se mezclan las listas:
+     * una coincidencia inglesa exacta reemplaza a la lista primaria; si tampoco existe, se conserva
+     * la respuesta del idioma pedido. Dentro de la edicion elegida, el titulo exacto queda primero.
+     * Cada resultado conserva su idioma real, que es el que despues queda fijado al importarlo.
      */
     override suspend fun search(query: String, language: String, limit: Int): List<KnowledgeSearchResult> {
         val trimmed = query.trim()
         if (trimmed.isBlank()) return emptyList()
         val safeLimit = limit.coerceIn(1, MAX_SEARCH_LIMIT)
         val primary = wikipediaLanguage(language)
-        val found = searchIn(primary, trimmed, safeLimit)
-        if (found.isNotEmpty() || primary == SECONDARY_LANGUAGE) return found
-        return searchIn(SECONDARY_LANGUAGE, trimmed, safeLimit)
+        val found = prioritizeExact(searchIn(primary, trimmed, safeLimit), trimmed)
+        if (primary == SECONDARY_LANGUAGE || found.hasExactTitle(trimmed)) return found
+
+        val english = try {
+            prioritizeExact(searchIn(SECONDARY_LANGUAGE, trimmed, safeLimit), trimmed)
+        } catch (error: KnowledgeSourceError) {
+            // La comprobacion adicional no debe ocultar resultados validos que ya llegaron.
+            if (found.isNotEmpty()) return found
+            throw error
+        }
+        return if (found.isEmpty() || english.hasExactTitle(trimmed)) english else found
+    }
+
+    private fun prioritizeExact(
+        results: List<KnowledgeSearchResult>,
+        query: String,
+    ): List<KnowledgeSearchResult> {
+        val exactIndex = results.indexOfFirst { normalizedSearchTitle(it.title) == normalizedSearchTitle(query) }
+        if (exactIndex <= 0) return results
+        return buildList(results.size) {
+            add(results[exactIndex])
+            results.forEachIndexed { index, result -> if (index != exactIndex) add(result) }
+        }
+    }
+
+    private fun List<KnowledgeSearchResult>.hasExactTitle(query: String): Boolean {
+        val normalizedQuery = normalizedSearchTitle(query)
+        return any { normalizedSearchTitle(it.title) == normalizedQuery }
     }
 
     private suspend fun searchIn(
@@ -316,6 +344,15 @@ class WikipediaKnowledgeSource(
         }
 
         fun encodeQuery(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+
+        /** Comparacion estable de titulos; conserva signos significativos como `&` y `:`. */
+        fun normalizedSearchTitle(value: String): String =
+            Normalizer.normalize(value, Normalizer.Form.NFKC)
+                .trim()
+                .split(Regex("\\s+"))
+                .filter { it.isNotEmpty() }
+                .joinToString(" ")
+                .lowercase(Locale.ROOT)
 
         /** Same encoding, but `+` is a literal plus in a path segment, so it has to be escaped. */
         fun encodePathSegment(value: String): String =

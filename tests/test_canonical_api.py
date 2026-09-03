@@ -623,6 +623,41 @@ class ExternalKnowledgeSourceTest(unittest.TestCase):
         self.assertEqual(len(asked), 1)
         self.assertEqual([item["language"] for item in items], ["es"])
 
+    def test_an_exact_english_title_wins_over_related_spanish_results(self):
+        asked = []
+
+        def fake_fetch(url):
+            asked.append(url)
+            if "en.wikipedia.org" in url:
+                titles = [
+                    "Command & Conquer",
+                    "Command & Conquer 4: Tiberian Twilight",
+                    "Tiberium",
+                ]
+            else:
+                titles = ["Command & Conquer", "Command & Conquer 3: Tiberium Wars"]
+            return {
+                "pages": [
+                    {"key": title.replace(" ", "_"), "title": title}
+                    for title in titles
+                ]
+            }
+
+        original = api.fetch_knowledge_json
+        api.fetch_knowledge_json = fake_fetch
+        try:
+            items = api.wikipedia_search(
+                "Command & Conquer 4: Tiberian Twilight", "es", 10
+            )
+        finally:
+            api.fetch_knowledge_json = original
+
+        self.assertEqual(len(asked), 2)
+        self.assertIn("en.wikipedia.org", asked[1])
+        self.assertIn("Command+%26+Conquer+4%3A+Tiberian+Twilight", asked[1])
+        self.assertEqual(items[0]["title"], "Command & Conquer 4: Tiberian Twilight")
+        self.assertEqual({item["language"] for item in items}, {"en"})
+
     def test_a_search_already_in_english_does_not_ask_twice(self):
         asked = []
 
@@ -651,10 +686,10 @@ class ExternalKnowledgeSourceTest(unittest.TestCase):
             api.fetch_knowledge_json = original
 
     def test_search_maps_pages_and_ignores_markup_carrying_excerpt(self):
-        captured = {}
+        captured = {"urls": []}
 
         def fake_fetch(url):
-            captured["url"] = url
+            captured["urls"].append(url)
             return {
                 "pages": [
                     {
@@ -678,7 +713,7 @@ class ExternalKnowledgeSourceTest(unittest.TestCase):
         self.assertEqual(items[0]["external_id"], "Jorge_Luis_Borges")
         self.assertEqual(items[0]["description"], "escritor argentino")
         self.assertNotIn("excerpt", items[0])
-        self.assertTrue(captured["url"].startswith("https://es.wikipedia.org/"))
+        self.assertTrue(captured["urls"][0].startswith("https://es.wikipedia.org/"))
 
     def test_article_falls_back_to_a_wiki_url_when_the_source_omits_one(self):
         original = api.fetch_knowledge_json

@@ -380,7 +380,12 @@ private fun KnowledgeSearchDialog(
                     }
                 }
                 Text(
-                    "Se busca en la edicion en \"${uiState.language}\".",
+                    if (uiState.language.substringBefore('-').equals("en", ignoreCase = true)) {
+                        "Se busca en la edicion en ingles."
+                    } else {
+                        "Primero buscamos en la edicion \"${uiState.language}\". " +
+                            "Si no aparece el titulo exacto, probamos en ingles."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = LexidexSpacing.micro),
