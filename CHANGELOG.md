@@ -19,6 +19,11 @@ en [`docs/corpus.md`](docs/corpus.md).
 
 #### Agregado
 
+- Lexidex abre con su propia pantalla de inicio (tareas 11.1 y 11.2): el icono de
+  ficha sobre el verde de la aplicacion, dibujado por el sistema desde que se
+  toca el icono. **No es una espera artificial**: dura exactamente lo que tarda
+  en verificarse y abrirse el paquete local, y si algo falla se suelta para que
+  puedas leer el error. Medido: el tiempo hasta ver contenido no cambio.
 - Las copias guardadas entran al respaldo (tarea 10.10a). Exportar e importar ya
   no las pierde. El formato pasa a la version 3; un respaldo viejo se sigue
   leyendo. Importar **no cambia lo que estas leyendo**: suma las copias que te

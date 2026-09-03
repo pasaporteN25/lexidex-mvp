@@ -1,4 +1,7 @@
 <resources>
     <!-- DESIGN.md `teal` - launcher adaptive icon background only; Compose owns all in-app color. -->
     <color name="ic_launcher_background">#197562</color>
+    <!-- LightCanvas de ui/theme/Color.kt. Si ese cambia, este tiene que cambiar con el, o vuelve
+         el destello entre el fondo de la ventana y la primera composicion. -->
+    <color name="window_background">#E8ECEA</color>
 </resources>

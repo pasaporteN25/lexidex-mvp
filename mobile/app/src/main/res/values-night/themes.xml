@@ -1,0 +1,8 @@
+<resources>
+    <!-- Solo cambia el fondo de la ventana: el resto del tema oscuro lo decide Compose. -->
+    <style name="Theme.Lexidex" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>

@@ -3,5 +3,20 @@
     <style name="Theme.Lexidex" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- El mismo fondo que pinta Compose. Es lo que evita el destello entre la ventana y la
+             primera composicion: sin esto se ve el blanco del tema del sistema por un cuadro. -->
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+
+    <!--
+        La splash del sistema, que Lexidex usa como continuidad del arranque real y no como una
+        pantalla de espera: se mantiene mientras se verifica y se abre el paquete local, y ni un
+        milisegundo mas. Sin `windowSplashScreenAnimationDuration`, que solo sirve para retenerla
+        a proposito.
+    -->
+    <style name="Theme.Lexidex.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Lexidex</item>
     </style>
 </resources>

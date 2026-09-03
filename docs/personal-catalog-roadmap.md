@@ -1525,16 +1525,43 @@ solo puede mantenerse mientras dure la preparacion local imprescindible; nunca
 espera red, animacion ni un minimo de tiempo:
 [documentacion de Android](https://developer.android.com/develop/ui/views/launch/splash-screen).
 
-- [ ] **11.1** _(Sonnet 5 · S)_ Aplicar un tema `Theme.SplashScreen` con el icono
-      de ficha y el color de Lexidex, llamar `installSplashScreen()` antes de
-      `super.onCreate()` y mantenerla solo mientras `AppReadiness` sea `Loading`.
-      `Ready` muestra la aplicacion y `Error` debe soltar la splash para mostrar
-      el error recuperable. Sin `delay`, sin nueva Activity y sin trabajo de red.
-- [ ] **11.2** _(Sonnet 5 · S)_ Verificar inicio frio, tibio y caliente; primera
-      instalacion con copia/verificacion del paquete; error de paquete; temas
-      claro/oscuro y animaciones reducidas. Medir que no aumente el tiempo hasta
-      el primer contenido y evitar el destello entre el fondo del sistema y el
-      de Compose.
+- [x] **11.1** ✅ Hecho el 2026-09-03. `Theme.Lexidex.Splash` sobre
+      `Theme.SplashScreen`, con el icono de ficha y el teal de DESIGN.md.
+      `installSplashScreen()` antes de `super.onCreate()`, que es lo unico que
+      engancha la splash del sistema con la ventana, y
+      `setKeepOnScreenCondition { readiness is Loading }`: se sostiene mientras
+      se verifica y se abre el paquete local y nada mas. Sin `delay`, sin
+      `windowSplashScreenAnimationDuration`, sin Activity nueva y sin red.
+      La Activity toma el `AppReadinessViewModel` con `by viewModels`, que es la
+      **misma instancia** que despues usa `LexidexApp`: `viewModel()` dentro de
+      `setContent` resuelve contra el store de la Activity con la clave del tipo,
+      asi que la splash y la interfaz no pueden desincronizarse.
+      Se agrego `androidx.core:core-splashscreen`, que la propia tarea preveia.
+      Contra el destello: `Theme.Lexidex` gana un `windowBackground` igual al
+      canvas de Compose, en claro y en oscuro (`values-night/`). Si esos colores
+      cambian en `ui/theme/Color.kt` hay que cambiarlos aca tambien; queda dicho
+      en el comentario del recurso.
+- [x] **11.2** ✅ Hecho el 2026-09-03, en el emulador.
+      Arranque en frio 2.457 ms, tibio y caliente 70 y 77 ms. Primera instalacion
+      -copia y verificacion del paquete- 2.851 ms, que es el caso donde la splash
+      de verdad se sostiene. Claro y oscuro, y con las tres escalas de animacion
+      en cero, donde igual llega al contenido: no hay animacion de salida propia
+      que pueda quedarse trabada.
+      **El tiempo hasta el primer contenido no aumento: 2.247 ms contra 2.273 ms**
+      (medianas de tres corridas, midiendo hasta que "TERMINO DEL DIA" esta en
+      pantalla). Lo que si cambia es el `TotalTime` de `am start -W`, de ~1.811 a
+      ~2.500 ms, y **no es una regresion**: ese numero mide el primer frame que
+      dibuja la aplicacion, y la splash hace que ese frame sea el del contenido
+      en vez del que antes era el del spinner. Comparar los dos diria que el
+      arranque se alento cuando lo que cambio es que se cuenta otra cosa; de
+      hecho el usuario ve algo antes, porque la splash la dibuja el sistema desde
+      que se crea la ventana.
+      **Un paquete roto suelta la splash**: truncado el `.sqlite` de la copia
+      local, la aplicacion arranca y el error se lee en la interfaz en vez de
+      quedarse colgada. La rama `Error` en si esta cubierta por construccion -la
+      condicion solo retiene con `Loading`- y no se pudo forzar desde afuera,
+      porque el checksum se verifica al copiar desde los assets y no en cada
+      apertura.
 
 ## Preguntas abiertas (para decidir antes de picar codigo, no para un modelo chico)
 

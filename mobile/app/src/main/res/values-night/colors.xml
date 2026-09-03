@@ -1,0 +1,4 @@
+<resources>
+    <!-- DarkCanvas de ui/theme/Color.kt. -->
+    <color name="window_background">#0B100F</color>
+</resources>
