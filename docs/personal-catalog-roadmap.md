@@ -1482,15 +1482,21 @@ segundo plano mientras el proyecto no tome `androidx.work`.
       Verificado: contenido sin cambios y fechas intactas contra el v0.5.0, y en
       el emulador un termino del paquete ahora lee "CC BY-SA · consultada el
       19/08/2026", igual que uno propio.
-- [ ] **10.8** _(Sonnet 5 · M)_ La web no puede decir "esta copia sigue sin
-      editar", que es lo que en Android habilita la linea de autoria. El backend
-      **guarda y transmite** `content_sha256` y `retrieved_at` -por eso un
-      termino sincronizado del telefono llega fechado y la web lo muestra-, pero
-      nunca los **escribe**: 5.13 y 5.14 se hicieron solo en Android. Hasta que
-      eso se porte, la web fecha la fuente pero no habla de autoria.
-      Ojo con una trampa al portarlo: calcular el sha en el navegador pide
-      `crypto.subtle`, que no existe sobre http en una IP de la LAN aunque si en
-      localhost. O lo calcula el backend, o el hub tiene que estar en https.
+- [x] **10.8** ✅ Hecho el 2026-09-03. La web escribe `content_sha256` y
+      `retrieved_at`, y dice de quien es el texto: "Escrito por vos", "Escrito o
+      editado por vos" o "Importado de es.wikipedia.org el 03/09/2026, sin
+      editar", igual que la ficha de Android.
+      **La trampa se esquivo poniendo el hash en el servidor.** El backend
+      calcula y sirve `authorship` ya resuelto; el navegador solo informa lo
+      unico que el servidor no puede saber, que es si el usuario toco el texto
+      despues de importarlo. Asi la autoria no depende de que el hub tenga TLS.
+      `stamp_imported_content` replica la regla de Kotlin y tiene que hacerlo:
+      los dos lados escriben el mismo esquema y se sincronizan, asi que si
+      difirieran, un termino editado en la web y leido en el telefono diria otra
+      autoria. Diez tests en `tests/test_web_authorship.py`.
+      Verificado contra un hub local: importar sin editar da la linea de
+      importado con su fecha, y editar la da vuelta conservando el dia en que se
+      consulto la fuente.
 - [ ] **10.7** _(Sonnet 5 · M)_ Verificar a mano: actualizar un termino que
       cambio, uno que no, quedarse con una copia vieja, borrar otra, y correr
       una actualizacion masiva cortandola por la mitad para ver que retoma.

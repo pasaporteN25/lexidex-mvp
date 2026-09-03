@@ -25,6 +25,11 @@ en [`docs/corpus.md`](docs/corpus.md).
   faltaban y respeta la que tenias activa, salvo en un telefono nuevo donde no
   habia ninguna.
 
+- La web dice de quien es el texto de un termino propio (tarea 10.8): "Escrito
+  por vos", "Escrito o editado por vos" o "Importado de es.wikipedia.org el
+  03/09/2026, sin editar", lo mismo que la aplicacion. El hash lo calcula el
+  servidor, asi que funciona igual con el hub en http dentro de la red local.
+
 #### Cambiado
 
 - El paquete vigente pasa a ser **v0.5.1-licensed.1** (tarea 10.9): sus fuentes
