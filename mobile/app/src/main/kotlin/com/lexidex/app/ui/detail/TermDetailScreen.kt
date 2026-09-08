@@ -59,7 +59,9 @@ import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
 import com.lexidex.app.domain.TermVersion
+import com.lexidex.app.domain.ArticleExtent
 import com.lexidex.app.domain.parseArticleOutline
+import com.lexidex.app.domain.revisionUrl
 import com.lexidex.app.domain.versionLabels
 import com.lexidex.app.ui.components.ChipRole
 import com.lexidex.app.data.userdb.sourceOfContent
@@ -264,6 +266,7 @@ private fun TermDetailContent(
                         onDeleteVersion,
                         onFetchFullArticle = onFetchFullArticle.takeIf { uiState.canFetchFullArticle },
                         isFetchingFullArticle = uiState.isFetchingFullArticle,
+                        activeVersion = uiState.activeVersion,
                     )
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
@@ -286,6 +289,7 @@ private fun TermDetailBody(
     onDeleteVersion: (String) -> Unit,
     onFetchFullArticle: (() -> Unit)?,
     isFetchingFullArticle: Boolean,
+    activeVersion: TermVersion?,
 ) {
     Column(
         modifier = Modifier
@@ -296,6 +300,7 @@ private fun TermDetailBody(
         if (term.content.isNotBlank() && term.content != term.summary) {
             AuthorshipLine(term)
             ArticleBody(term.content)
+            ActiveCopyLine(activeVersion)
         }
         if (onFetchFullArticle != null) {
             FullArticleButton(isFetching = isFetchingFullArticle, onClick = onFetchFullArticle)
@@ -533,7 +538,12 @@ private fun VersionRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                if (version.isActive) "La que estas leyendo" else "Tocar para leer esta",
+                listOfNotNull(
+                    if (version.isActive) "La que estas leyendo" else "Tocar para leer esta",
+                    // Sin esto dos copias del mismo dia se ven iguales aunque una sea diez veces
+                    // mas larga que la otra.
+                    "Articulo completo".takeIf { version.extent == ArticleExtent.FULL },
+                ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -660,6 +670,51 @@ private fun FullArticleButton(isFetching: Boolean, onClick: () -> Unit) {
             Text("Trayendo el articulo completo...")
         } else {
             Text("Traer el articulo completo")
+        }
+    }
+}
+
+/**
+ * Que se esta leyendo, y de que revision salio.
+ *
+ * Solo cuando lo activo es el articulo entero. Guardar un articulo completo es reuso sustancial y
+ * no una cita, asi que la atribucion importa mas que en un extracto de 800 caracteres: se dice que
+ * es el articulo entero -que cambia como se lee- y se enlaza **la revision guardada**, no el
+ * articulo de hoy, que puede no tener nada que ver con lo que se copio hace seis meses.
+ *
+ * Sin revision guardada no hay enlace y no se inventa ninguno: es lo que pasa con todo lo
+ * importado antes de la epica 4.
+ */
+@Composable
+private fun ActiveCopyLine(version: TermVersion?) {
+    if (version == null || version.extent != ArticleExtent.FULL) return
+    val uriHandler = LocalUriHandler.current
+    val permalink = remember(version.sourceUrl, version.revisionId) {
+        revisionUrl(version.sourceUrl, version.revisionId)
+    }
+    val on = retrievedDate(version.retrievedAt)?.let { " el $it" }.orEmpty()
+
+    Row(
+        modifier = Modifier.padding(
+            start = LexidexSpacing.panel,
+            end = LexidexSpacing.panel,
+            top = LexidexSpacing.compact,
+        ),
+        horizontalArrangement = Arrangement.spacedBy(LexidexSpacing.tight),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Articulo completo, traido$on.",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (permalink != null) {
+            Text(
+                "Ver esta revision",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable { uriHandler.openUri(permalink) },
+            )
         }
     }
 }

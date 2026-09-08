@@ -53,6 +53,14 @@ data class TermDetailUiState(
     /** Mientras se pide el articulo entero, que tarda mas que la introduccion. */
     val isFetchingFullArticle: Boolean = false,
     /**
+     * La copia que se esta leyendo, cuando hay alguna.
+     *
+     * Se expone aparte de [versions] porque esa lista se esconde cuando hay una sola copia -no hay
+     * eleccion que ofrecer- pero la atribucion de lo que se lee no depende de que haya con que
+     * compararlo. Null significa que se lee el texto de base.
+     */
+    val activeVersion: TermVersion? = null,
+    /**
      * Las copias guardadas, de la mas nueva a la mas vieja.
      *
      * Vacia mientras el termino no se haya actualizado nunca: sin nada que elegir la ficha no
@@ -238,6 +246,7 @@ class TermDetailViewModel(
                 // Con una sola copia no hay eleccion que ofrecer: es el texto que ya se esta leyendo.
                 versions = if (stored.size > 1) stored else emptyList(),
                 canFetchFullArticle = !activeIsFull && refreshable(term) != null,
+                activeVersion = stored.firstOrNull { version -> version.isActive },
             )
         }
     }

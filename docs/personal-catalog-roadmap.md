@@ -480,11 +480,34 @@ tamano por termino y si habia que sanear HTML.
       escribe en Room y los tests de ViewModel que hay hoy solo cubren caminos
       que no tocan la base. Es el mismo hueco que 10.7 anota para la
       cancelacion, y se tapa en el mismo lugar: `androidTest`.
-- [ ] **4.6** _(S)_ Atribucion: guardar la revision concreta (`lastrevid`) y que
-      la linea de autoria lo diga. Un articulo entero es reuso sustancial, no
-      una cita; CC BY-SA se cumple enlazando al articulo, y enlazar a la
-      revision guardada es ademas lo unico honesto cuando lo que se lee es de
-      hace seis meses.
+- [x] **4.6** ✅ Hecho el 2026-09-08. Atribucion: guardar la revision concreta
+      (`lastrevid`) y que la linea de autoria lo diga. Un articulo entero es
+      reuso sustancial, no una cita; CC BY-SA se cumple enlazando al articulo, y
+      enlazar a la revision guardada es ademas lo unico honesto cuando lo que se
+      lee es de hace seis meses.
+
+      `revisionUrl` en `domain/` arma el permalink `?oldid=`. Devuelve **null**
+      en todo lo que no puede afirmar -sin revision guardada, sobre un host que
+      no sea de Wikimedia, sobre una URL que no sea http- y no inventa ninguna:
+      un enlace roto que dice ser la atribucion es peor que no ofrecer ninguna.
+      La lista de hosts es cerrada a proposito y no "cualquier sitio con
+      MediaWiki", porque desde una URL no hay forma de saberlo. Ocho tests, de
+      los cuales seis son casos que devuelven null, incluido un host parecido
+      (`es.wikipedia.org.evil.test`).
+
+      En la ficha, debajo del texto: "Articulo completo, traido el 08/09/2026" y
+      "Ver esta revision" cuando hay permalink. Solo cuando lo activo es el
+      articulo entero: en un extracto de 800 caracteres la linea seria ruido.
+      La lista de COPIAS GUARDADAS tambien distingue ahora una introduccion de
+      un articulo completo, que si no se ven iguales aunque una sea diez veces
+      mas larga.
+
+      Verificado en el emulador y contra Wikipedia: la fila guardada tiene
+      `revision_id` 175190592, el permalink que se arma con ella devuelve HTTP
+      200 y su `wgRevisionId` es **175190592**, o sea que el enlace lleva
+      exactamente al texto que se copio y no al articulo de hoy. Tocar el enlace
+      abre el navegador; que la URL cargada sea esa no se pudo leer porque el
+      Chrome del emulador esta en su pantalla de primer uso.
 - [ ] **4.7** _(M)_ La web: mismo render por secciones y mismo boton. El backend
       sirve el `extent` y la revision.
 - [ ] **4.8** _(S)_ Verificacion a mano, en las dos superficies.
