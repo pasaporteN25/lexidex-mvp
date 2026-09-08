@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,6 +59,7 @@ import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
 import com.lexidex.app.domain.TermVersion
+import com.lexidex.app.domain.parseArticleOutline
 import com.lexidex.app.domain.versionLabels
 import com.lexidex.app.ui.components.ChipRole
 import com.lexidex.app.data.userdb.sourceOfContent
@@ -88,6 +91,7 @@ fun TermDetailScreen(
         onOpenCollections = viewModel::onOpenCollectionPicker,
         onRefresh = viewModel::onRefresh,
         onRefreshMessageShown = viewModel::onRefreshMessageShown,
+        onFetchFullArticle = viewModel::onFetchFullArticle,
         onSelectVersion = viewModel::onSelectVersion,
         onDeleteVersion = viewModel::onDeleteVersion,
     )
@@ -182,6 +186,7 @@ private fun TermDetailContent(
     onOpenCollections: () -> Unit,
     onRefresh: () -> Unit,
     onRefreshMessageShown: () -> Unit,
+    onFetchFullArticle: () -> Unit,
     onSelectVersion: (String) -> Unit,
     onDeleteVersion: (String) -> Unit,
 ) {
@@ -257,6 +262,8 @@ private fun TermDetailContent(
                         uiState.versions,
                         onSelectVersion,
                         onDeleteVersion,
+                        onFetchFullArticle = onFetchFullArticle.takeIf { uiState.canFetchFullArticle },
+                        isFetchingFullArticle = uiState.isFetchingFullArticle,
                     )
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
@@ -277,6 +284,8 @@ private fun TermDetailBody(
     versions: List<TermVersion>,
     onSelectVersion: (String) -> Unit,
     onDeleteVersion: (String) -> Unit,
+    onFetchFullArticle: (() -> Unit)?,
+    isFetchingFullArticle: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -286,11 +295,10 @@ private fun TermDetailBody(
         RecordHeader(term)
         if (term.content.isNotBlank() && term.content != term.summary) {
             AuthorshipLine(term)
-            Text(
-                term.content,
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(horizontal = LexidexSpacing.panel, vertical = LexidexSpacing.compact),
-            )
+            ArticleBody(term.content)
+        }
+        if (onFetchFullArticle != null) {
+            FullArticleButton(isFetching = isFetchingFullArticle, onClick = onFetchFullArticle)
         }
         ChipSection(
             title = "CATEGORIAS",
@@ -582,5 +590,76 @@ private fun RelationRow(relation: TermRelation, onClick: () -> Unit) {
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    }
+}
+
+/**
+ * El texto del articulo, con sus secciones.
+ *
+ * Una introduccion no trae marcadores, asi que sale una sola seccion y se ve exactamente como
+ * antes de la epica 4: lo que cambia es que un articulo entero deja de ser un bloque de veinte mil
+ * caracteres sin donde apoyar la vista.
+ *
+ * El parseo se memoriza por texto porque recomponer no cambia el articulo, y parsear cuarenta mil
+ * caracteres en cada recomposicion se nota al hacer scroll.
+ */
+@Composable
+private fun ArticleBody(content: String) {
+    val outline = remember(content) { parseArticleOutline(content, maxChars = 0) }
+    Column {
+        outline.sections.forEach { section ->
+            if (section.title.isNotEmpty()) {
+                Text(
+                    section.title,
+                    style = when (section.level) {
+                        2 -> MaterialTheme.typography.titleMedium
+                        else -> MaterialTheme.typography.titleSmall
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(
+                        start = LexidexSpacing.panel + ((section.level - 2) * 12).dp,
+                        end = LexidexSpacing.panel,
+                        top = LexidexSpacing.compact,
+                    ),
+                )
+            }
+            if (section.body.isNotEmpty()) {
+                Text(
+                    section.body,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(
+                        horizontal = LexidexSpacing.panel,
+                        vertical = LexidexSpacing.compact,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Traer el articulo entero.
+ *
+ * Es un boton en el cuerpo y no un icono en la barra, al lado del texto que va a reemplazar,
+ * porque dice lo que hace con todas las letras: es un pedido que la fuente limita fuerte y que
+ * baja bastante mas texto que actualizar (epica 4).
+ */
+@Composable
+private fun FullArticleButton(isFetching: Boolean, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        enabled = !isFetching,
+        modifier = Modifier.padding(horizontal = LexidexSpacing.panel),
+    ) {
+        if (isFetching) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+            )
+            Spacer(Modifier.width(LexidexSpacing.compact))
+            Text("Trayendo el articulo completo...")
+        } else {
+            Text("Traer el articulo completo")
+        }
     }
 }

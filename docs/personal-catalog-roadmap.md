@@ -445,9 +445,41 @@ tamano por termino y si habia que sanear HTML.
       default (`'INTRO'`), que es justo donde falla una migracion de Room; y la
       fila vieja queda en `INTRO` con `revision_id` nulo, que es lo honesto: no
       sabemos de que revision salio.
-- [ ] **4.5** _(M)_ Mostrarlo en Android: la ficha renderiza las secciones con
-      su jerarquia en vez de un bloque plano, y ofrece "Traer el articulo
-      completo" cuando la copia activa es la introduccion.
+- [x] **4.5** ✅ Hecho el 2026-09-08. Mostrarlo en Android: la ficha renderiza
+      las secciones con su jerarquia en vez de un bloque plano, y ofrece "Traer
+      el articulo completo" cuando la copia activa es la introduccion.
+
+      El boton va en el cuerpo y no en la barra, al lado del texto que va a
+      reemplazar, porque dice lo que hace con todas las letras: baja bastante
+      mas texto que actualizar y la fuente lo limita fuerte. Deja de ofrecerse
+      una vez traido; para una version mas nueva del articulo entero esta el
+      boton de actualizar de siempre, que trabaja sobre lo que haya activo.
+
+      Una introduccion no trae marcadores, asi que sale una sola seccion y se ve
+      **exactamente como antes**: lo que cambia es que un articulo entero deja
+      de ser un bloque de veinte mil caracteres sin donde apoyar la vista. El
+      parseo se memoriza por texto, porque recomponer no cambia el articulo.
+
+      Verificado en el emulador contra Wikipedia real, sobre "Poligenismo":
+
+      - Quedaron **dos copias**: la introduccion de 563 caracteres con su fecha
+        original del 19/08/2026 -la del paquete, intacta- y el articulo completo
+        de 3.929 caracteres traido hoy, que es el activo.
+      - `revision_id` guardo **175190592**, el mismo `lastrevid` que devuelve la
+        API. La atribucion de 4.6 ya tiene de donde salir.
+      - Buscar **"preadamitas"** -una palabra que solo existe en el cuerpo del
+        articulo y no en la introduccion- devuelve el termino. El indice sigue a
+        la copia activa (decision de 10.3), asi que traer el articulo completo
+        **mejora la busqueda**, que no estaba previsto y es el mejor argumento
+        para la funcion.
+      - La migracion 5->6 corrio sobre la base que ya estaba en el emulador:
+        `user_version` quedo en 6 con las trece columnas y Room abrio sin
+        quejarse, que es la unica prueba que vale para una migracion.
+
+      **Queda sin test automatico el ViewModel**, porque `onFetchFullArticle`
+      escribe en Room y los tests de ViewModel que hay hoy solo cubren caminos
+      que no tocan la base. Es el mismo hueco que 10.7 anota para la
+      cancelacion, y se tapa en el mismo lugar: `androidTest`.
 - [ ] **4.6** _(S)_ Atribucion: guardar la revision concreta (`lastrevid`) y que
       la linea de autoria lo diga. Un articulo entero es reuso sustancial, no
       una cita; CC BY-SA se cumple enlazando al articulo, y enlazar a la

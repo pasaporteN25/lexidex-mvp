@@ -9,6 +9,7 @@ import com.lexidex.app.data.knowledge.KnowledgeSourceError
 import com.lexidex.app.data.knowledge.wikipediaResultFromUrl
 import com.lexidex.app.data.repository.CorpusRepository
 import com.lexidex.app.domain.TermCollection
+import com.lexidex.app.domain.ArticleExtent
 import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermRefresh
 import com.lexidex.app.domain.TermVersion
@@ -41,6 +42,16 @@ data class TermDetailUiState(
     val isRefreshing: Boolean = false,
     /** El resultado de esa consulta, para decirlo y despues olvidarlo. */
     val refreshMessage: String? = null,
+    /**
+     * True cuando se puede pedir el articulo entero: hay fuente y lo que se lee es la introduccion.
+     *
+     * Deja de ofrecerse una vez traido, porque volver a pedirlo traeria el mismo texto por un
+     * pedido que la fuente limita fuerte (epica 4). Para traer una version mas nueva del articulo
+     * entero esta el mismo boton de siempre, que actualiza lo que haya activo.
+     */
+    val canFetchFullArticle: Boolean = false,
+    /** Mientras se pide el articulo entero, que tarda mas que la introduccion. */
+    val isFetchingFullArticle: Boolean = false,
     /**
      * Las copias guardadas, de la mas nueva a la mas vieja.
      *
@@ -218,8 +229,81 @@ class TermDetailViewModel(
 
     private suspend fun loadVersions(term: TermDetail) {
         val stored = repository.termVersions(term.slug, term.origin).getOrElse { emptyList() }
-        // Con una sola copia no hay eleccion que ofrecer: es el texto que ya se esta leyendo.
-        _uiState.update { it.copy(versions = if (stored.size > 1) stored else emptyList()) }
+        // Lo que se lee es la copia activa; sin ninguna copia se lee el texto de base, que es una
+        // introduccion. Se mira sobre la lista entera y no sobre la que se muestra, porque esa se
+        // esconde cuando hay una sola y eso es una decision de pantalla, no del dato.
+        val activeIsFull = stored.firstOrNull { it.isActive }?.extent == ArticleExtent.FULL
+        _uiState.update {
+            it.copy(
+                // Con una sola copia no hay eleccion que ofrecer: es el texto que ya se esta leyendo.
+                versions = if (stored.size > 1) stored else emptyList(),
+                canFetchFullArticle = !activeIsFull && refreshable(term) != null,
+            )
+        }
+    }
+
+    /**
+     * Trae el articulo entero y lo guarda como una copia mas.
+     *
+     * Es el mismo camino que [onRefresh] salvo por que pide -y por lo que tarda-. Se separa en dos
+     * botones a proposito: actualizar es barato y se puede hacer sin pensarlo, traer el articulo
+     * entero es un pedido que la fuente limita fuerte y hay que quererlo.
+     */
+    fun onFetchFullArticle() {
+        val term = _uiState.value.term ?: return
+        if (_uiState.value.isFetchingFullArticle) return
+        val (source, result) = refreshable(term) ?: return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isFetchingFullArticle = true, refreshMessage = null) }
+            val article = try {
+                source.fetchFullArticle(result)
+            } catch (error: KnowledgeSourceError) {
+                _uiState.update {
+                    it.copy(isFetchingFullArticle = false, refreshMessage = error.toUserMessage())
+                }
+                return@launch
+            }
+            if (article == null) {
+                _uiState.update {
+                    it.copy(
+                        isFetchingFullArticle = false,
+                        refreshMessage = "La fuente no devolvio el articulo completo.",
+                    )
+                }
+                return@launch
+            }
+
+            repository.storeRefreshedCopy(
+                slug = term.slug,
+                summary = article.summary,
+                content = article.content,
+                sourceUrl = article.sourceUrl,
+                retrievedAt = clock(),
+                extent = ArticleExtent.FULL,
+                revisionId = article.revisionId,
+            ).fold(
+                onSuccess = { outcome ->
+                    _uiState.update {
+                        it.copy(
+                            isFetchingFullArticle = false,
+                            refreshMessage = when (outcome) {
+                                is TermRefresh.Updated -> "Se guardo el articulo completo."
+                                // Puede pasar: si el articulo es tan corto que su introduccion ya
+                                // era todo, el texto que llega es identico al guardado.
+                                is TermRefresh.Unchanged -> "El articulo completo es el texto que ya tenias."
+                            },
+                        )
+                    }
+                    load()
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(isFetchingFullArticle = false, refreshMessage = error.toUserMessage())
+                    }
+                },
+            )
+        }
     }
 
     fun onSelectVersion(uid: String) {
