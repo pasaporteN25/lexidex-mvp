@@ -7,6 +7,9 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import com.lexidex.app.domain.ArticleExtent
+import com.lexidex.app.domain.parseArticleOutline
+import com.lexidex.app.domain.toStoredText
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
@@ -265,6 +268,41 @@ class WikipediaKnowledgeSource(
     }
 
     /**
+     * El articulo entero, en texto plano, de a uno.
+     *
+     * Sin `exintro` la Action API devuelve el articulo completo **y baja `exlimit` a 1**: no hay
+     * forma de pedir dos. Se pide `info` en la misma llamada para quedarse con `lastrevid`, que es
+     * lo que despues permite atribuir la revision exacta que se guardo.
+     *
+     * El texto llega con las secciones marcadas `== Asi ==`; quien lo parsea es
+     * `parseArticleOutline`, en `domain/`, porque la web tiene que llegar al mismo resultado.
+     */
+    override suspend fun fetchFullArticle(result: KnowledgeSearchResult): KnowledgeArticle? {
+        val wikiLanguage = wikipediaLanguage(result.language)
+        val url = "https://$wikiLanguage.$WIKIPEDIA_HOST/w/api.php" +
+            "?action=query&format=json&formatversion=2&prop=extracts%7Cinfo" +
+            "&explaintext=1&inprop=url&redirects=1&titles=${encodeQuery(result.externalId)}"
+
+        val page = fetchWithBackoff(url)?.query?.pages
+            ?.firstOrNull { it.missing != true && !it.extract.isNullOrBlank() }
+            ?: return null
+
+        val outline = parseArticleOutline(cleanWikipediaExtract(page.extract.orEmpty()))
+        if (outline.isEmpty) return null
+
+        return KnowledgeArticle(
+            title = page.title.ifBlank { result.title },
+            summary = page.description.orEmpty(),
+            content = outline.toStoredText(),
+            sourceUrl = page.fullurl?.takeIf { it.isNotBlank() }
+                ?: "https://$wikiLanguage.$WIKIPEDIA_HOST/wiki/${encodePathSegment(result.externalId)}",
+            language = result.language.ifBlank { wikiLanguage },
+            extent = ArticleExtent.FULL,
+            revisionId = page.lastrevid,
+        )
+    }
+
+    /**
      * La introduccion completa por la Action API, igual que `tools/enrich_corpus.py`.
      *
      * `redirects` la sigue como la sigue el constructor del paquete, para que pedir el mismo
@@ -304,6 +342,8 @@ class WikipediaKnowledgeSource(
         val extract: String? = null,
         val description: String? = null,
         val missing: Boolean? = null,
+        val lastrevid: Long? = null,
+        val fullurl: String? = null,
     )
 
     private fun <T> decode(deserializer: kotlinx.serialization.DeserializationStrategy<T>, body: String): T =

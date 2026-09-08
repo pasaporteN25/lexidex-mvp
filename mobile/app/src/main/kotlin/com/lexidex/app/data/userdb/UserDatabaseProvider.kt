@@ -361,6 +361,24 @@ internal val MIGRATION_4_5 = object : Migration(4, 5) {
 }
 
 
+/**
+ * v5 -> v6: cada copia dice **cuanto** del articulo es, y de que revision salio (epica 4).
+ *
+ * Dos columnas agregadas, sin datos que mover: todo lo guardado hasta ahora es una introduccion,
+ * que es justo el default. `revision_id` queda nulo en lo viejo porque no se sabe, y decir "no se"
+ * es lo correcto: inventar una revision seria peor que no atribuir ninguna.
+ *
+ * `ALTER TABLE ADD COLUMN` y no recrear la tabla, asi los triggers del indice FTS -que Room no
+ * vuelve a crear al migrar- siguen apuntando a la misma tabla. El indice no cambia: sigue
+ * indexando `summary` y `content`, que son las columnas que se buscan.
+ */
+internal val MIGRATION_5_6 = object : Migration(5, 6) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE `term_versions` ADD COLUMN `extent` TEXT NOT NULL DEFAULT 'INTRO'")
+        connection.execSQL("ALTER TABLE `term_versions` ADD COLUMN `revision_id` INTEGER")
+    }
+}
+
 private fun isHttpUrlForMigration(value: String): Boolean = try {
     val uri = URI(value)
     uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()
@@ -415,7 +433,7 @@ class UserDatabaseProvider(
             )
                 .setDriver(BundledSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
         }
     }

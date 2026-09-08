@@ -1,5 +1,7 @@
 package com.lexidex.app.data.knowledge
 
+import com.lexidex.app.domain.ArticleExtent
+
 /**
  * One candidate returned by a knowledge source search: enough to render a row and to ask for the
  * article later, never the article body itself.
@@ -22,7 +24,21 @@ data class KnowledgeArticle(
     val content: String,
     val sourceUrl: String,
     val language: String,
+    /**
+     * Que tanto del articulo es [content]. Lo necesita la ficha para saber si todavia puede
+     * ofrecer "traer el articulo completo", y la copia guardada para no confundir una cosa con la
+     * otra al comparar hashes.
+     */
+    val extent: ArticleExtent = ArticleExtent.INTRO,
+    /**
+     * La revision concreta de la que salio el texto, si la fuente la declara.
+     *
+     * CC BY-SA se cumple enlazando al articulo, pero cuando lo que se lee es una copia de hace
+     * seis meses, enlazar a la revision guardada es lo unico que no miente sobre que se leyo.
+     */
+    val revisionId: Long? = null,
 )
+
 
 /** Languages offered by a source. Dynamic means the adapter validates the requested tag itself. */
 sealed interface KnowledgeLanguageSupport {
@@ -153,6 +169,16 @@ interface KnowledgeSource {
     ): List<KnowledgeSearchResult>
 
     suspend fun fetch(result: KnowledgeSearchResult): KnowledgeArticle
+
+    /**
+     * El articulo entero, no solo la introduccion. `null` si la fuente no lo ofrece.
+     *
+     * **No tiene equivalente en lote y no debe tenerlo.** La epica 4 lo midio el 2026-09-07: la
+     * Action API baja `exlimit` a 1 cuando se pide el articulo completo, y contesta con 429 muy
+     * rapido. Por eso esto se llama por termino y a pedido del usuario, nunca desde la
+     * actualizacion masiva de 10.6, que sigue siendo de introducciones.
+     */
+    suspend fun fetchFullArticle(result: KnowledgeSearchResult): KnowledgeArticle? = null
 
     /**
      * Varios articulos de una sola vez, indexados por `externalId`.

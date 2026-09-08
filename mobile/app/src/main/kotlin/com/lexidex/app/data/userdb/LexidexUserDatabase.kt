@@ -43,10 +43,10 @@ import com.lexidex.app.data.userdb.entity.UserTermFtsEntity
         TermVersionEntity::class,
         TermVersionFtsEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
-@ColumnTypeConverters(StringListConverter::class, TermOriginConverter::class)
+@ColumnTypeConverters(StringListConverter::class, TermOriginConverter::class, ArticleExtentConverter::class)
 abstract class LexidexUserDatabase : RoomDatabase() {
     abstract fun userTermDao(): UserTermDao
     abstract fun personalTermSourceDao(): PersonalTermSourceDao

@@ -4,6 +4,7 @@ import androidx.room3.ColumnInfo
 import androidx.room3.Entity
 import androidx.room3.Index
 import androidx.room3.PrimaryKey
+import com.lexidex.app.domain.ArticleExtent
 import com.lexidex.app.domain.TermOrigin
 
 /**
@@ -40,4 +41,6 @@ data class TermVersionEntity(
     @ColumnInfo(name = "source_url") val sourceUrl: String = "",
     @ColumnInfo(name = "is_active") val isActive: Boolean = false,
     @ColumnInfo(name = "created_at") val createdAt: String,
+    @ColumnInfo(name = "extent", defaultValue = "INTRO") val extent: ArticleExtent = ArticleExtent.INTRO,
+    @ColumnInfo(name = "revision_id") val revisionId: Long? = null,
 )

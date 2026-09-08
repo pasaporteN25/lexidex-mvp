@@ -36,6 +36,7 @@ import com.lexidex.app.domain.TermCollection
 import com.lexidex.app.domain.TermCollectionDetail
 import com.lexidex.app.domain.TermDetail
 import com.lexidex.app.domain.TermLabelKind
+import com.lexidex.app.domain.ArticleExtent
 import com.lexidex.app.domain.TermOrigin
 import com.lexidex.app.domain.TermRelation
 import com.lexidex.app.domain.TermSource
@@ -760,6 +761,8 @@ class CorpusRepository(
         content: String,
         sourceUrl: String,
         retrievedAt: String,
+        extent: ArticleExtent = ArticleExtent.INTRO,
+        revisionId: Long? = null,
     ): Result<TermRefresh> = corpusResult {
         val detail = requireNotNull(getTermDetail(slug).getOrThrow()) {
             "No existe el termino $slug"
@@ -802,6 +805,8 @@ class CorpusRepository(
                     sourceUrl = sourceUrl,
                     isActive = false,
                     createdAt = nowIso(),
+                    extent = extent,
+                    revisionId = revisionId,
                 )
                 versions.insert(fresh)
                 versions.activate(fresh.uid)
@@ -1418,6 +1423,8 @@ private fun TermVersionEntity.toDomain() = TermVersion(
     retrievedAt = retrievedAt,
     sourceUrl = sourceUrl,
     isActive = isActive,
+    extent = extent,
+    revisionId = revisionId,
 )
 
 private fun PersonalTermSourceEntity.toDomain() = TermSource(

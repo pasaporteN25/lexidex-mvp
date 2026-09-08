@@ -328,13 +328,134 @@ titulos por consulta (`prop=extracts&exintro&explaintext`), lo que baja a
 199/199 en la muestra. El tool reintenta con espera creciente solo ante 429,
 que es una peticion de esperar y no un fallo del articulo.
 
-### Lo que sigue pendiente
+### El articulo completo: medido el 2026-09-07, y cambia la forma de la tarea
 
-El **articulo completo** en vez de la introduccion. Es bastante mas grande:
-tamano por termino, y sobre todo que habria que sanear HTML con lista blanca
-antes de mostrarlo en vez de solo escaparlo (ya anotado en
-`docs/security-threat-model.md`, seccion "Contenido malicioso"). Hoy el
-contenido es texto plano, que es lo que permite seguir escapando sin sanear.
+Lo que quedaba pendiente era el **articulo completo** en vez de la
+introduccion. Estaba anotado como el mas grande de la epica y el unico que
+obligaba a sanear HTML con lista blanca. **Las dos cosas se midieron antes de
+picar codigo y las dos resultaron distintas de lo anotado.**
+
+Muestra: 30 articulos reales del propio paquete, pedidos en las dos formas
+(`explaintext=1` y HTML), en es, en e it.
+
+| | mediana | p90 | maximo | media | proyectado a 4.425 |
+|---|---:|---:|---:|---:|---:|
+| Introduccion, hoy | 658 B | 763 B | 802 B | 602 B | **2,66 MB** |
+| Articulo completo, texto plano | 8,5 KB | 37,6 KB | 94,3 KB | 15,7 KB | **69,54 MB** |
+| Articulo completo, HTML | 12,5 KB | 58,7 KB | 108,6 KB | 19,5 KB | **86,24 MB** |
+
+**Hallazgo 1: el articulo completo no se puede pedir de a lotes.** La Action
+API lo dice sola, en un warning: `"exlimit" was too large for a whole article
+extracts request, lowered to 1`. Los lotes de 20 que hicieron viable enriquecer
+el paquete (ver arriba) **solo funcionan con `exintro`**. Sin eso son 4.425
+pedidos de a uno, que es exactamente el 429 que esta epica ya habia medido y
+esquivado: en la primera prueba de esta medicion, con 0,6 s entre pedidos,
+Wikipedia corto 13 de 18.
+
+**Hallazgo 2: no hay que sanear HTML, porque no hace falta el HTML.** El HTML
+que devuelve `prop=extracts` **no trae enlaces ni imagenes ni tablas**: sobre
+los 30 articulos no aparecio un solo `<a>`, `<img>` ni `<table>`. Lo unico que
+aporta sobre el texto plano es estructura -`p`, `i`, `b`, `h2`/`h3`/`h4`,
+listas, `blockquote`- mas MathML en los articulos de matematica. Y esa misma
+estructura ya viene en el texto plano, en los marcadores `== Seccion ==` que
+deja `explaintext` (mediana 7 secciones por articulo, maximo 15).
+
+Es decir: parseando los `==` nosotros mismos se obtiene la misma jerarquia,
+por 1,24x menos bytes, y **el contenido sigue siendo texto plano**, que es lo
+que permite seguir escapando sin sanear. La nota de
+`docs/security-threat-model.md` ("Contenido malicioso") no se toca: no se
+incorpora una superficie de HTML no confiable.
+
+**Consecuencia: el articulo completo no va en el paquete.** Meterlo llevaria
+el paquete de 10,88 MB a ~78 MB, y costaria 4.425 pedidos secuenciales
+rate-limitados, para que queden offline 4.400 articulos que nadie va a abrir.
+Va **por termino y a pedido**, que ademas es lo que pide el producto: la
+consulta rapida ya la sirve la introduccion, que esta para los 4.425; el
+articulo entero es para los pocos terminos que uno realmente quiere estudiar.
+
+A pedido el costo desaparece: **100 terminos con el articulo completo y sin
+ningun tope son 1,57 MB.** El tope existe, entonces, para el caso patologico
+-el articulo de 94 KB- y no por lo que ocupa el conjunto:
+
+| tope por termino | recorta | 100 terminos |
+|---|---:|---:|
+| 4.000 | 67% | 0,34 MB |
+| 8.000 | 50% | 0,57 MB |
+| 12.000 | 40% | 0,76 MB |
+| **20.000** | **20%** | **0,97 MB** |
+| 40.000 | 7% | 1,28 MB |
+| sin tope | 0% | 1,57 MB |
+
+Esto cierra dos de las preguntas abiertas del final del documento: el limite de
+tamano por termino y si habia que sanear HTML.
+
+### Tareas
+
+- [x] **4.1** ✅ Hecho el 2026-09-07. Registrar la decision de arriba y
+      subdividir. Esta tarea es ese texto, y cierra dos preguntas abiertas.
+- [x] **4.2** ✅ Hecho el 2026-09-07. `ArticleOutline` en `domain/`: funcion pura que convierte el
+      texto plano con marcadores `==` en secciones con nivel, titulo y cuerpo.
+      Sin red y sin Room, asi que se prueba en la JVM. Descarta el **aparato
+      final** -"Vease tambien", "Notas y referencias", "Bibliografia", "Enlaces
+      externos" y sus equivalentes en ingles- que en texto plano queda como una
+      lista de titulos sueltos sin el enlace que los hacia utiles. El recorte al
+      tope se hace en limite de seccion, no de caracter, para no cortar una
+      seccion al medio.
+
+      Veintiun tests: catorce sobre cadenas armadas para fijar la regla y siete
+      sobre **seis articulos reales** bajados a `src/test/resources/articles/`
+      (es, en, it; de 4,6 KB a 47 KB). Los dos, porque la epica 10 encontro
+      cuatro problemas que solo aparecieron contra Wikipedia y ninguno contra
+      fixtures inventadas. El descarte del aparato mide **9%** del texto
+      (13.359 de 141.671 caracteres): menos de lo que parecia, pero son
+      caracteres que no se pueden usar.
+
+      Salio de aca un refactor chico: el corte por oracion se mudo a
+      `domain/SentenceTrim.kt` y `truncateWikipediaExtract` lo llama. Dos
+      implementaciones parecidas del mismo corte es exactamente lo que
+      `WikipediaExtract.kt` documenta que hace que comparar hashes deje de
+      significar "el articulo cambio".
+- [x] **4.3** ✅ Hecho el 2026-09-07. Traerlo: `fetchFullArticle` en `WikipediaKnowledgeSource`,
+      sin `exintro`, de a uno y con el backoff que ya existe. **Nunca en lote y
+      nunca masivo**: la actualizacion masiva de 10.6 sigue siendo de
+      introducciones, porque el completo no se puede batchear.
+
+      Es un metodo con default `null` en la interfaz `KnowledgeSource` y no uno
+      obligatorio: una fuente sin articulo entero -un diccionario, por ejemplo-
+      no deberia tener que fingir que lo tiene. Pide `prop=extracts|info` con
+      `inprop=url` en la misma llamada para quedarse con `lastrevid` y
+      `fullurl`; la URL exacta se verifico contra la API real.
+- [x] **4.4** ✅ Hecho el 2026-09-07. Guardarlo: el articulo completo es una copia mas en
+      `term_versions` (epica 10) con una columna `extent` que dice si es la
+      introduccion o el articulo entero. Migracion Room 5->6. La regla de
+      retencion de 10.3 -las ultimas cinco- no puede tirar la copia completa por
+      traer dos introducciones nuevas.
+
+      **La copia completa mas reciente se protege igual que la activa**, y por
+      eso el tope puede quedar en seis filas y no en cinco. Una introduccion
+      vuelve sola en el proximo barrido masivo; un articulo entero se pide de a
+      uno contra un endpoint que contesta 429, y ademas lo pidio el usuario a
+      mano. Que tres actualizaciones de la introduccion lo hicieran desaparecer
+      seria deshacer en silencio algo pedido explicitamente. Cinco tests.
+
+      La migracion se verifico **corriendola**, no leyendola: se creo una
+      `term_versions` v5, se le aplicaron los dos `ALTER TABLE` y se comparo el
+      `PRAGMA table_info` resultante contra el `CREATE TABLE` que Room genera
+      para la v6. Coinciden las trece columnas, incluido el entrecomillado del
+      default (`'INTRO'`), que es justo donde falla una migracion de Room; y la
+      fila vieja queda en `INTRO` con `revision_id` nulo, que es lo honesto: no
+      sabemos de que revision salio.
+- [ ] **4.5** _(M)_ Mostrarlo en Android: la ficha renderiza las secciones con
+      su jerarquia en vez de un bloque plano, y ofrece "Traer el articulo
+      completo" cuando la copia activa es la introduccion.
+- [ ] **4.6** _(S)_ Atribucion: guardar la revision concreta (`lastrevid`) y que
+      la linea de autoria lo diga. Un articulo entero es reuso sustancial, no
+      una cita; CC BY-SA se cumple enlazando al articulo, y enlazar a la
+      revision guardada es ademas lo unico honesto cuando lo que se lee es de
+      hace seis meses.
+- [ ] **4.7** _(M)_ La web: mismo render por secciones y mismo boton. El backend
+      sirve el `extent` y la revision.
+- [ ] **4.8** _(S)_ Verificacion a mano, en las dos superficies.
 
 ## 5. Alta de terminos buscando en Wikipedia en vez de pegar un link 🔶
 
@@ -1631,9 +1752,13 @@ espera red, animacion ni un minimo de tiempo:
 (La de la epica 5, opcion A contra B, se decidio el 2026-08-19 por la A y ya
 esta implementada: ver 5.1.)
 
-- Epica 4: si en algun momento se pide el articulo completo offline en vez
-  del resumen, decidir limite de tamano por termino y como manejar la
-  atribucion CC BY-SA antes de guardarlo.
+- Epica 4: **decidido el 2026-09-07, midiendo 30 articulos reales.** El
+  articulo completo no va en el paquete (lo llevaria de 10,88 MB a ~78 MB, con
+  4.425 pedidos que no se pueden batchear) sino por termino y a pedido, donde
+  100 terminos son 1,57 MB. El tope es de 20.000 caracteres, cortando en limite
+  de seccion. **Y no hay que sanear HTML**: el HTML de la API no trae enlaces ni
+  imagenes, solo estructura, y esa estructura ya viene en los marcadores `==`
+  del texto plano. La atribucion queda en 4.6.
 - Epica 3: si "colecciones" en algun momento necesita compartirse entre
   dispositivos (hoy no, ver 3.1).
 - Epica 10: **decidido el 2026-09-02.** La busqueda sigue al contenido activo

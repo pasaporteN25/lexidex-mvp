@@ -1,6 +1,7 @@
 package com.lexidex.app.data.userdb
 
 import androidx.room3.ColumnTypeConverter
+import com.lexidex.app.domain.ArticleExtent
 import com.lexidex.app.domain.TermOrigin
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -29,4 +30,17 @@ class TermOriginConverter {
         TermOrigin.PACKAGE -> "package"
         TermOrigin.PERSONAL -> "personal"
     }
+}
+
+/**
+ * `ArticleExtent` como texto y no como ordinal: el nombre sobrevive a que se agregue un valor en
+ * el medio del enum, un numero no.
+ */
+object ArticleExtentConverter {
+    @ColumnTypeConverter
+    fun toRecord(value: ArticleExtent): String = value.name
+
+    @ColumnTypeConverter
+    fun fromRecord(value: String): ArticleExtent =
+        ArticleExtent.entries.firstOrNull { it.name == value } ?: ArticleExtent.INTRO
 }

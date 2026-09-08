@@ -23,6 +23,10 @@ data class TermVersion(
     val retrievedAt: String,
     val sourceUrl: String,
     val isActive: Boolean,
+    /** Si esta copia es la introduccion o el articulo entero (epica 4). */
+    val extent: ArticleExtent = ArticleExtent.INTRO,
+    /** La revision de la que salio, cuando la fuente la declara. Ver 4.6. */
+    val revisionId: Long? = null,
 )
 
 /**
@@ -41,10 +45,23 @@ const val MAX_STORED_VERSIONS = 5
  * Se tira siempre la mas vieja, y **nunca la activa**: el usuario puede haber elegido quedarse con
  * una copia antigua a proposito (esa es la mitad del sentido de guardar varias), y la retencion no
  * esta para deshacer esa eleccion.
+ *
+ * Tampoco se tira **la copia completa mas reciente**, por la misma razon y una mas. Un articulo
+ * entero se pide de a uno contra un endpoint que contesta 429 enseguida (epica 4), asi que no
+ * vuelve solo como vuelve una introduccion; y lo pidio el usuario explicitamente. Que tres
+ * actualizaciones de la introduccion lo hicieran desaparecer seria deshacer en silencio algo que
+ * el pidio a mano. Por eso el tope puede quedar en seis filas y no en cinco: el tope esta para que
+ * la lista se lea, no para ahorrar los 8 KB que pesa la copia protegida.
  */
 fun versionsToDrop(versions: List<TermVersion>, keep: Int = MAX_STORED_VERSIONS): List<String> {
     if (versions.size <= keep) return emptyList()
-    val expendable = versions.filterNot { it.isActive }.sortedBy { it.retrievedAt }
+    val newestFull = versions
+        .filter { it.extent == ArticleExtent.FULL }
+        .maxByOrNull { it.retrievedAt }
+        ?.uid
+    val expendable = versions
+        .filterNot { it.isActive || it.uid == newestFull }
+        .sortedBy { it.retrievedAt }
     return expendable.take(versions.size - keep).map { it.uid }
 }
 

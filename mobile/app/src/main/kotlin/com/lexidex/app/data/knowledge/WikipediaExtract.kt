@@ -1,5 +1,7 @@
 package com.lexidex.app.data.knowledge
 
+import com.lexidex.app.domain.truncateAtSentence
+
 /**
  * El mismo tratamiento del extracto que hace `tools/enrich_corpus.py` al construir el paquete.
  *
@@ -35,15 +37,12 @@ fun cleanWikipediaExtract(text: String): String {
     return EXTRA_BLANK_LINES.replace(value, "\n\n").trim()
 }
 
-/** Corta en el limite de oracion mas cercano por debajo del tope, para no partir una frase al medio. */
-fun truncateWikipediaExtract(text: String, maxChars: Int = WIKIPEDIA_EXTRACT_MAX_CHARS): String {
-    val cleaned = cleanWikipediaExtract(text)
-    if (maxChars <= 0 || cleaned.length <= maxChars) return cleaned
-    val window = cleaned.substring(0, maxChars)
-    val cut = maxOf(window.lastIndexOf(". "), window.lastIndexOf(".\n"))
-    return if (cut > maxChars * 0.5) {
-        window.substring(0, cut + 1).trim()
-    } else {
-        window.trimEnd() + "..."
-    }
-}
+/**
+ * Limpia y corta en el limite de oracion mas cercano por debajo del tope.
+ *
+ * El corte en si vive en `domain/SentenceTrim.kt`, porque el articulo completo de la epica 4 lo
+ * necesita igual y dos implementaciones parecidas del mismo corte volverian a hacer que dos textos
+ * derivados distinto parezcan un articulo que cambio.
+ */
+fun truncateWikipediaExtract(text: String, maxChars: Int = WIKIPEDIA_EXTRACT_MAX_CHARS): String =
+    truncateAtSentence(cleanWikipediaExtract(text), maxChars)
