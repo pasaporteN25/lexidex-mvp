@@ -65,6 +65,7 @@ const elements = {
   lookupButton: document.querySelector("#lookupButton"),
   lookupStatus: document.querySelector("#lookupStatus"),
   lookupResults: document.querySelector("#lookupResults"),
+  fullArticleButton: document.querySelector("#fullArticleButton"),
   collectionsButton: document.querySelector("#collectionsButton"),
   collectionsCount: document.querySelector("#collectionsCount"),
   collectionsDialog: document.querySelector("#collectionsDialog"),
@@ -126,6 +127,52 @@ async function api(path, options = {}) {
     throw error;
   }
   return payload;
+}
+
+// Los marcadores `== Seccion ==` que deja `explaintext`. Espejo de `parse_article_outline` en
+// `backend/article_text.py` y de `parseArticleOutline` en Kotlin, pero **solo para mostrar**: aca
+// no se recorta ni se descarta el aparato, porque lo que llega ya viene tratado por el backend.
+// Si esto derivara texto para guardar, tendria que ser el mismo parser y no uno parecido.
+const HEADING_LINE = /^(={2,6})\s*(.+?)\s*\1$/;
+
+function articleSections(content) {
+  const sections = [];
+  let current = { level: 1, title: "", body: [] };
+  for (const line of String(content || "").split("\n")) {
+    const heading = HEADING_LINE.exec(line.trim());
+    if (!heading) {
+      current.body.push(line);
+      continue;
+    }
+    sections.push(current);
+    current = { level: heading[1].length, title: heading[2], body: [] };
+  }
+  sections.push(current);
+  return sections
+    .map((section) => ({ ...section, body: section.body.join("\n").trim() }))
+    .filter((section) => section.body || section.title);
+}
+
+/**
+ * El cuerpo del articulo, con sus secciones.
+ *
+ * Todo sale por `escapeHtml`, titulos incluidos: el contenido es texto plano y sigue siendolo, que
+ * es lo que permite no tener un saneador de HTML (ver la epica 4). Los unicos tags que se emiten
+ * son los que escribe esta funcion.
+ */
+function renderArticleBody(content) {
+  return articleSections(content)
+    .map((section) => {
+      const level = Math.min(Math.max(section.level, 2), 4);
+      const heading = section.title
+        ? `<h4 class="article-heading" data-level="${level}">${escapeHtml(section.title)}</h4>`
+        : "";
+      const body = section.body
+        ? `<p class="record-content">${escapeHtml(section.body)}</p>`
+        : "";
+      return heading + body;
+    })
+    .join("");
 }
 
 function escapeHtml(value = "") {
@@ -534,7 +581,7 @@ function renderDetail(term, related) {
   const registryId = term.display_id || `#${String(term.id || 0).padStart(4, "0")}`;
   const summary = term.summary || "Referencia catalogada; contenido pendiente de enriquecimiento.";
   const content = term.content
-    ? `${renderAuthorship(term)}<p class="record-content">${escapeHtml(term.content)}</p>`
+    ? `${renderAuthorship(term)}${renderArticleBody(term.content)}`
     : '<p class="quiet">La identidad y la procedencia estan disponibles, pero este paquete todavia no incluye el cuerpo del articulo.</p>';
   const notes = (term.notes || []).length
     ? `<section><h3>Notas privadas</h3><div class="note-block">${term.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div></section>`
@@ -797,6 +844,13 @@ function resetLookup(query = "") {
   elements.lookupResults.replaceChildren();
 }
 
+/** Esconde la oferta del articulo completo: al abrir el dialogo no hay nada importado todavia. */
+function hideFullArticleOffer() {
+  if (!elements.fullArticleButton) return;
+  elements.fullArticleButton.hidden = true;
+  elements.fullArticleButton.onclick = null;
+}
+
 /**
  * Busca en una fuente externa (ADR 0003) a traves del backend, que es quien aplica la allowlist
  * de hosts y los limites. Es siempre opcional: cargar los campos a mano sigue funcionando igual,
@@ -865,14 +919,50 @@ async function importLookupResult(item) {
     setFormValue("content", article.content);
     setFormValue("source_url", article.source_url);
     state.importedContent = article.content;
+    state.lastImported = item;
     resetLookup();
     elements.termFormError.textContent = "";
+    showFullArticleOffer(item);
   } catch (error) {
     elements.lookupStatus.textContent = error.message;
   }
 }
 
+/**
+ * Ofrecer el articulo entero, despues de haber traido la introduccion.
+ *
+ * Se ofrece y no se trae solo: la fuente limita fuerte ese pedido y baja bastante mas texto
+ * (epica 4). Aparece recien cuando ya hay algo importado, para que la eleccion sea entre dos
+ * cosas concretas y no una promesa.
+ */
+function showFullArticleOffer(item) {
+  const button = elements.fullArticleButton;
+  if (!button) return;
+  button.hidden = false;
+  button.disabled = false;
+  button.textContent = "Traer el articulo completo";
+  button.onclick = async () => {
+    button.disabled = true;
+    button.textContent = "Trayendo el articulo completo...";
+    try {
+      const article = await api(
+        `/api/knowledge/article/full?id=${encodeURIComponent(item.external_id)}` +
+          `&language=${encodeURIComponent(item.language || "es")}`
+      );
+      setFormValue("content", article.content);
+      state.importedContent = article.content;
+      button.hidden = true;
+      elements.termFormError.textContent = "";
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Traer el articulo completo";
+      elements.termFormError.textContent = error.message;
+    }
+  };
+}
+
 function openTermDialog(term = null) {
+  hideFullArticleOffer();
   state.editingSlug = term?.slug || null;
   // Abrir el formulario olvida lo importado antes: un termino que se edita sin volver a buscar no
   // acaba de traer nada de ninguna fuente.

@@ -718,10 +718,15 @@ class ExternalKnowledgeSourceTest(unittest.TestCase):
     def test_article_falls_back_to_a_wiki_url_when_the_source_omits_one(self):
         original = api.fetch_knowledge_json
         api.fetch_knowledge_json = lambda _url: {
-            "title": "Marea",
-            "description": "movimiento del mar",
-            "extract": "La marea es el cambio periodico del nivel del mar.",
-            "lang": "es",
+            "query": {
+                "pages": [
+                    {
+                        "title": "Marea",
+                        "description": "movimiento del mar",
+                        "extract": "La marea es el cambio periodico del nivel del mar.",
+                    }
+                ]
+            }
         }
         try:
             article = api.wikipedia_article("Marea", "es")
@@ -732,6 +737,47 @@ class ExternalKnowledgeSourceTest(unittest.TestCase):
         self.assertEqual(
             article["content"], "La marea es el cambio periodico del nivel del mar."
         )
+        self.assertEqual(article["extent"], "INTRO")
+        self.assertIsNone(article["revision_id"])
+
+    def test_the_article_comes_from_the_action_api_not_the_rest_summary(self):
+        """
+        Lo que arregla 4.7. El resumen REST devuelve solo el primer parrafo: medido el 2026-09-08,
+        entre 14% y 43% menos texto que la introduccion completa. Como la web y Android escriben el
+        mismo `content_sha256` y se sincronizan, importar el texto corto de aca hacia que el mismo
+        articulo tuviera dos hashes segun donde se lo hubiera creado.
+        """
+        captured = []
+        original = api.fetch_knowledge_json
+
+        def fake_fetch(url):
+            captured.append(url)
+            return {"query": {"pages": [{"title": "Marea", "extract": "Texto.", "lastrevid": 7}]}}
+
+        api.fetch_knowledge_json = fake_fetch
+        try:
+            intro = api.wikipedia_article("Marea", "es")
+            full = api.wikipedia_full_article("Marea", "es")
+        finally:
+            api.fetch_knowledge_json = original
+
+        self.assertNotIn("rest_v1", captured[0])
+        self.assertIn("action=query", captured[0])
+        self.assertIn("exintro=1", captured[0])
+        self.assertEqual(7, intro["revision_id"])
+        # El articulo entero es el mismo pedido **sin** exintro, que es lo que baja exlimit a 1.
+        self.assertNotIn("exintro", captured[1])
+        self.assertEqual("FULL", full["extent"])
+
+    def test_an_article_the_source_does_not_return_is_a_404(self):
+        original = api.fetch_knowledge_json
+        api.fetch_knowledge_json = lambda _url: {"query": {"pages": [{"missing": True}]}}
+        try:
+            with self.assertRaises(api.ApiError) as caught:
+                api.wikipedia_article("No existe", "es")
+        finally:
+            api.fetch_knowledge_json = original
+        self.assertEqual(404, caught.exception.status)
 
     def test_article_requires_an_id(self):
         with self.assertRaises(api.ApiError) as caught:

@@ -508,8 +508,43 @@ tamano por termino y si habia que sanear HTML.
       exactamente al texto que se copio y no al articulo de hoy. Tocar el enlace
       abre el navegador; que la URL cargada sea esa no se pudo leer porque el
       Chrome del emulador esta en su pantalla de primer uso.
-- [ ] **4.7** _(M)_ La web: mismo render por secciones y mismo boton. El backend
-      sirve el `extent` y la revision.
+- [x] **4.7** 🔶 Hecho el 2026-09-08, salvo la ultima parte, que resulto estar
+      bloqueada. La web: mismo render por secciones y mismo boton.
+
+      **Lo que se encontro al abrirla: la web importaba otro texto que Android.**
+      El backend pedia el articulo por el resumen REST (`api/rest_v1/page/
+      summary/`), que devuelve solo el primer parrafo. Medido sobre tres
+      articulos: 323 contra 563 caracteres, 388 contra 635, 491 contra 571 -entre
+      14% y 43% menos-. Como los dos lados escriben `content_sha256` y **se
+      sincronizan**, el mismo articulo tenia dos hashes segun donde se lo hubiera
+      creado. Es exactamente el problema que 10.4 arreglo en Android; de este
+      lado nunca se habia arreglado. Ahora la web pide por la Action API con
+      `exintro`, limpia y recorta igual.
+
+      **Una sola derivacion, y comprobada.** El parser vive en
+      `backend/article_text.py`, `tools/enrich_corpus.py` dejo de tener su copia
+      y lo importa, y la paridad con Kotlin **no se afirma en un comentario**:
+      `tests/test_article_text.py` parsea las mismas seis fixtures reales y
+      escribe `outlines.json`, que `ArticleOutlineParityTest` vuelve a comprobar
+      del otro lado, seccion por seccion y por largo del texto guardado. Si uno
+      de los dos cambia sin el otro, el otro falla.
+
+      Verificado de punta a punta contra Wikipedia real: el hash de la
+      introduccion y el del articulo completo que produce el backend son
+      **identicos** a los que la app tenia guardados en el emulador
+      (`c82fc1cf...` y `8506727c...`). En la web, importar "Serendipia" da ahora
+      635 caracteres -antes 388- y "Traer el articulo completo" lo lleva a 13.095
+      con sus cuatro secciones, que la ficha renderiza con su jerarquia. Todo
+      sigue saliendo por `escapeHtml`, titulos incluidos: no se incorporo ningun
+      saneador de HTML porque no hizo falta.
+
+      **Lo que quedo afuera, y por que.** Guardar `extent` y `revision_id` del
+      lado web no se puede todavia: la web **no tiene copias**. `term_versions`
+      es solo de Android y el contrato de sincronizacion (ADR 0004) no la
+      incluye, asi que en la web "cual copia es la completa" no tiene donde
+      escribirse ni significado. Eso es 10.10b, que sigue pendiente de decidir.
+      Mientras tanto la web trae el articulo entero y lo guarda como el contenido
+      del termino, que es lo que su modelo permite decir con honestidad.
 - [ ] **4.8** _(S)_ Verificacion a mano, en las dos superficies.
 
 ## 5. Alta de terminos buscando en Wikipedia en vez de pegar un link 🔶

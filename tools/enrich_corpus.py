@@ -28,6 +28,9 @@ from collections import defaultdict
 from pathlib import Path
 from urllib.parse import unquote, urlencode, urlparse
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+import article_text  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "tools"))
@@ -352,36 +355,12 @@ def pending_terms(conn, limit):
     return conn.execute(sql).fetchall()
 
 
-EMPTY_PARENS = re.compile(r"\s*\(\s*[;,]?\s*\)")
-INLINE_SPACES = re.compile(r"[ \t]{2,}")
-SPACE_BEFORE_PUNCTUATION = re.compile(r" +([,.;:])")
-EXTRA_BLANK_LINES = re.compile(r"\n{3,}")
-
-
-def clean_extract(text):
-    """
-    Saca los restos que deja `explaintext` al quitar el marcado.
-
-    Cuando el articulo abre con el nombre en otro alfabeto o una pronunciacion, al quitarlos queda
-    un parentesis vacio ("Brahmagupta () fue...") y espacios de mas. Son un 1% y un 12% de los
-    extractos respectivamente: cosmetico, pero se ve en la ficha.
-    """
-    text = EMPTY_PARENS.sub("", text or "")
-    text = INLINE_SPACES.sub(" ", text)
-    text = SPACE_BEFORE_PUNCTUATION.sub(r"\1", text)
-    return EXTRA_BLANK_LINES.sub("\n\n", text).strip()
-
-
-def truncate_extract(text, max_chars):
-    """Corta en el limite de oracion mas cercano por debajo del tope, para no partir al medio."""
-    text = clean_extract(text)
-    if not max_chars or len(text) <= max_chars:
-        return text
-    window = text[:max_chars]
-    cut = max(window.rfind(". "), window.rfind(".\n"))
-    if cut > max_chars * 0.5:
-        return window[: cut + 1].strip()
-    return window.rstrip() + "..."
+# La limpieza y el recorte viven en `backend/article_text.py`, no aca: el paquete, el backend y
+# Android tienen que derivar el **mismo** texto del mismo articulo, y tres implementaciones
+# parecidas es como comparar `content_sha256` deja de significar "el articulo cambio". La paridad
+# con Kotlin la comprueban `tests/test_article_text.py` y `ArticleOutlineParityTest`.
+clean_extract = article_text.clean_extract
+truncate_extract = article_text.truncate_extract
 
 
 def enrich(database, limit=0, dry_run=False, sleep_seconds=DEFAULT_SLEEP_SECONDS, max_chars=0):

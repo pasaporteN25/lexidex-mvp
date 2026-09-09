@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
 
+import article_text
 import local_sync_engine
 import qr_encoder
 import local_sync_security
@@ -2359,32 +2360,81 @@ def wikipedia_search_in(lang, text, safe_limit):
     return results
 
 
-def wikipedia_article(external_id, language):
-    """El `extract` del resumen es texto plano, que es lo que permite seguir escapando sin sanear."""
+def _wikipedia_extract(lang, key, full):
+    """
+    Un articulo por la Action API. Sin `exintro` viene entero, **y solo de a uno**: la API baja
+    `exlimit` a 1 y lo dice en un warning (epica 4).
+    """
+    params = {
+        "action": "query",
+        "format": "json",
+        "formatversion": "2",
+        "prop": "extracts|info",
+        "explaintext": "1",
+        "inprop": "url",
+        "redirects": "1",
+        "titles": key,
+    }
+    if not full:
+        params["exintro"] = "1"
+    payload = fetch_knowledge_json(
+        f"https://{lang}.wikipedia.org/w/api.php?" + urlencode(params)
+    )
+    if not isinstance(payload, dict):
+        raise ApiError(502, "source_unavailable", "La fuente devolvio una respuesta inesperada.")
+    for page in (payload.get("query") or {}).get("pages") or []:
+        if isinstance(page, dict) and not page.get("missing"):
+            return page
+    return None
+
+
+def wikipedia_article(external_id, language, full=False):
+    """
+    La misma introduccion que guarda el paquete y que trae Android, o el articulo entero.
+
+    **Se pide por la Action API y no por el resumen REST.** El resumen devuelve solo el primer
+    parrafo: medido el 2026-09-08 sobre tres articulos, entre 14% y 43% menos texto que la
+    introduccion completa. Como los dos lados escriben `content_sha256` y se sincronizan, importar
+    de aca el texto corto hacia que el mismo articulo tuviera dos hashes segun donde se lo hubiera
+    creado. Es el mismo problema que arreglo 10.4 en Android; aca faltaba.
+
+    El contenido sigue siendo texto plano, que es lo que permite seguir escapando sin sanear.
+    """
     key = (external_id or "").strip()
     if not key:
         raise ApiError(400, "required_field", "El campo id es obligatorio.")
     lang = wikipedia_language(language)
-    url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(key, safe='')}"
-    payload = fetch_knowledge_json(url)
-    if not isinstance(payload, dict):
-        raise ApiError(502, "source_unavailable", "La fuente devolvio una respuesta inesperada.")
 
-    content_urls = payload.get("content_urls")
-    desktop = content_urls.get("desktop") if isinstance(content_urls, dict) else None
-    source_url = desktop.get("page") if isinstance(desktop, dict) else ""
-    if not source_url:
-        source_url = f"https://{lang}.wikipedia.org/wiki/{quote(key, safe='')}"
+    page = _wikipedia_extract(lang, key, full)
+    if page is None or not (page.get("extract") or "").strip():
+        raise ApiError(404, "article_not_found", "La fuente no devolvio ese articulo.")
+
+    cleaned = article_text.clean_extract(page.get("extract") or "")
+    if full:
+        outline = article_text.parse_article_outline(cleaned)
+        content = article_text.outline_to_stored_text(outline)
+    else:
+        content = article_text.truncate_extract(cleaned)
+
+    source_url = page.get("fullurl") or f"https://{lang}.wikipedia.org/wiki/{quote(key, safe='')}"
+    revision_id = page.get("lastrevid")
 
     return {
         "source_id": "wikipedia",
         "external_id": key,
-        "title": payload.get("title") or key.replace("_", " "),
-        "summary": payload.get("description") or "",
-        "content": payload.get("extract") or "",
+        "title": page.get("title") or key.replace("_", " "),
+        "summary": page.get("description") or "",
+        "content": content,
         "source_url": source_url,
-        "language": payload.get("lang") or lang,
+        "language": lang,
+        "extent": "FULL" if full else "INTRO",
+        "revision_id": revision_id if isinstance(revision_id, int) else None,
     }
+
+
+def wikipedia_full_article(external_id, language):
+    """El articulo entero. Endpoint aparte porque cuesta distinto: ver [wikipedia_article]."""
+    return wikipedia_article(external_id, language, full=True)
 
 
 @dataclass(frozen=True)
@@ -2421,6 +2471,8 @@ class KnowledgeSourceAdapter:
     descriptor: KnowledgeSourceDescriptor
     search: Callable[[str, str, int], list[dict]]
     fetch: Callable[[str, str], dict]
+    # Null cuando la fuente no ofrece el articulo entero: un diccionario no deberia fingir que si.
+    fetch_full: Callable[[str, str], dict] | None = None
 
 
 def knowledge_source_registry():
@@ -2443,6 +2495,7 @@ def knowledge_source_registry():
             ),
             search=wikipedia_search,
             fetch=wikipedia_article,
+            fetch_full=wikipedia_full_article,
         ),
     )
     registry = {source.descriptor.id: source for source in sources}
@@ -2768,6 +2821,19 @@ class LexidexHandler(BaseHTTPRequestHandler):
             self.send_json(
                 200,
                 source.fetch(query_value(query, "id"), query_value(query, "language")),
+            )
+        elif path == "/api/knowledge/article/full":
+            # Ruta aparte y no un parametro de la anterior, porque cuesta distinto: la fuente lo
+            # limita fuerte y no se puede pedir de a lotes. Que se note al llamarla.
+            if source.fetch_full is None:
+                raise ApiError(
+                    404,
+                    "not_supported",
+                    "Esa fuente no ofrece el articulo completo.",
+                )
+            self.send_json(
+                200,
+                source.fetch_full(query_value(query, "id"), query_value(query, "language")),
             )
         else:
             self.send_json(404, {"error": "not_found"})

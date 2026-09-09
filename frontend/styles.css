@@ -1700,3 +1700,35 @@ dialog::backdrop {
   word-break: break-all;
   text-align: right;
 }
+
+/*
+ * Los titulos de seccion de un articulo completo (epica 4).
+ *
+ * Deliberadamente discretos: son una ayuda para apoyar la vista en un texto largo, no jerarquia
+ * editorial. Un articulo con quince secciones no puede tener quince titulos gritando.
+ */
+.article-heading {
+  max-width: 72ch;
+  margin: 1.35rem 0 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.article-heading[data-level="3"],
+.article-heading[data-level="4"] {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.9rem;
+}
+
+.article-heading[data-level="3"] {
+  padding-left: 0.75rem;
+}
+
+.article-heading[data-level="4"] {
+  padding-left: 1.5rem;
+  font-weight: 500;
+}
