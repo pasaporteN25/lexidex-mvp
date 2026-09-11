@@ -228,19 +228,35 @@ class LocalSyncEndToEndV2Test(unittest.TestCase):
         document = parse_exchange_response(body.decode("utf-8"))
         self.assertTrue(document["has_more"], "la pagina tenia que cortarse")
 
-    def raw_exchange(self, replica):
+    def raw_exchange(self, replica, attempts=3):
+        """
+        Los bytes crudos de un intercambio, reintentando **solo** si la red corta la conexion.
+
+        En la maquina donde se escribio esto, un servidor HTTP minimo -sin una linea del hub- tambien
+        corta 2 de cada 30 intercambios de 1 MiB por loopback, con la misma firma: una espera larga y
+        un reset a mitad del cuerpo. Es el entorno (un antivirus que inspecciona HTTP), no el hub. Y
+        reintentar es lo que hace un cliente de verdad: el intercambio es idempotente por
+        `(device_id, change_id)`, asi que la segunda vuelta trae los mismos duplicados y la misma
+        pagina. Cualquier otro error, o una respuesta que llega, se juzga sin segunda oportunidad.
+        """
         import urllib.request
-        request = urllib.request.Request(
-            f"{self.base_url}/api/sync/v1/exchange",
-            data=json.dumps(replica._request()).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json; charset=utf-8",
-                "Authorization": f"Bearer {replica.credential}",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return response.read()
+        body = json.dumps(replica._request()).encode("utf-8")
+        for attempt in range(attempts):
+            request = urllib.request.Request(
+                f"{self.base_url}/api/sync/v1/exchange",
+                data=body,
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Authorization": f"Bearer {replica.credential}",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    return response.read()
+            except ConnectionResetError:
+                if attempt == attempts - 1:
+                    raise
 
     def count(self, sql):
         conn = api.connect_user(self.database)

@@ -1684,9 +1684,62 @@ def get_catalog_term(package_conn, user_conn, slug, canonical):
         "SELECT * FROM user_terms WHERE slug = ?", (slug,)
     ).fetchone()
     if personal:
-        return personal_term_from_row(user_conn, personal)
+        return with_active_copy(user_conn, personal_term_from_row(user_conn, personal))
     row = package_conn.execute("SELECT * FROM terms WHERE slug = ?", (slug,)).fetchone()
-    return enrich_term(package_conn, row, canonical) if row else None
+    return with_active_copy(user_conn, enrich_term(package_conn, row, canonical)) if row else None
+
+
+def with_active_copy(user_conn, term):
+    """
+    El termino leido desde la copia que se eligio, si hay una (10.10b-5).
+
+    Mismo criterio que `withActiveVersion` en Android, campo por campo: el texto es el de la
+    copia, el resumen tambien si la copia trae uno, y la fuente de la que salio pasa a tener su
+    fecha. Mientras no haya ninguna copia se lee el texto de base, igual que en el telefono.
+
+    Llegan por la sincronizacion: si uno se queda con la copia vieja en el telefono, la web tiene
+    que mostrar esa y no otra.
+    """
+    if term is None or not has_table(user_conn, "term_active_versions"):
+        return term
+    origin = "personal" if term.get("origin") == "personal" else "package"
+    row = user_conn.execute(
+        """
+        SELECT v.content, v.summary, v.content_sha256, v.extent, v.revision_id,
+               v.retrieved_at, v.source_url
+        FROM term_active_versions a
+        JOIN term_versions v
+          ON v.term_slug = a.term_slug AND v.term_origin = a.term_origin
+         AND v.content_sha256 = a.content_sha256
+        WHERE a.term_slug = ? AND a.term_origin = ? AND a.is_present = 1 AND v.is_present = 1
+        """,
+        (term["slug"], origin),
+    ).fetchone()
+    if row is None:
+        return term
+    term = dict(term)
+    term["content"] = row["content"]
+    term["summary"] = row["summary"] or term.get("summary", "")
+    for source in term.get("sources") or []:
+        if row["source_url"] and source.get("url") == row["source_url"]:
+            source["retrieved_at"] = row["retrieved_at"]
+            source["content_sha256"] = row["content_sha256"]
+    term["active_copy"] = {
+        "extent": row["extent"],
+        "revision_id": row["revision_id"],
+        "retrieved_at": row["retrieved_at"],
+        "source_url": row["source_url"],
+        "revision_url": article_text.revision_url(row["source_url"], row["revision_id"]),
+    }
+    # Una copia es por definicion texto importado sin tocar: la autoria calculada sobre el texto
+    # de base diria "editado por vos" de algo que el usuario no edito.
+    if origin == "personal" and row["source_url"]:
+        term["authorship"] = {
+            "kind": "imported",
+            "host": urlparse(row["source_url"]).hostname or "",
+            "retrieved_at": row["retrieved_at"],
+        }
+    return term
 
 
 def get_catalog_related(package_conn, user_conn, slug, canonical):

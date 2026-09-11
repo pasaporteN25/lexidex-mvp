@@ -175,6 +175,23 @@ function renderArticleBody(content) {
     .join("");
 }
 
+/**
+ * Que se esta leyendo, y de que revision salio (4.6, en la web por 10.10b-5).
+ *
+ * Solo cuando lo que se lee es el articulo entero, igual que en el telefono: en un extracto la
+ * linea seria ruido. El enlace lo arma el hub con las mismas reglas que Kotlin, y si no puede
+ * afirmarlo no manda ninguno: un enlace roto que dice ser la atribucion es peor que ninguno.
+ */
+function renderActiveCopy(copy) {
+  if (!copy || copy.extent !== "FULL") return "";
+  const when = formatRetrievedDate(copy.retrieved_at);
+  const text = `Articulo completo${when ? `, traido el ${escapeHtml(when)}` : ""}.`;
+  const link = copy.revision_url
+    ? ` <a href="${escapeHtml(copy.revision_url)}" target="_blank" rel="noopener noreferrer">Ver esta revision</a>`
+    : "";
+  return `<p class="authorship">${text}${link}</p>`;
+}
+
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>"']/g, (character) => ({
     "&": "&amp;",
@@ -581,7 +598,7 @@ function renderDetail(term, related) {
   const registryId = term.display_id || `#${String(term.id || 0).padStart(4, "0")}`;
   const summary = term.summary || "Referencia catalogada; contenido pendiente de enriquecimiento.";
   const content = term.content
-    ? `${renderAuthorship(term)}${renderArticleBody(term.content)}`
+    ? `${renderAuthorship(term)}${renderArticleBody(term.content)}${renderActiveCopy(term.active_copy)}`
     : '<p class="quiet">La identidad y la procedencia estan disponibles, pero este paquete todavia no incluye el cuerpo del articulo.</p>';
   const notes = (term.notes || []).length
     ? `<section><h3>Notas privadas</h3><div class="note-block">${term.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div></section>`

@@ -17,11 +17,14 @@ import java.net.URI
 fun revisionUrl(sourceUrl: String, revisionId: Long?): String? {
     if (revisionId == null || revisionId <= 0) return null
     val uri = runCatching { URI(sourceUrl) }.getOrNull() ?: return null
-    if (uri.scheme !in HTTP_SCHEMES) return null
+    // El esquema no distingue mayusculas (RFC 3986). Antes `HTTPS://` daba null aca y un enlace en
+    // Python: lo encontro la fixture compartida `articles/revision-urls.json`.
+    val scheme = uri.scheme?.lowercase() ?: return null
+    if (scheme !in HTTP_SCHEMES) return null
     val host = uri.host?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
     // Solo MediaWiki: `index.php?oldid=` es su forma, no una convencion general de la web.
     if (!MEDIAWIKI_HOST.matches(host)) return null
-    return "${uri.scheme}://$host/w/index.php?oldid=$revisionId"
+    return "$scheme://$host/w/index.php?oldid=$revisionId"
 }
 
 private val HTTP_SCHEMES = setOf("http", "https")

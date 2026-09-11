@@ -1,5 +1,10 @@
 package com.lexidex.app.domain
 
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -9,6 +14,25 @@ import org.junit.Test
  * lleva a otra cosa. Por eso casi todo lo que se prueba aca es cuando devuelve null.
  */
 class ArticleRevisionTest {
+
+    @Test
+    fun `revision urls match the shared cases`() {
+        // Los mismos casos que cumple `backend/article_text.py`, con resultados escritos a mano.
+        val text = checkNotNull(javaClass.getResourceAsStream("/articles/revision-urls.json")) {
+            "falta revision-urls.json"
+        }.bufferedReader().readText()
+        kotlinx.serialization.json.Json.parseToJsonElement(text).jsonArray.forEach { element ->
+            val case = element.jsonObject
+            val url = case.getValue("url").jsonPrimitive.content
+            val revision = case.getValue("revision_id").jsonPrimitive.longOrNull
+            val expected = case.getValue("expected").let { if (it is JsonNull) null else it.jsonPrimitive.content }
+            assertEquals(
+                "$url con $revision: ${case.getValue("why").jsonPrimitive.content}",
+                expected,
+                revisionUrl(url, revision),
+            )
+        }
+    }
 
     @Test
     fun `a wikipedia article gets its permalink`() {

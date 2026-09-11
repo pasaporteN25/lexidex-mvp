@@ -72,6 +72,21 @@ class ArticleTextTest(unittest.TestCase):
         self.assertLessEqual(len(cut), at.WIKIPEDIA_EXTRACT_MAX_CHARS)
         self.assertTrue(cut.endswith("."))
 
+    def test_revision_urls_match_the_shared_cases(self):
+        # Los resultados de la fixture estan escritos a mano: no salen de Python ni de Kotlin, y los
+        # dos los tienen que cumplir. Armandola aparecio una divergencia: `HTTPS://` en mayusculas
+        # daba null en Kotlin y un enlace aca.
+        cases = json.loads((FIXTURES / "revision-urls.json").read_text(encoding="utf-8"))
+        for case in cases:
+            self.assertEqual(
+                case["expected"],
+                at.revision_url(case["url"], case["revision_id"]),
+                f"{case['url']!r} con {case['revision_id']!r}: {case['why']}",
+            )
+
+    def test_a_bool_is_not_a_revision(self):
+        self.assertIsNone(at.revision_url("https://es.wikipedia.org/wiki/X", True))
+
     def test_writes_the_golden_file_for_kotlin(self):
         """Escribe lo que Python ve; Kotlin lo comprueba contra lo que ve el."""
         golden = {}

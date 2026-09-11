@@ -538,8 +538,10 @@ tamano por termino y si habia que sanear HTML.
       sigue saliendo por `escapeHtml`, titulos incluidos: no se incorporo ningun
       saneador de HTML porque no hizo falta.
 
-      **Lo que quedo afuera, y por que.** Guardar `extent` y `revision_id` del
-      lado web no se puede todavia: la web **no tiene copias**. `term_versions`
+      **Lo que quedo afuera se hizo despues, en 10.10b-5**: la web lee la copia
+      activa y dice de que revision salio. Lo que sigue es el texto original de
+      por que estaba bloqueado. Guardar `extent` y `revision_id` del
+      lado web no se podia todavia: la web **no tenia copias**. `term_versions`
       es solo de Android y el contrato de sincronizacion (ADR 0004) no la
       incluye, asi que en la web "cual copia es la completa" no tiene donde
       escribirse ni significado. Eso es 10.10b, que sigue pendiente de decidir.
@@ -1738,8 +1740,15 @@ segundo plano mientras el proyecto no tome `androidx.work`.
       clear`, importadas, 23 recuperadas en 12 terminos con exactamente una
       activa cada uno y las 23 en el indice de busqueda.
       Siete tests de la regla mas dos del formato.
-- [ ] **10.10b** _(Opus 5 · XL)_ Que las copias viajen tambien por la
-      sincronizacion. **Decidido el 2026-09-11: si.** Se planteo el costo -una
+- [x] **10.10b** ✅ Hecho el 2026-09-11 _(Opus 5 · XL)_. Que las copias viajen
+      tambien por la sincronizacion. **Decidido el 2026-09-11: si.**
+
+      **Lo que queda afuera, dicho:** la **busqueda de la web** no sigue a la
+      copia activa -la del telefono si, desde 10.3-, asi que un termino que se lee
+      desde su articulo completo se encuentra por el cuerpo en el telefono y no en
+      la web. Y el telefono **no aplica el tope de cinco copias** a las que llegan
+      del hub: un termino actualizado en varios dispositivos puede juntar mas.
+      Ninguna de las dos pierde datos; las dos son tareas propias si se piden. Se planteo el costo -una
       copia completa pesa 8,5 KB de mediana desde la epica 4, ~13 veces lo que
       pesaba cuando se anoto esta tarea- y Lucas eligio avanzar igual.
 
@@ -1914,8 +1923,35 @@ segundo plano mientras el proyecto no tome `androidx.work`.
             es la oferta sin el dibujo-; ahora los tests hacen lo mismo. El puerto
             del hub de los tests instrumentados se pasa como argumento, porque el
             8765 puede estar ocupado por el hub de verdad.
-      - [ ] **10.10b-5** La web muestra de que copia sale el texto -extension y
-            revision-, que es la mitad de 4.7 que quedo bloqueada.
+      - [x] **10.10b-5** ✅ Hecho el 2026-09-11. La web muestra de que copia sale
+            el texto -extension y revision-, que es la mitad de 4.7 que quedo
+            bloqueada.
+
+            `with_active_copy` en el backend replica `withActiveVersion` de
+            Android campo por campo: texto, resumen si la copia trae uno, y la
+            fecha de la fuente de la que salio. En un termino propio corrige
+            ademas la autoria: calculada sobre el texto de base diria "editado
+            por vos" de una copia que nadie edito.
+
+            **El permalink no tiene dos implementaciones parecidas sino una
+            fixture comun**, `articles/revision-urls.json`, con los resultados
+            escritos a mano, que cumplen Python y Kotlin. Armandola aparecio una
+            divergencia: `HTTPS://` en mayusculas daba null en Kotlin y un
+            enlace en Python. El esquema no distingue mayusculas (RFC 3986), asi
+            que se corrigio Kotlin.
+
+            Verificado en el navegador sobre una base con una copia completa
+            elegida: se lee el articulo entero con su seccion, "Importado de
+            es.wikipedia.org el 08/09/2026, sin editar", y la linea con el enlace
+            a la revision 175190592.
+
+            **Un test fallaba una vez de cada diez y no era el hub.** Un servidor
+            HTTP minimo, sin una linea del hub, tambien corta 2 de cada 30
+            intercambios de 1 MiB por loopback en esta maquina, con la misma
+            firma: una espera larga y un reset a mitad del cuerpo. Es el entorno
+            -casi seguro el escudo web de Avast inspeccionando HTTP-. El test
+            reintenta solo ante ese corte, que es lo que haria un cliente de
+            verdad: el intercambio es idempotente.
 - [x] **10.9** ✅ Hecho el 2026-09-03. El paquete vigente pasa a ser
       **v0.5.1-licensed.1**, con `license_name` en 4.480 de las 4.539 fuentes.
       `build_corpus.py` la escribe al construir segun el proyecto de origen, y

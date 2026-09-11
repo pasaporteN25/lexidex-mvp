@@ -15,6 +15,7 @@ Si alguno de los dos se corre solo, el otro falla.
 Solo biblioteca estandar, como todo `backend/`.
 """
 import re
+from urllib.parse import urlparse
 
 # Tope del extracto corto, el mismo que se le paso a enrich_corpus.py al construir el paquete.
 WIKIPEDIA_EXTRACT_MAX_CHARS = 800
@@ -156,3 +157,34 @@ def outline_to_stored_text(outline):
             marker = "=" * section["level"]
             parts.append(f"{marker} {section['title']} {marker}\n{section['body']}")
     return "\n\n".join(parts).strip()
+
+
+# Los proyectos de Wikimedia, donde `index.php?oldid=` es la forma del permalink. Lista cerrada a
+# proposito: desde una URL no hay forma de saber si un sitio cualquiera corre MediaWiki, y un enlace
+# roto que dice ser la atribucion es peor que ninguno. Espejo de `domain/ArticleRevision.kt`.
+MEDIAWIKI_HOST = re.compile(
+    r"^[a-z0-9-]+\.(wikipedia|wikibooks|wikisource|wiktionary|wikiquote|wikiversity|wikinews|wikivoyage)\.org$"
+)
+
+
+def revision_url(source_url, revision_id):
+    """
+    El enlace a la revision exacta que se guardo, no al articulo de hoy (4.6).
+
+    None en todo lo que no se puede afirmar. La paridad con Kotlin no es una promesa de este
+    comentario: los dos cumplen `mobile/app/src/test/resources/articles/revision-urls.json`, cuyos
+    resultados estan escritos a mano y no salen de ninguna de las dos implementaciones.
+    """
+    if revision_id is None or isinstance(revision_id, bool) or not isinstance(revision_id, int):
+        return None
+    if revision_id <= 0:
+        return None
+    try:
+        parsed = urlparse(source_url or "")
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https") or not host or not MEDIAWIKI_HOST.match(host):
+        return None
+    return f"{parsed.scheme}://{host}/w/index.php?oldid={revision_id}"
+

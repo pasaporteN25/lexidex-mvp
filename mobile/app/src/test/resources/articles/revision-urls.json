@@ -1,0 +1,20 @@
+[
+  {"url": "https://es.wikipedia.org/wiki/Poligenismo", "revision_id": 175190592, "expected": "https://es.wikipedia.org/w/index.php?oldid=175190592", "why": "el caso real"},
+  {"url": "https://it.wikipedia.org/wiki/Rinascimento", "revision_id": 42, "expected": "https://it.wikipedia.org/w/index.php?oldid=42", "why": "se conserva la edicion"},
+  {"url": "https://en.wiktionary.org/wiki/hypothesis", "revision_id": 7, "expected": "https://en.wiktionary.org/w/index.php?oldid=7", "why": "otros proyectos de Wikimedia"},
+  {"url": "HTTPS://ES.WIKIPEDIA.ORG/wiki/Poligenismo", "revision_id": 5, "expected": "https://es.wikipedia.org/w/index.php?oldid=5", "why": "esquema y host no distinguen mayusculas (RFC 3986); Kotlin devolvia null y Python no"},
+  {"url": "https://es.wikipedia.org:443/wiki/Poligenismo", "revision_id": 5, "expected": "https://es.wikipedia.org/w/index.php?oldid=5", "why": "el puerto no es parte del permalink"},
+  {"url": "https://es.wikipedia.org/wiki/Poligenismo", "revision_id": null, "expected": null, "why": "sin revision guardada no hay enlace"},
+  {"url": "https://es.wikipedia.org/wiki/Poligenismo", "revision_id": 0, "expected": null, "why": "cero no es una revision"},
+  {"url": "https://es.wikipedia.org/wiki/Poligenismo", "revision_id": -1, "expected": null, "why": "negativo no es una revision"},
+  {"url": "https://es.m.wikipedia.org/wiki/Poligenismo", "revision_id": 5, "expected": null, "why": "el dominio movil queda afuera: lista cerrada, a proposito"},
+  {"url": "https://ejemplo.com/articulo", "revision_id": 5, "expected": null, "why": "un host que no conocemos"},
+  {"url": "https://dictionary.cambridge.org/dictionary/english/serendipity", "revision_id": 5, "expected": null, "why": "otra fuente, otro esquema de permalinks"},
+  {"url": "https://es.wikipedia.org.evil.test/wiki/X", "revision_id": 5, "expected": null, "why": "un host parecido"},
+  {"url": "https://notwikipedia.org/wiki/X", "revision_id": 5, "expected": null, "why": "otro host parecido"},
+  {"url": "file:///etc/passwd", "revision_id": 5, "expected": null, "why": "no es http"},
+  {"url": "javascript:alert(1)", "revision_id": 5, "expected": null, "why": "no es http"},
+  {"url": "", "revision_id": 5, "expected": null, "why": "vacia"},
+  {"url": "no es una url", "revision_id": 5, "expected": null, "why": "basura no lanza"},
+  {"url": "http://", "revision_id": 5, "expected": null, "why": "sin host"}
+]
