@@ -37,6 +37,9 @@ from local_sync_contract import (
     MAX_SYNC_REQUEST_BYTES,
     SYNC_PROTOCOL_NAME,
     SYNC_PROTOCOL_VERSION,
+    TERM_ACTIVE_ENTITY,
+    TERM_VERSION_ENTITY,
+    entity_types_for,
     SyncContractError,
     parse_exchange_request,
     validate_client_change,
@@ -52,12 +55,15 @@ FAVORITE_ENTITY = "favorite"
 HISTORY_ENTITY = "history"
 MEMBER_ENTITY = "collection_member"
 
-# Las tres tablas de referencia guardan la ausencia con `is_present = 0` en vez de borrar la fila,
-# asi que comparten forma y se manejan con la misma tabla de nombres.
+# Las tablas de referencia guardan la ausencia con `is_present = 0` en vez de borrar la fila, asi
+# que comparten forma y se manejan con la misma tabla de nombres. Las dos ultimas son v2 (10.10b):
+# las copias fechadas y cual de ellas se lee.
 REFERENCE_TABLES = {
     FAVORITE_ENTITY: ("favorites", "created_at"),
     HISTORY_ENTITY: ("history_entries", "viewed_at"),
     MEMBER_ENTITY: ("collection_terms", "added_at"),
+    TERM_VERSION_ENTITY: ("term_versions", "retrieved_at"),
+    TERM_ACTIVE_ENTITY: ("term_active_versions", "chosen_at"),
 }
 
 
@@ -341,6 +347,12 @@ def _current_state(conn, entity_type, entity_id, key):
 
 
 def _reference_row(conn, entity_type, table, entity_id):
+    if entity_type == TERM_VERSION_ENTITY:
+        return conn.execute(
+            f"SELECT revision, is_present FROM {table} "
+            "WHERE term_slug = ? AND term_origin = ? AND content_sha256 = ?",
+            (entity_id["slug"], entity_id["origin"], entity_id["content_sha256"]),
+        ).fetchone()
     if entity_type == MEMBER_ENTITY:
         return conn.execute(
             f"SELECT revision, is_present FROM {table} "
@@ -576,6 +588,62 @@ def _apply_collection_upsert(conn, entity_id, payload, revision):
 
 def _apply_reference_upsert(conn, entity_type, entity_id, payload, revision):
     table, at_column = REFERENCE_TABLES[entity_type]
+    if entity_type == TERM_VERSION_ENTITY:
+        conn.execute(
+            f"""
+            INSERT INTO {table} (
+              term_slug, term_origin, content_sha256, summary, content, retrieved_at,
+              source_url, extent, revision_id, updated_at, is_present, revision
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT(term_slug, term_origin, content_sha256) DO UPDATE SET
+              summary = excluded.summary,
+              content = excluded.content,
+              retrieved_at = excluded.retrieved_at,
+              source_url = excluded.source_url,
+              extent = excluded.extent,
+              revision_id = excluded.revision_id,
+              updated_at = excluded.updated_at,
+              is_present = 1,
+              revision = excluded.revision
+            """,
+            (
+                entity_id["slug"],
+                entity_id["origin"],
+                entity_id["content_sha256"],
+                payload["summary"],
+                payload["content"],
+                payload["retrieved_at"],
+                payload["source_url"],
+                payload["extent"],
+                payload["revision_id"],
+                payload["retrieved_at"],
+                revision,
+            ),
+        )
+        return
+    if entity_type == TERM_ACTIVE_ENTITY:
+        conn.execute(
+            f"""
+            INSERT INTO {table} (
+              term_slug, term_origin, content_sha256, chosen_at, updated_at, is_present, revision
+            ) VALUES (?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT(term_slug, term_origin) DO UPDATE SET
+              content_sha256 = excluded.content_sha256,
+              chosen_at = excluded.chosen_at,
+              updated_at = excluded.updated_at,
+              is_present = 1,
+              revision = excluded.revision
+            """,
+            (
+                entity_id["slug"],
+                entity_id["origin"],
+                payload["content_sha256"],
+                payload["at"],
+                payload["at"],
+                revision,
+            ),
+        )
+        return
     if entity_type == MEMBER_ENTITY:
         conn.execute(
             f"""
@@ -615,6 +683,21 @@ def _apply_reference_upsert(conn, entity_type, entity_id, payload, revision):
 
 def _apply_reference_delete(conn, entity_type, entity_id, revision, deleted_at):
     table, _ = REFERENCE_TABLES[entity_type]
+    if entity_type == TERM_VERSION_ENTITY:
+        # Se vacia el texto: una copia completa pesa hasta 20 KB y guardar lo que ya no esta no
+        # sirve. La fila queda por su revision, para poder volver a agregarla.
+        conn.execute(
+            f"UPDATE {table} SET is_present = 0, content = '', updated_at = ?, revision = ? "
+            "WHERE term_slug = ? AND term_origin = ? AND content_sha256 = ?",
+            (
+                deleted_at,
+                revision,
+                entity_id["slug"],
+                entity_id["origin"],
+                entity_id["content_sha256"],
+            ),
+        )
+        return
     if entity_type == MEMBER_ENTITY:
         conn.execute(
             f"UPDATE {table} SET is_present = 0, updated_at = ?, revision = ? "
@@ -645,9 +728,49 @@ def _dependent_deletes(conn, entity_type, entity_id, slug):
     pero con los terminos adentro.
     """
     derived = []
+    if entity_type == TERM_VERSION_ENTITY:
+        active = conn.execute(
+            "SELECT content_sha256, revision FROM term_active_versions "
+            "WHERE term_slug = ? AND term_origin = ? AND is_present = 1",
+            (entity_id["slug"], entity_id["origin"]),
+        ).fetchone()
+        if active is not None and active["content_sha256"] == entity_id["content_sha256"]:
+            derived.append(
+                (
+                    TERM_ACTIVE_ENTITY,
+                    {"origin": entity_id["origin"], "slug": entity_id["slug"]},
+                    active["revision"] + 1,
+                )
+            )
+        return derived
     if entity_type == TERM_ENTITY:
         if slug is None:
             return derived
+        # Primero la eleccion y despues las copias: asi no hay un cursor en el que la eleccion
+        # apunte a una copia que ya no esta.
+        active = conn.execute(
+            "SELECT revision FROM term_active_versions "
+            "WHERE term_slug = ? AND term_origin = 'personal' AND is_present = 1",
+            (slug,),
+        ).fetchone()
+        if active is not None:
+            derived.append(
+                (TERM_ACTIVE_ENTITY, {"origin": "personal", "slug": slug}, active["revision"] + 1)
+            )
+        copies = conn.execute(
+            "SELECT content_sha256, revision FROM term_versions "
+            "WHERE term_slug = ? AND term_origin = 'personal' AND is_present = 1 "
+            "ORDER BY retrieved_at, content_sha256",
+            (slug,),
+        ).fetchall()
+        for copy in copies:
+            derived.append(
+                (
+                    TERM_VERSION_ENTITY,
+                    {"origin": "personal", "slug": slug, "content_sha256": copy["content_sha256"]},
+                    copy["revision"] + 1,
+                )
+            )
         targets = [
             (FAVORITE_ENTITY, {"origin": "personal", "slug": slug}),
             (HISTORY_ENTITY, {"origin": "personal", "slug": slug}),
@@ -768,7 +891,15 @@ def _evaluate_change(conn, source_device_id, change):
     current_cursor = _entity_cursor(conn, entity_type, key)
     details = {"current_revision": state["revision"], "current_cursor": str(current_cursor)}
 
-    if state["deleted"]:
+    # Un termino o una coleccion borrados no vuelven: dejaron tombstone y su uid no se reusa. Una
+    # referencia ausente, en cambio, **se puede volver a agregar** encadenando revisiones: es para
+    # lo que se queda con `is_present = 0` en vez de borrar la fila. Antes esto la rechazaba igual
+    # que a un termino borrado, y un favorito que se desmarcaba no se podia volver a marcar nunca.
+    # Lo que ADR 0004 protege es otra cosa, y sigue protegido abajo por la revision: "un
+    # dispositivo con revision **vieja** no resucita un borrado".
+    if state["deleted"] and (
+        entity_type not in REFERENCE_TABLES or change["operation"] == "delete"
+    ):
         return (
             _conflict(
                 change_id,
@@ -778,6 +909,17 @@ def _evaluate_change(conn, source_device_id, change):
             ),
             [],
         )
+
+    # Una copia es su contenido. Si ya esta, el que la manda de nuevo trajo el mismo texto: es el
+    # mismo hecho y no un conflicto, venga con la revision que venga. Pasa cuando dos dispositivos
+    # traen la misma revision de un articulo antes de verse, que desde 4.7 es lo esperable.
+    if (
+        entity_type == TERM_VERSION_ENTITY
+        and change["operation"] == "upsert"
+        and state["revision"] > 0
+        and not state["deleted"]
+    ):
+        return _duplicate(change_id, state["revision"], current_cursor), []
 
     if change["base_revision"] != state["revision"]:
         return (
@@ -819,9 +961,13 @@ def _evaluate_change(conn, source_device_id, change):
 
     changed_at = change["changed_at"]
     if entity_type in REFERENCE_TABLES:
+        # Solo una copia tiene dependientes: si era la que se leia, la eleccion queda apuntando a
+        # nada. Se leen antes de borrar, igual que los miembros de una coleccion.
+        pending = _dependent_deletes(conn, entity_type, entity_id, None)
         _apply_reference_delete(conn, entity_type, entity_id, revision, changed_at)
         cursor = _append_journal(conn, source_device_id, change_id, change, revision)
-        return _applied(change_id, revision, cursor), []
+        derived = _publish_dependent_deletes(conn, source_device_id, pending, changed_at)
+        return _applied(change_id, revision, cursor), derived
 
     slug = state["slug"]
     pending = _dependent_deletes(conn, entity_type, entity_id, slug)
@@ -870,6 +1016,20 @@ def _reject_upsert(conn, entity_type, entity_id, payload, change_id):
             )
         return None
 
+    if entity_type == TERM_ACTIVE_ENTITY:
+        chosen = _reference_row(
+            conn,
+            TERM_VERSION_ENTITY,
+            REFERENCE_TABLES[TERM_VERSION_ENTITY][0],
+            {**entity_id, "content_sha256": payload["content_sha256"]},
+        )
+        if chosen is None or not chosen["is_present"]:
+            return _rejected(
+                change_id,
+                "parent_deleted",
+                "La copia elegida no existe en el hub.",
+                {"slug": entity_id["slug"], "content_sha256": payload["content_sha256"]},
+            )
     if entity_type == MEMBER_ENTITY and not _collection_alive(conn, entity_id["collection_uid"]):
         return _rejected(
             change_id,
@@ -917,13 +1077,22 @@ def _guard_cursor(conn, since_cursor):
         )
 
 
-def _journal_page(conn, since_cursor, limit):
+def _journal_page(conn, since_cursor, limit, version=SYNC_PROTOCOL_VERSION):
     """
     Pagina del journal posterior a `since_cursor`, en orden estricto y acotada por tamano.
 
     Se pide una fila de mas para saber si hay continuacion sin contar el journal entero, y se
     corta antes del limite si la respuesta se acerca al maximo de 1 MiB: `has_more` obliga a la
     replica a volver a pedir, asi que cortar temprano es seguro y perder el corte no lo es.
+
+    Un pedido v1 no ve las entidades v2: un lector v1 rechaza el documento entero ante un tipo que
+    no conoce. Y el contrato v1 exige que `next_cursor` sea el cursor del ultimo cambio devuelto,
+    que los telefonos ya instalados validan; asi que la pagina se corta en el ultimo cambio
+    visible, y solo si todo lo leido era invisible vuelve vacia con el cursor en lo ultimo leido,
+    que es el unico caso en que el contrato deja que no coincidan. Sin eso, una pagina entera de
+    copias volveria vacia con el mismo cursor y `has_more`, y la replica la pediria para siempre.
+
+    Devuelve `(changes, has_more, next_cursor)`.
     """
     rows = conn.execute(
         "SELECT * FROM sync_journal WHERE cursor > ? ORDER BY cursor LIMIT ?",
@@ -932,10 +1101,15 @@ def _journal_page(conn, since_cursor, limit):
     has_more = len(rows) > limit
     rows = rows[:limit]
 
+    visible = entity_types_for(version)
     changes = []
     budget = MAX_SYNC_REQUEST_BYTES - 8192
     used = 0
+    last_read = since_cursor
     for row in rows:
+        if row["entity_type"] not in visible:
+            last_read = row["cursor"]
+            continue
         change = {
             "cursor": str(row["cursor"]),
             "change_id": row["change_id"],
@@ -954,7 +1128,9 @@ def _journal_page(conn, since_cursor, limit):
             break
         used += size
         changes.append(change)
-    return changes, has_more
+        last_read = row["cursor"]
+    next_cursor = changes[-1]["cursor"] if changes else str(last_read)
+    return changes, has_more, next_cursor
 
 
 def exchange(conn, request, hub_id, now=None):
@@ -966,6 +1142,7 @@ def exchange(conn, request, hub_id, now=None):
     y no tenga que pedir otra vuelta para enterarse de lo que acaba de mandar.
     """
     device_id = request["device_id"]
+    version = request["version"]
     since_cursor = int(request["since_cursor"])
     limit = request.get("limit") or DEFAULT_SYNC_PULL_LIMIT
     timestamp = now or now_timestamp()
@@ -989,7 +1166,7 @@ def exchange(conn, request, hub_id, now=None):
             (device_id, since_cursor, timestamp),
         )
 
-        changes, has_more = _journal_page(conn, since_cursor, limit)
+        changes, has_more, next_cursor = _journal_page(conn, since_cursor, limit, version)
         conn.execute("COMMIT")
     except SyncEngineError:
         conn.execute("ROLLBACK")
@@ -1003,10 +1180,10 @@ def exchange(conn, request, hub_id, now=None):
             retryable=True,
         ) from exc
 
-    next_cursor = changes[-1]["cursor"] if changes else str(since_cursor)
+    # La respuesta habla la version del pedido: un telefono v1 no sabe leer un documento v2.
     return {
         "protocol": SYNC_PROTOCOL_NAME,
-        "version": SYNC_PROTOCOL_VERSION,
+        "version": version,
         "request_id": request["request_id"],
         "hub_id": hub_id,
         "acknowledgements": acknowledgements,

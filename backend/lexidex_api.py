@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS term_relations (
 """
 
 
-USER_SCHEMA_VERSION = 4
+USER_SCHEMA_VERSION = 5
 
 USER_SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -227,7 +227,8 @@ CREATE TABLE IF NOT EXISTS sync_journal (
   source_device_id TEXT NOT NULL,
   change_id TEXT NOT NULL,
   entity_type TEXT NOT NULL CHECK (
-    entity_type IN ('personal_term', 'favorite', 'history', 'collection', 'collection_member')
+    entity_type IN ('personal_term', 'favorite', 'history', 'collection', 'collection_member',
+                    'term_version', 'term_active')
   ),
   entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
   operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
@@ -254,7 +255,8 @@ CREATE TABLE IF NOT EXISTS sync_replica_cursors (
 
 CREATE TABLE IF NOT EXISTS sync_tombstones (
   entity_type TEXT NOT NULL CHECK (
-    entity_type IN ('personal_term', 'favorite', 'history', 'collection', 'collection_member')
+    entity_type IN ('personal_term', 'favorite', 'history', 'collection', 'collection_member',
+                    'term_version', 'term_active')
   ),
   entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
   revision INTEGER NOT NULL CHECK (revision > 0),
@@ -265,6 +267,38 @@ CREATE TABLE IF NOT EXISTS sync_tombstones (
 );
 
 CREATE INDEX IF NOT EXISTS index_sync_tombstones_cursor ON sync_tombstones(cursor);
+
+-- Copias fechadas del texto de un termino (10.10b). Como favoritos, la ausencia se guarda con
+-- `is_present = 0` y la revision sigue, para poder volver a agregarla encadenando revisiones. Al
+-- borrarse se vacia `content`: una copia completa pesa hasta 20 KB y guardar el texto de lo que ya
+-- no esta no sirve de nada.
+CREATE TABLE IF NOT EXISTS term_versions (
+  term_slug TEXT NOT NULL,
+  term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+  content_sha256 TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL DEFAULT '',
+  retrieved_at TEXT NOT NULL,
+  source_url TEXT NOT NULL DEFAULT '',
+  extent TEXT NOT NULL DEFAULT 'INTRO' CHECK (extent IN ('INTRO', 'FULL')),
+  revision_id INTEGER,
+  updated_at TEXT NOT NULL,
+  is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  PRIMARY KEY (term_slug, term_origin, content_sha256)
+);
+
+-- Cual copia se lee. Una fila por termino, como el historial.
+CREATE TABLE IF NOT EXISTS term_active_versions (
+  term_slug TEXT NOT NULL,
+  term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+  content_sha256 TEXT NOT NULL,
+  chosen_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  PRIMARY KEY (term_slug, term_origin)
+);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS user_terms_fts USING fts5(
   title,
@@ -308,7 +342,7 @@ CREATE TRIGGER IF NOT EXISTS user_terms_au AFTER UPDATE ON user_terms BEGIN
   );
 END;
 
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;
 """
 
 
@@ -732,6 +766,163 @@ def allow_sync_payload_version_two(conn):
     )
 
 
+# Las dos tablas nuevas de la v5, las mismas que crea USER_SCHEMA en una base nueva.
+TERM_VERSION_TABLES_SQL = """
+-- Copias fechadas del texto de un termino (10.10b). Como favoritos, la ausencia se guarda con
+-- `is_present = 0` y la revision sigue, para poder volver a agregarla encadenando revisiones. Al
+-- borrarse se vacia `content`: una copia completa pesa hasta 20 KB y guardar el texto de lo que ya
+-- no esta no sirve de nada.
+CREATE TABLE IF NOT EXISTS term_versions (
+  term_slug TEXT NOT NULL,
+  term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+  content_sha256 TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL DEFAULT '',
+  retrieved_at TEXT NOT NULL,
+  source_url TEXT NOT NULL DEFAULT '',
+  extent TEXT NOT NULL DEFAULT 'INTRO' CHECK (extent IN ('INTRO', 'FULL')),
+  revision_id INTEGER,
+  updated_at TEXT NOT NULL,
+  is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  PRIMARY KEY (term_slug, term_origin, content_sha256)
+);
+
+-- Cual copia se lee. Una fila por termino, como el historial.
+CREATE TABLE IF NOT EXISTS term_active_versions (
+  term_slug TEXT NOT NULL,
+  term_origin TEXT NOT NULL CHECK (term_origin IN ('package', 'personal')),
+  content_sha256 TEXT NOT NULL,
+  chosen_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  is_present INTEGER NOT NULL DEFAULT 1 CHECK (is_present IN (0, 1)),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  PRIMARY KEY (term_slug, term_origin)
+);
+"""
+
+SYNC_ENTITY_TYPE_CHECK_V5 = (
+    "entity_type IN ('personal_term', 'favorite', 'history', 'collection', "
+    "'collection_member', 'term_version', 'term_active')"
+)
+
+
+def migrate_user_database_to_v5(conn):
+    """
+    v4 -> v5: las copias fechadas viajan por la sincronizacion (10.10b).
+
+    `sync_journal` y `sync_tombstones` enumeran los tipos de entidad en un CHECK, y SQLite no
+    permite cambiar un CHECK: hay que reconstruir las dos tablas. La delicada es el journal, porque
+    su `cursor` es AUTOINCREMENT y **no puede retroceder**: una replica que ya vio el cursor 500 y
+    recibiera despues otro 500 se saltearia un cambio sin enterarse. Al borrar la tabla vieja SQLite
+    borra tambien su marca en `sqlite_sequence`, y copiar las filas solo la reconstruye hasta el
+    cursor mas alto que **sobrevive**; si el journal estaba compactado, la marca bajaria. Por eso se
+    lee antes y se restituye despues.
+
+    Hoy el hub no compacta el journal, asi que en la practica las dos marcas coinciden. Pero
+    `_guard_cursor` ya preve la compactacion, y una migracion que solo es correcta mientras nunca
+    pase algo previsto no es correcta.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        sequence = conn.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name = 'sync_journal'"
+        ).fetchone()
+        top = conn.execute("SELECT MAX(cursor) FROM sync_journal").fetchone()[0] or 0
+        high_water = max(sequence[0] if sequence else 0, top)
+
+        conn.execute(
+            f"""
+            CREATE TABLE sync_journal_v5 (
+              cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+              source_device_id TEXT NOT NULL,
+              change_id TEXT NOT NULL,
+              entity_type TEXT NOT NULL CHECK ({SYNC_ENTITY_TYPE_CHECK_V5}),
+              entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
+              operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
+              revision INTEGER NOT NULL CHECK (revision > 0),
+              payload_version INTEGER NOT NULL DEFAULT 1 CHECK (payload_version IN (1, 2)),
+              changed_at TEXT NOT NULL,
+              payload_json TEXT CHECK (payload_json IS NULL OR json_valid(payload_json)),
+              CHECK (
+                (operation = 'delete' AND payload_json IS NULL) OR
+                (operation = 'upsert' AND payload_json IS NOT NULL)
+              )
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO sync_journal_v5(
+              cursor, source_device_id, change_id, entity_type, entity_id_json, operation,
+              revision, payload_version, changed_at, payload_json
+            )
+            SELECT cursor, source_device_id, change_id, entity_type, entity_id_json, operation,
+                   revision, payload_version, changed_at, payload_json
+            FROM sync_journal ORDER BY cursor
+            """
+        )
+        conn.execute("DROP TABLE sync_journal")
+        conn.execute("ALTER TABLE sync_journal_v5 RENAME TO sync_journal")
+        conn.execute(
+            "CREATE UNIQUE INDEX index_sync_journal_source_device_id_change_id "
+            "ON sync_journal(source_device_id, change_id)"
+        )
+        conn.execute(
+            "CREATE INDEX index_sync_journal_entity_type_entity_id_json "
+            "ON sync_journal(entity_type, entity_id_json)"
+        )
+        if high_water:
+            updated = conn.execute(
+                "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'sync_journal'",
+                (high_water,),
+            ).rowcount
+            if not updated:
+                conn.execute(
+                    "INSERT INTO sqlite_sequence(name, seq) VALUES ('sync_journal', ?)",
+                    (high_water,),
+                )
+
+        conn.execute(
+            f"""
+            CREATE TABLE sync_tombstones_v5 (
+              entity_type TEXT NOT NULL CHECK ({SYNC_ENTITY_TYPE_CHECK_V5}),
+              entity_id_json TEXT NOT NULL CHECK (json_valid(entity_id_json)),
+              revision INTEGER NOT NULL CHECK (revision > 0),
+              cursor INTEGER NOT NULL CHECK (cursor > 0),
+              deleted_at TEXT NOT NULL,
+              purge_after TEXT NOT NULL,
+              PRIMARY KEY (entity_type, entity_id_json)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO sync_tombstones_v5(
+              entity_type, entity_id_json, revision, cursor, deleted_at, purge_after
+            )
+            SELECT entity_type, entity_id_json, revision, cursor, deleted_at, purge_after
+            FROM sync_tombstones
+            """
+        )
+        conn.execute("DROP TABLE sync_tombstones")
+        conn.execute("ALTER TABLE sync_tombstones_v5 RENAME TO sync_tombstones")
+        conn.execute("CREATE INDEX index_sync_tombstones_cursor ON sync_tombstones(cursor)")
+
+        # Sentencia por sentencia y no con executescript, que hace COMMIT antes de empezar y dejaria
+        # la reconstruccion de arriba fuera de la transaccion.
+        for statement in TERM_VERSION_TABLES_SQL.split(";"):
+            if "CREATE" in statement:
+                conn.execute(statement)
+
+        validate_user_database(conn)
+        conn.execute("PRAGMA user_version = 5")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def migrate_user_database_to_v4(conn):
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -879,7 +1070,7 @@ def migrate_user_database_to_v4(conn):
         ensure_user_term_search_schema(conn)
         conn.execute("INSERT INTO user_terms_fts(user_terms_fts) VALUES ('rebuild')")
         validate_user_database(conn)
-        conn.execute(f"PRAGMA user_version = {USER_SCHEMA_VERSION}")
+        conn.execute("PRAGMA user_version = 4")
         conn.commit()
     except Exception:
         conn.rollback()
@@ -899,7 +1090,9 @@ def initialize_user_database(db_path):
         if version == 0 and not has_personal_data:
             conn.executescript(USER_SCHEMA)
         elif version < USER_SCHEMA_VERSION:
-            migrate_user_database_to_v4(conn)
+            if version < 4:
+                migrate_user_database_to_v4(conn)
+            migrate_user_database_to_v5(conn)
         elif version > USER_SCHEMA_VERSION:
             raise sqlite3.DatabaseError(
                 f"user database version {version} is newer than supported version {USER_SCHEMA_VERSION}"

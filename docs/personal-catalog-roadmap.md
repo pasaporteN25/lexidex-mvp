@@ -1808,9 +1808,44 @@ segundo plano mientras el proyecto no tome `androidx.work`.
             Once tests en Python y diez en Kotlin sobre las mismas seis fixtures;
             los 149 y 294 anteriores siguen verdes, que es la prueba de que v1 no
             cambio.
-      - [ ] **10.10b-2** Hub: tablas en la base de la web, reglas de aplicacion,
-            bajas derivadas (borrar un termino propio borra sus copias; borrar
-            la copia activa borra la eleccion) y paginas v1 filtradas.
+      - [x] **10.10b-2** ✅ Hecho el 2026-09-11. Hub: tablas en la base de la
+            web, reglas de aplicacion, bajas derivadas (borrar un termino propio
+            borra sus copias; borrar la copia activa borra la eleccion) y paginas
+            v1 filtradas.
+
+            **Salio un bug de 9.5, anterior a todo esto: un favorito que se
+            desmarcaba no se podia volver a marcar nunca.** Comprobado contra el
+            motor real: marcar, desmarcar y volver a marcar daba
+            `deleted_entity`. El telefono hacia lo correcto -conserva la fila
+            con `isPresent = false` y manda la revision actual- y el hub la
+            rechazaba igual que a un termino borrado. ADR 0004 protege otra cosa:
+            que un dispositivo con revision **vieja** no resucite un borrado, y
+            eso sigue protegido por la revision. Le pegaba a favoritos, historial
+            y miembros de colecciones, y le habria pegado a las copias: una copia
+            borrada no habria podido volver aunque se la trajera de nuevo.
+
+            Una copia que ya esta, mandada otra vez, se reconoce como
+            `duplicate` sin importar la revision: dos dispositivos que traen la
+            misma revision de un articulo trajeron el mismo hecho.
+
+            La base web pasa a v5. `sync_journal` y `sync_tombstones` enumeran
+            los tipos en un CHECK que SQLite no deja cambiar, asi que se
+            reconstruyen, y **la reconstruccion conserva la marca de
+            `sqlite_sequence`**. Comprobado el contrafactico: sin eso, un journal
+            compactado volveria a numerar desde 1 mientras las replicas vienen del
+            10. Hoy el hub no compacta, pero `_guard_cursor` ya lo preve. **La
+            migracion a v4 tiene ese mismo bug latente**; no se toco porque ya
+            corrio donde tenia que correr y hoy es inofensivo.
+
+            Las copias no entran en `storage-schema.json`: ese archivo fija las
+            tablas con la misma forma en las dos plataformas, y las copias no la
+            tienen (Android las guarda desde 10.3 con `uid` e `is_active`). Lo
+            compartido es el formato del cable.
+
+            Dieciocho tests del motor y cinco de la migracion. Los cuatro que
+            importan -los dos de telefonos v1 y los dos de volver a agregar- se
+            comprobaron con mutaciones: sacando el filtro v1 o el arreglo, fallan
+            los cuatro.
       - [ ] **10.10b-3** Android: registrar las copias en el journal, aplicar las
             que bajan, hablar v2 y caer a v1 ante `426 unsupported_version`.
       - [ ] **10.10b-4** Punta a punta: dos replicas v2 y una v1 contra un hub

@@ -73,6 +73,19 @@ En la misma transaccion, y como cambios normales del servidor:
 - borrar un termino personal borra sus copias y su eleccion activa;
 - borrar la copia activa borra la eleccion, y el termino vuelve a leerse de su texto de base.
 
+## Almacenamiento
+
+Las copias **no** estan en `../v1/storage-schema.json`, y es a proposito. Ese archivo fija las tablas
+que las dos plataformas tienen con la misma forma; las copias no la tienen: Android las guarda desde
+10.3 con `uid` e `is_active`, y la web con la identidad de este contrato y `is_present`. Lo que se
+comparte es el formato del cable, que es lo que las dos tienen que leer igual. El `schema_version`
+de ese archivo es el `user_version` de la base web, que pasa a 5 con estas dos tablas.
+
+La base web reconstruye `sync_journal` y `sync_tombstones` al migrar a 5, porque enumeran los tipos
+de entidad en un CHECK que SQLite no permite cambiar. La reconstruccion **conserva la marca de
+`sqlite_sequence`**: el cursor no puede retroceder aunque el journal este compactado. Android no
+tiene ese CHECK -Room no los genera- y no necesita reconstruir nada.
+
 ## Fixtures
 
 Viven en `fixtures/` y las leen `tests/test_local_sync_contract_v2.py` y `LocalSyncContractV2Test`.
