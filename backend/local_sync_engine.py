@@ -47,6 +47,9 @@ from local_sync_contract import (
 
 
 TOMBSTONE_RETENTION_DAYS = 30
+# Lo que se deja sin usar del 1 MiB de una respuesta, por las dudas: el presupuesto ya cuenta
+# todo lo que la respuesta lleva, asi que esto no tapa ninguna cuenta mal hecha.
+RESPONSE_MARGIN_BYTES = 1024
 HUB_IDENTITY_SUFFIX = ".hub.json"
 
 TERM_ENTITY = "personal_term"
@@ -77,6 +80,20 @@ class SyncEngineError(Exception):
         self.status = status
         self.retryable = retryable
         self.details = details or {}
+
+
+def encode_sync_document(document):
+    """
+    Los bytes con los que un documento del protocolo viaja por el cable. **Una sola forma.**
+
+    La pagina se presupuesta con esta misma funcion con la que despues se manda. Antes se media
+    cada cambio con una codificacion y la respuesta salia con otra, indentada, mas una reserva
+    fija de 8 KB para el resto: con favoritos nunca importo, pero con copias de 20 KB (10.10b)
+    el hub armaba respuestas de mas de 1 MiB. El telefono las rechazaba enteras, sus cambios ya
+    habian quedado aplicados sin que se enterara, reenviaba, y quedaba trabado para siempre.
+    Lo encontro `HubCopiesTest` contra el hub de verdad; ningun test de una sola punta podia.
+    """
+    return json.dumps(document, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 def now_timestamp():
@@ -1077,7 +1094,7 @@ def _guard_cursor(conn, since_cursor):
         )
 
 
-def _journal_page(conn, since_cursor, limit, version=SYNC_PROTOCOL_VERSION):
+def _journal_page(conn, since_cursor, limit, version=SYNC_PROTOCOL_VERSION, budget=None):
     """
     Pagina del journal posterior a `since_cursor`, en orden estricto y acotada por tamano.
 
@@ -1092,6 +1109,9 @@ def _journal_page(conn, since_cursor, limit, version=SYNC_PROTOCOL_VERSION):
     que es el unico caso en que el contrato deja que no coincidan. Sin eso, una pagina entera de
     copias volveria vacia con el mismo cursor y `has_more`, y la replica la pediria para siempre.
 
+    `budget` son los bytes que le quedan a los cambios **despues** del sobre y los
+    acknowledgements, medidos con [encode_sync_document], que es como viaja la respuesta.
+
     Devuelve `(changes, has_more, next_cursor)`.
     """
     rows = conn.execute(
@@ -1103,7 +1123,8 @@ def _journal_page(conn, since_cursor, limit, version=SYNC_PROTOCOL_VERSION):
 
     visible = entity_types_for(version)
     changes = []
-    budget = MAX_SYNC_REQUEST_BYTES - 8192
+    if budget is None:
+        budget = MAX_SYNC_REQUEST_BYTES - 8192
     used = 0
     last_read = since_cursor
     for row in rows:
@@ -1122,7 +1143,8 @@ def _journal_page(conn, since_cursor, limit, version=SYNC_PROTOCOL_VERSION):
             "changed_at": row["changed_at"],
             "payload": json.loads(row["payload_json"]) if row["payload_json"] else None,
         }
-        size = len(json.dumps(change, ensure_ascii=False).encode("utf-8"))
+        # Mas uno por la coma que lo separa del anterior.
+        size = len(encode_sync_document(change)) + 1
         if changes and used + size > budget:
             has_more = True
             break
@@ -1166,7 +1188,22 @@ def exchange(conn, request, hub_id, now=None):
             (device_id, since_cursor, timestamp),
         )
 
-        changes, has_more, next_cursor = _journal_page(conn, since_cursor, limit, version)
+        # Lo que ya ocupa la respuesta sin cambios: el sobre y los acknowledgements. Se mide con
+        # un cursor del largo maximo para no quedarse corto cuando el real sea mas largo.
+        envelope = {
+            "protocol": SYNC_PROTOCOL_NAME,
+            "version": version,
+            "request_id": request["request_id"],
+            "hub_id": hub_id,
+            "acknowledgements": acknowledgements,
+            "changes": [],
+            "next_cursor": "9" * 19,
+            "has_more": False,
+        }
+        budget = MAX_SYNC_REQUEST_BYTES - len(encode_sync_document(envelope)) - RESPONSE_MARGIN_BYTES
+        changes, has_more, next_cursor = _journal_page(
+            conn, since_cursor, limit, version, budget=budget
+        )
         conn.execute("COMMIT")
     except SyncEngineError:
         conn.execute("ROLLBACK")

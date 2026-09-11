@@ -2743,6 +2743,23 @@ class LexidexHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_sync_json(self, status, document):
+        """
+        Una respuesta del protocolo, con **los mismos bytes** con los que el motor la presupuesto.
+
+        `send_json` indenta, que para la API de la web es comodidad y aca seria un error: la
+        pagina se corta para que la respuesta entre en 1 MiB, y si despues se manda de otra forma
+        la cuenta ya no vale.
+        """
+        body = local_sync_engine.encode_sync_document(document)
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_common_headers()
+        self.end_headers()
+        self.wfile.write(body)
+
     def send_api_error(self, error):
         payload = {"error": error.code, "message": error.message}
         if error.details:
@@ -2808,9 +2825,9 @@ class LexidexHandler(BaseHTTPRequestHandler):
             self.log_message(
                 "sync exchange %s", json.dumps(local_sync_security.redacted(body))
             )
-            self.send_json(200, document)
+            self.send_sync_json(200, document)
         except local_sync_engine.SyncEngineError as error:
-            self.send_json(error.status, local_sync_engine.error_document(error, request_id))
+            self.send_sync_json(error.status, local_sync_engine.error_document(error, request_id))
 
     def read_sync_body(self):
         """El limite del protocolo es 1 MiB, mas alto que el del resto de la API."""

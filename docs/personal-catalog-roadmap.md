@@ -1880,9 +1880,40 @@ segundo plano mientras el proyecto no tome `androidx.work`.
             sin quejarse, y la bandeja tiene las dos copias de Poligenismo y
             despues su eleccion, en ese orden. Treinta y un tests nuevos entre
             migracion, coordinador y contrato; 311 JVM en total.
-      - [ ] **10.10b-4** Punta a punta: dos replicas v2 y una v1 contra un hub
-            real. Las copias viajan, la v1 sigue sincronizando sin verlas, y el
-            mismo articulo traido de los dos lados converge en una sola entidad.
+      - [x] **10.10b-4** ✅ Hecho el 2026-09-11. Punta a punta: dos replicas v2 y
+            una v1 contra un hub real. Las copias viajan, la v1 sigue
+            sincronizando sin verlas, y el mismo articulo traido de los dos lados
+            converge en una sola entidad.
+
+            Dos niveles. En Python, ocho escenarios contra un hub HTTP con
+            emparejamiento de verdad, incluido el telefono viejo que sigue
+            sincronizando y el que se actualiza y recupera las copias salteadas.
+            **En el emulador, el Kotlin real contra el hub real**: `HubCopiesTest`
+            cruza el seam dos veces -un dispositivo sube copias, otro las recibe
+            en su Room- y manda sesenta copias de 20 KB contra el limite de 1 MiB
+            que pone el hub de verdad. Catorce tests instrumentados, ninguno
+            salteado.
+
+            **Encontro un bug que ningun test de una sola punta podia ver.** El
+            hub presupuestaba la pagina con una codificacion y la mandaba con otra
+            -`send_json` indenta- mas una reserva fija de 8 KB para el sobre y los
+            acknowledgements. Con favoritos nunca importo; con copias de 20 KB la
+            respuesta pasaba 1 MiB. El telefono la rechazaba entera, sus cambios
+            ya habian quedado aplicados en el hub sin que se enterara, reenviaba,
+            y **quedaba trabado para siempre**. Ahora hay una sola codificacion del
+            cable, `encode_sync_document`, que usan el presupuesto y la respuesta
+            HTTP, y el presupuesto cuenta la respuesta entera. El test que lo fija
+            mide **los bytes que salen por HTTP** -el primero que escribi media el
+            documento en memoria y no habria visto el bug-, y el contrafactico lo
+            confirma: con el codigo viejo la respuesta pesa 1.051.755 bytes.
+
+            Encontro tambien que `HubHandshakeTest` estaba **roto desde 9.13**:
+            el hub empezo a mandar `qr_svg` junto a la oferta, el lector estricto
+            de Kotlin rechaza claves desconocidas, y nadie lo vio porque el test se
+            saltea cuando no hay hub. La app no se enteraba -lo que viaja en el QR
+            es la oferta sin el dibujo-; ahora los tests hacen lo mismo. El puerto
+            del hub de los tests instrumentados se pasa como argumento, porque el
+            8765 puede estar ocupado por el hub de verdad.
       - [ ] **10.10b-5** La web muestra de que copia sale el texto -extension y
             revision-, que es la mitad de 4.7 que quedo bloqueada.
 - [x] **10.9** ✅ Hecho el 2026-09-03. El paquete vigente pasa a ser

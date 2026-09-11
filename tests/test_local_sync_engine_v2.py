@@ -324,6 +324,38 @@ class SyncEngineV2Test(unittest.TestCase):
         self.assertEqual("1", response["next_cursor"])
         self.assertEqual(["favorite"], [c["entity_type"] for c in response["changes"]])
 
+    def test_a_page_of_big_copies_never_answers_more_than_the_protocol_allows(self):
+        """
+        Lo que encontro `HubCopiesTest` contra el hub de verdad, y ningun test de una sola punta.
+
+        El presupuesto de la pagina media cada cambio con una codificacion y la respuesta salia con
+        otra -indentada- mas una reserva fija de 8 KB para el sobre y los acknowledgements. Con
+        copias de 20 KB el hub armaba respuestas de mas de 1 MiB, el telefono las rechazaba enteras y
+        quedaba trabado. Se reproduce con el journal ya cargado, que es lo que la hizo pasar.
+        """
+        for n in range(8):
+            self.add_copy(f"Copia previa {n}. " + "texto " * 3000)
+        batch = []
+        for n in range(50):
+            text = f"Copia {n}. " + "palabra " * 2500
+            batch.append(self.change("term_version", copy_id(text, slug=f"masivo-{n}"),
+                                     payload=copy_payload(text, "FULL")))
+        document = {
+            "protocol": "lexidex-local-sync", "version": 2, "request_id": self.ids.request(),
+            "device_id": DEVICE, "package": {"package_id": "x", "package_version": "1"},
+            "since_cursor": "0", "limit": 200, "changes": batch,
+        }
+        request = parse_exchange_request(json.dumps(document))
+
+        response = engine.exchange(self.conn, request, HUB)
+
+        wire = engine.encode_sync_document(response)
+        self.assertLessEqual(len(wire), engine.MAX_SYNC_REQUEST_BYTES)
+        self.assertTrue(response["has_more"], "la pagina tenia que cortarse")
+        self.assertEqual(50, len(response["acknowledgements"]))
+        # Y lo que viaja lo acepta el lector estricto, que es lo que hace el telefono.
+        parse_exchange_response(wire.decode("utf-8"))
+
     def test_a_v1_request_cannot_carry_a_copy(self):
         # Lo rechaza el lector antes de llegar al motor: un telefono v1 no sabe de copias.
         with self.assertRaises(Exception):

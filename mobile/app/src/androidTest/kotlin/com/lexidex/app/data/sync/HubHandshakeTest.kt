@@ -4,6 +4,7 @@ import androidx.room3.Room
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.lexidex.app.data.userdb.LexidexUserDatabase
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 import com.lexidex.app.domain.sync.SyncPackageDescriptor
@@ -113,7 +114,7 @@ class HubHandshakeTest {
     /** Pide el codigo al hub y lo canjea con el mismo camino que usa la pantalla de opciones. */
     private suspend fun pair(): SyncHubBinding {
         val offerText = post("$HUB_BASE/api/sync/v1/pairing", null)
-        val offer = parseSyncPairingOffer(offerText)
+        val offer = parseSyncPairingOffer(pairingCode(offerText))
         assertNotNull(offer.token)
         val deviceId = "dev_${UUID.randomUUID().toString().replace("-", "")}"
         return client.redeem(offer, deviceId, "Emulador")
@@ -133,8 +134,10 @@ class HubHandshakeTest {
     }
 
     private companion object {
-        // El loopback del host, visto desde el emulador.
-        const val HUB_BASE = "http://10.0.2.2:8765"
+        // El loopback del host, visto desde el emulador. El puerto se puede pasar como argumento
+        // (`hubPort`), porque el 8765 puede estar ocupado por el hub que uno usa de verdad.
+        val HUB_BASE: String =
+            "http://10.0.2.2:" + (InstrumentationRegistry.getArguments().getString("hubPort") ?: "8765")
 
         fun hubIsUp(): Boolean = runCatching {
             val connection = URL("$HUB_BASE/api/health").openConnection() as HttpURLConnection
