@@ -247,6 +247,17 @@ private fun rejectV2IdentityFieldsInV1(text: String) {
     }
 }
 
+/**
+ * Valida un cambio **antes** de anotarlo en la bandeja del telefono (10.10b).
+ *
+ * Es la regla que el hub ya sigue con sus propias ediciones (`validate_client_change`): un cambio
+ * que despues no pase el lector estricto no se rechaza solo, tumba el pedido entero. Una sola
+ * copia invalida en la bandeja dejaria al telefono sin sincronizar nada, para siempre.
+ */
+fun validateOutgoingChange(change: SyncClientChange, version: Int = LATEST_SYNC_PROTOCOL_VERSION) {
+    validateClientChange(change, version)
+}
+
 fun parseSyncErrorResponse(text: String): SyncErrorResponse {
     requireMaximumBytes(text)
     return decodeContract<SyncErrorResponse>(text).also(::validateErrorResponse)

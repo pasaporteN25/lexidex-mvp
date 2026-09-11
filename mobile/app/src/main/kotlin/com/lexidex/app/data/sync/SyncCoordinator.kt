@@ -6,6 +6,11 @@ import com.lexidex.app.domain.TermOrigin
 import com.lexidex.app.domain.sync.MAX_SYNC_CHANGES
 import com.lexidex.app.domain.sync.SYNC_PROTOCOL_NAME
 import com.lexidex.app.domain.sync.SYNC_PROTOCOL_VERSION
+import com.lexidex.app.domain.sync.LATEST_SYNC_PROTOCOL_VERSION
+import com.lexidex.app.domain.sync.MAX_SYNC_REQUEST_BYTES
+import com.lexidex.app.domain.sync.TERM_ACTIVE_ENTITY
+import com.lexidex.app.domain.sync.TERM_VERSION_ENTITY
+import com.lexidex.app.domain.sync.entityTypesFor
 import com.lexidex.app.domain.sync.SyncAcknowledgement
 import com.lexidex.app.domain.sync.SyncExchangeRequest
 import com.lexidex.app.domain.sync.SyncExchangeResponse
@@ -30,6 +35,9 @@ private const val TOMBSTONE_RETENTION_DAYS = 30L
  * que se colara en un pedido v1 dejaria al telefono sin poder hablar con un hub viejo.
  */
 internal val requestJson = Json { encodeDefaults = true }
+
+/** Lo que se deja libre del 1 MiB para el sobre del pedido y las comas entre cambios. */
+private const val REQUEST_MARGIN_BYTES = 16 * 1024
 private val ACCEPTED_STATUSES = setOf("applied", "duplicate")
 
 internal fun plusRetention(deletedAt: String): String = try {
@@ -188,26 +196,48 @@ class SyncCoordinator(
 ) {
     suspend fun sync(binding: SyncHubBinding): SyncOutcome {
         var outcome = SyncOutcome(cursor = store.storedCursor(binding.hubId))
+        // Se empieza siempre en la ultima version, y un hub viejo lo dice con 426: no hace falta
+        // recordar que version habla cada hub, que es un estado mas que se podria desincronizar.
+        var version = LATEST_SYNC_PROTOCOL_VERSION
         var pages = 0
         while (pages < MAX_PAGES_PER_SYNC) {
             pages++
-            val pending = store.pending(MAX_SYNC_CHANGES)
-            val request = SyncExchangeRequest(
+            val visible = entityTypesFor(version)
+            val envelope = SyncExchangeRequest(
                 protocol = SYNC_PROTOCOL_NAME,
-                version = SYNC_PROTOCOL_VERSION,
+                version = version,
                 requestId = "req_${UUID.randomUUID().toString().replace("-", "")}",
                 deviceId = binding.deviceId,
                 packageDescriptor = packageDescriptor(),
                 sinceCursor = outcome.cursor,
                 limit = 100,
-                changes = pending.map { it.toClientChange(binding.deviceId) },
+                changes = emptyList(),
             )
-            val response = client.exchange(binding, requestJson.encodeToString(request))
+            val pending = chooseBatch(
+                candidates = store.pending(MAX_SYNC_CHANGES, visible),
+                deviceId = binding.deviceId,
+                envelopeBytes = requestJson.encodeToString(envelope).toByteArray(Charsets.UTF_8).size,
+            )
+            val request = envelope.copy(changes = pending.map { it.toClientChange(binding.deviceId) })
+            val response = try {
+                client.exchange(binding, requestJson.encodeToString(request))
+            } catch (error: SyncError.Protocol) {
+                // Un hub que todavia no sabe de copias. Se sigue en v1, sin mandarle nada que no
+                // sepa leer: lo v2 espera en la bandeja hasta que el hub se actualice.
+                if (error.code == "unsupported_version" && version > SYNC_PROTOCOL_VERSION) {
+                    version = SYNC_PROTOCOL_VERSION
+                    pages--
+                    continue
+                }
+                throw error
+            }
             val progressed =
                 response.changes.isNotEmpty() || response.acknowledgements.isNotEmpty()
             outcome = absorb(binding, outcome, response, pending)
 
-            if (!response.hasMore && store.pendingCount() == 0L) break
+            // Lo que falta mandar es lo que **este** hub sabe leer: contra uno v1, las copias que
+            // esperan en la bandeja no pueden mantener abierto el recorrido.
+            if (!response.hasMore && store.pending(1, visible).isEmpty()) break
             // Sin pagina nueva y sin nada reconocido, otra vuelta mandaria exactamente lo mismo.
             // Puede pasar si el hub no evaluo alguna mutacion: seguir seria girar en falso.
             if (!response.hasMore && !progressed) break
@@ -239,6 +269,35 @@ class SyncCoordinator(
             refused = previous.refused + summary.refused,
             cursor = response.nextCursor,
         )
+    }
+
+    /**
+     * Cuantos pendientes entran en un pedido sin pasar el maximo de 1 MiB.
+     *
+     * Antes se cortaba solo por cantidad, y con doscientas filas de favoritos no hacia falta
+     * mas. Con copias de hasta 20 KB, doscientas son unos 4 MB: el cliente lo rechazaria con
+     * `request_too_large` en **cada** sincronizacion, mandando siempre el mismo lote, y el
+     * telefono quedaria trabado para siempre. Se toma un prefijo, nunca se saltea: dos cambios
+     * sobre la misma entidad tienen que llegar en el orden en que se hicieron.
+     */
+    private fun chooseBatch(
+        candidates: List<SyncJournalEntity>,
+        deviceId: String,
+        envelopeBytes: Int,
+    ): List<SyncJournalEntity> {
+        val budget = MAX_SYNC_REQUEST_BYTES - REQUEST_MARGIN_BYTES
+        val chosen = mutableListOf<SyncJournalEntity>()
+        var used = envelopeBytes
+        for (row in candidates) {
+            val size = requestJson.encodeToString(row.toClientChange(deviceId))
+                .toByteArray(Charsets.UTF_8).size + 1
+            // El primero entra siempre: una copia sola nunca pasa el maximo, y no mandar nada
+            // seria no avanzar nunca.
+            if (chosen.isNotEmpty() && used + size > budget) break
+            chosen += row
+            used += size
+        }
+        return chosen
     }
 
     private suspend fun apply(change: SyncServerChange) {
@@ -285,6 +344,35 @@ class SyncCoordinator(
                 // borro en una pagina anterior: sus miembros ya no significan nada.
                 if (!store.collectionExists(collectionUid)) return
                 store.setMember(collectionUid, slug, origin, at, present, change.revision)
+            }
+
+            TERM_VERSION_ENTITY -> {
+                val slug = change.entityId.slug ?: return
+                val origin = originOf(change) ?: return
+                val sha = change.entityId.contentSha256 ?: return
+                if (present) {
+                    store.upsertTermVersion(origin, slug, sha, change.payload ?: return, change.revision)
+                } else {
+                    store.deleteTermVersion(origin, slug, sha)
+                    // La lapida guarda la revision: sin ella, volver a traer esta copia saldria
+                    // con base 0 y el hub la rechazaria por vieja.
+                    tombstone(
+                        TERM_VERSION_ENTITY,
+                        SyncChangeRecorder.versionIdentity(origin, slug, sha),
+                        change,
+                    )
+                }
+            }
+
+            TERM_ACTIVE_ENTITY -> {
+                val slug = change.entityId.slug ?: return
+                val origin = originOf(change) ?: return
+                val sha = if (present) {
+                    change.payload?.get("content_sha256")?.jsonPrimitive?.content ?: return
+                } else {
+                    null
+                }
+                store.setActiveVersion(origin, slug, sha, change.revision)
             }
         }
     }

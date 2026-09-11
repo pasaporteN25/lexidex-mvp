@@ -43,4 +43,9 @@ data class TermVersionEntity(
     @ColumnInfo(name = "created_at") val createdAt: String,
     @ColumnInfo(name = "extent", defaultValue = "INTRO") val extent: ArticleExtent = ArticleExtent.INTRO,
     @ColumnInfo(name = "revision_id") val revisionId: Long? = null,
+    /**
+     * La revision que le dio el hub a esta copia (10.10b). 0 mientras no se sincronizo nunca:
+     * es la base contra la que se manda el proximo cambio, igual que `revision` en favoritos.
+     */
+    @ColumnInfo(name = "sync_revision", defaultValue = "0") val syncRevision: Long = 0,
 )

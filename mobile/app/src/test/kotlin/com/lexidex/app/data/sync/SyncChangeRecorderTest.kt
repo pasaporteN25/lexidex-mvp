@@ -40,6 +40,9 @@ private class FakeSyncStorageDao : SyncStorageDao {
 
     override suspend fun pendingChanges(limit: Int) = journal.take(limit)
 
+    override suspend fun pendingChangesOf(limit: Int, entityTypes: List<String>) =
+        journal.filter { it.entityType in entityTypes }.take(limit)
+
     override suspend fun pendingCount() = journal.size.toLong()
 
     override suspend fun forgetChanges(changeIds: List<String>): Int {

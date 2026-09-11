@@ -18,6 +18,7 @@ import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
 import com.lexidex.app.data.userdb.entity.SyncJournalEntity
 import com.lexidex.app.data.userdb.entity.SyncReplicaCursorEntity
 import com.lexidex.app.data.userdb.entity.SyncTombstoneEntity
+import com.lexidex.app.data.userdb.entity.TermActiveSyncEntity
 import com.lexidex.app.data.userdb.entity.TermVersionEntity
 import com.lexidex.app.data.userdb.entity.TermVersionFtsEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
@@ -42,8 +43,9 @@ import com.lexidex.app.data.userdb.entity.UserTermFtsEntity
         SyncTombstoneEntity::class,
         TermVersionEntity::class,
         TermVersionFtsEntity::class,
+        TermActiveSyncEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 @ColumnTypeConverters(StringListConverter::class, TermOriginConverter::class, ArticleExtentConverter::class)

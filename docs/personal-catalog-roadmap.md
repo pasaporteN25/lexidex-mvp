@@ -1846,8 +1846,40 @@ segundo plano mientras el proyecto no tome `androidx.work`.
             importan -los dos de telefonos v1 y los dos de volver a agregar- se
             comprobaron con mutaciones: sacando el filtro v1 o el arreglo, fallan
             los cuatro.
-      - [ ] **10.10b-3** Android: registrar las copias en el journal, aplicar las
-            que bajan, hablar v2 y caer a v1 ante `426 unsupported_version`.
+      - [x] **10.10b-3** ✅ Hecho el 2026-09-11. Android: registrar las copias en el
+            journal, aplicar las que bajan, hablar v2 y caer a v1 ante
+            `426 unsupported_version`.
+
+            Cuatro cosas que no estaban en la tarea y sin las cuales no andaba:
+
+            - **El cursor vuelve a 0 en la migracion 6 -> 7**, no en un estado
+              aparte de "con este hub ya hable v2". Corre una sola vez, al instalar
+              el build que sabe de copias, y es correcta en cualquier orden de
+              actualizacion: si el hub todavia es v1 no puede haber copias por
+              debajo del cursor, porque un hub v1 no sabe guardarlas.
+            - **Las copias que el telefono ya tenia se siembran en la bandeja en esa
+              misma migracion.** Se guardaron cuando nada las anotaba y nada las
+              vuelve a mirar: sin sembrarlas no llegarian nunca al hub. Se hace con
+              el mismo codigo que el recorder, no con JSON armado en SQL.
+            - **Los pedidos se cortan por bytes, no solo por cantidad.** Doscientas
+              copias de 20 KB son 4 MB: el cliente las rechazaba con
+              `request_too_large` en cada sincronizacion, mandando siempre el mismo
+              lote, y el telefono quedaba trabado para siempre. Comprobado con una
+              mutacion: sin el corte, el test cae.
+            - **Nada entra a la bandeja sin pasar el lector estricto**, que es la
+              regla que el hub ya seguia con sus propias ediciones. Un cambio
+              invalido no se rechaza solo: tumba el pedido entero. El caso real era
+              la "copia de base" de uno de los 44 terminos sin extracto, que se
+              guardaba vacia; ahora ni se guarda.
+
+            Al borrar la copia que se leia se anota **primero la eleccion nueva y
+            despues el borrado**; al reves, el hub derivaria la baja de la eleccion
+            y la nueva llegaria con una revision vieja.
+
+            Verificado sobre la base v6 real del emulador: quedo en v7, Room abrio
+            sin quejarse, y la bandeja tiene las dos copias de Poligenismo y
+            despues su eleccion, en ese orden. Treinta y un tests nuevos entre
+            migracion, coordinador y contrato; 311 JVM en total.
       - [ ] **10.10b-4** Punta a punta: dos replicas v2 y una v1 contra un hub
             real. Las copias viajan, la v1 sigue sincronizando sin verlas, y el
             mismo articulo traido de los dos lados converge en una sola entidad.

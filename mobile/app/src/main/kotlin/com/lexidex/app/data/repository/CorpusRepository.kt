@@ -15,6 +15,8 @@ import com.lexidex.app.data.userdb.dao.UserTermDao
 import com.lexidex.app.data.userdb.entity.CollectionEntity
 import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
 import com.lexidex.app.data.userdb.entity.TermVersionEntity
+import com.lexidex.app.data.userdb.entity.TermActiveSyncEntity
+import com.lexidex.app.data.userdb.dao.TermVersionDao
 import com.lexidex.app.data.db.dao.RefreshableTermRow
 import com.lexidex.app.data.knowledge.KnowledgeArticle
 import com.lexidex.app.data.knowledge.wikipediaResultFromUrl
@@ -582,12 +584,18 @@ class CorpusRepository(
         }
 
         val versionDao = database.termVersionDao()
+        val importedAt = nowIso()
+        // Las copias restauradas se anotan como cualquier otra cosa importada: si no, un catalogo
+        // traido de otro telefono dejaria sus copias invisibles para el hub (ADR 0004, bootstrap).
         plan.versionsToAdd.forEach { version ->
-            versionDao.insert(version.toEntity())
+            storeCopy(versionDao, recorder, version.toEntity(), importedAt)
         }
         // Activar despues de insertar todas, porque `activate` apaga las otras del mismo termino:
         // hacerlo en el medio dejaria activa la ultima insertada y no la que corresponde.
-        plan.versionsToActivate.forEach { uid -> versionDao.activate(uid) }
+        plan.versionsToActivate.forEach { uid ->
+            versionDao.activate(uid)
+            versionDao.byUid(uid)?.let { chosen -> recordActive(database, recorder, chosen, importedAt) }
+        }
 
         val collectionDao = database.collectionDao()
         plan.collectionsToAdd.forEach { collection ->
@@ -767,51 +775,58 @@ class CorpusRepository(
         val detail = requireNotNull(getTermDetail(slug).getOrThrow()) {
             "No existe el termino $slug"
         }
-        val versions = versionDao()
-        val stored = versions.forTerm(slug, detail.origin).map { it.toDomain() }
-        val incomingSha = personalContentSha256(content)
-        val activeSince = stored.firstOrNull { it.isActive }?.retrievedAt
-            ?: detail.sources.firstOrNull { it.url == sourceUrl }?.retrievedAt.orEmpty()
+        // Guardar y anotar son el mismo acto (10.10b): una copia guardada sin anotar no llegaria
+        // nunca al hub, y una anotada sin guardar le contaria algo que no paso.
+        journaling { database, recorder ->
+            val versions = database.termVersionDao()
+            val stored = versions.forTerm(slug, detail.origin).map { it.toDomain() }
+            val incomingSha = personalContentSha256(content)
+            val activeSince = stored.firstOrNull { it.isActive }?.retrievedAt
+                ?: detail.sources.firstOrNull { it.url == sourceUrl }?.retrievedAt.orEmpty()
+            val now = nowIso()
 
-        when (
-            val decision = refreshDecision(
-                incomingSha = incomingSha,
-                activeSha = personalContentSha256(detail.content),
-                activeSince = activeSince,
-                stored = stored,
-            )
-        ) {
-            is RefreshDecision.Keep -> TermRefresh.Unchanged(decision.since)
-
-            is RefreshDecision.Reactivate -> {
-                versions.activate(decision.uid)
-                TermRefresh.Updated(decision.retrievedAt)
-            }
-
-            RefreshDecision.Store -> {
-                if (stored.isEmpty()) {
-                    versions.insert(
-                        baseVersion(detail, sourceUrl, fallbackDate = retrievedAt),
-                    )
-                }
-                val fresh = TermVersionEntity(
-                    uid = newVersionUid(),
-                    slug = slug,
-                    origin = detail.origin,
-                    summary = summary,
-                    content = content,
-                    contentSha256 = incomingSha,
-                    retrievedAt = retrievedAt,
-                    sourceUrl = sourceUrl,
-                    isActive = false,
-                    createdAt = nowIso(),
-                    extent = extent,
-                    revisionId = revisionId,
+            when (
+                val decision = refreshDecision(
+                    incomingSha = incomingSha,
+                    activeSha = personalContentSha256(detail.content),
+                    activeSince = activeSince,
+                    stored = stored,
                 )
-                versions.insert(fresh)
-                versions.activate(fresh.uid)
-                dropExcessVersions(slug, detail.origin)
-                TermRefresh.Updated(retrievedAt)
+            ) {
+                is RefreshDecision.Keep -> TermRefresh.Unchanged(decision.since)
+
+                is RefreshDecision.Reactivate -> {
+                    versions.activate(decision.uid)
+                    versions.byUid(decision.uid)?.let { chosen -> recordActive(database, recorder, chosen, now) }
+                    TermRefresh.Updated(decision.retrievedAt)
+                }
+
+                RefreshDecision.Store -> {
+                    // Una copia de un texto vacio no es una copia de nada: pasa al actualizar uno de los
+                    // terminos que no tenian extracto, y ademas el contrato la rechazaria.
+                    if (stored.isEmpty() && detail.content.isNotBlank()) {
+                        storeCopy(versions, recorder, baseVersion(detail, sourceUrl, fallbackDate = retrievedAt), now)
+                    }
+                    val fresh = TermVersionEntity(
+                        uid = newVersionUid(),
+                        slug = slug,
+                        origin = detail.origin,
+                        summary = summary,
+                        content = content,
+                        contentSha256 = incomingSha,
+                        retrievedAt = retrievedAt,
+                        sourceUrl = sourceUrl,
+                        isActive = false,
+                        createdAt = nowIso(),
+                        extent = extent,
+                        revisionId = revisionId,
+                    )
+                    val recorded = storeCopy(versions, recorder, fresh, now)
+                    versions.activate(fresh.uid)
+                    recordActive(database, recorder, recorded, now)
+                    dropExcessVersions(database, recorder, slug, detail.origin, now)
+                    TermRefresh.Updated(retrievedAt)
+                }
             }
         }
     }
@@ -821,8 +836,14 @@ class CorpusRepository(
         corpusResult { versionDao().forTerm(slug, origin).map { it.toDomain() } }
 
     /** Deja [uid] como la copia que se lee y se busca. */
-    suspend fun activateVersion(uid: String): Result<Unit> =
-        corpusResult { versionDao().activate(uid) }
+    suspend fun activateVersion(uid: String): Result<Unit> = corpusResult {
+        journaling { database, recorder ->
+            val versions = database.termVersionDao()
+            val chosen = versions.byUid(uid) ?: return@journaling
+            versions.activate(uid)
+            recordActive(database, recorder, chosen, nowIso())
+        }
+    }
 
     /**
      * Borra una copia y deja activa la que corresponda.
@@ -832,10 +853,27 @@ class CorpusRepository(
      */
     suspend fun deleteVersion(slug: String, origin: TermOrigin, uid: String): Result<Unit> =
         corpusResult {
-            val versions = versionDao()
-            val next = nextActiveAfterDeleting(versions.forTerm(slug, origin).map { it.toDomain() }, uid)
-            versions.deleteByUid(listOf(uid))
-            if (next != null) versions.activate(next)
+            journaling { database, recorder ->
+                val versions = database.termVersionDao()
+                val all = versions.forTerm(slug, origin)
+                val doomed = all.firstOrNull { it.uid == uid } ?: return@journaling
+                val next = nextActiveAfterDeleting(all.map { it.toDomain() }, uid)
+                val now = nowIso()
+                // **Primero la eleccion y despues el borrado.** Al reves, el hub derivaria la baja
+                // de la eleccion al ver borrada la copia que se leia, y la nueva llegaria despues
+                // con una revision vieja: el hub la rechazaria y el termino quedaria sin copia.
+                if (doomed.isActive) {
+                    val successor = next?.let { chosen -> all.firstOrNull { it.uid == chosen } }
+                    if (successor != null) {
+                        versions.activate(successor.uid)
+                        recordActive(database, recorder, successor, now)
+                    } else {
+                        recordActiveCleared(database, recorder, slug, origin, now)
+                    }
+                }
+                versions.deleteByUid(listOf(uid))
+                recordCopyDeleted(recorder, doomed, now)
+            }
         }
 
     /**
@@ -865,11 +903,86 @@ class CorpusRepository(
         )
     }
 
-    private suspend fun dropExcessVersions(slug: String, origin: TermOrigin) {
-        val versions = versionDao()
-        val excess = versionsToDrop(versions.forTerm(slug, origin).map { it.toDomain() })
-        if (excess.isNotEmpty()) versions.deleteByUid(excess)
+    private suspend fun dropExcessVersions(
+        database: LexidexUserDatabase,
+        recorder: SyncChangeRecorder,
+        slug: String,
+        origin: TermOrigin,
+        now: String,
+    ) {
+        val versions = database.termVersionDao()
+        val all = versions.forTerm(slug, origin)
+        val excess = versionsToDrop(all.map { it.toDomain() })
+        if (excess.isEmpty()) return
+        versions.deleteByUid(excess)
+        all.filter { it.uid in excess }.forEach { dropped -> recordCopyDeleted(recorder, dropped, now) }
     }
+
+    // region Copias en la bandeja (10.10b)
+
+    /**
+     * Guarda una copia y la anota. Devuelve la fila tal como quedo.
+     *
+     * La revision que se guarda es optimista, la base mas uno, igual que en favoritos: dos cambios
+     * seguidos sobre la misma copia encadenan antes de que el hub conteste. Si la copia no se pudo
+     * anotar -una vacia, que el contrato rechaza- queda en 0, que quiere decir "el hub no la tiene".
+     */
+    private suspend fun storeCopy(
+        versions: TermVersionDao,
+        recorder: SyncChangeRecorder,
+        version: TermVersionEntity,
+        now: String,
+    ): TermVersionEntity {
+        val revision = recorder.versionBaseRevision(version.origin, version.slug, version.contentSha256) + 1
+        val recorded = recorder.versionStored(version, revision, now) != null
+        val row = version.copy(syncRevision = if (recorded) revision else 0)
+        versions.insert(row)
+        return row
+    }
+
+    /**
+     * Anota cual copia se lee.
+     *
+     * Solo si esa copia llego a anotarse: elegir una que el hub no tiene la rechazaria como
+     * `parent_deleted`, y el usuario veria un rechazo por algo que no hizo.
+     */
+    private suspend fun recordActive(
+        database: LexidexUserDatabase,
+        recorder: SyncChangeRecorder,
+        chosen: TermVersionEntity,
+        now: String,
+    ) {
+        if (chosen.syncRevision <= 0) return
+        val versions = database.termVersionDao()
+        val revision = (versions.activeSync(chosen.slug, chosen.origin)?.revision ?: 0) + 1
+        if (recorder.activeChanged(chosen.origin, chosen.slug, chosen.contentSha256, revision, now) != null) {
+            versions.putActiveSync(TermActiveSyncEntity(chosen.slug, chosen.origin, revision))
+        }
+    }
+
+    /** Anota que el termino vuelve a leerse de su texto de base. */
+    private suspend fun recordActiveCleared(
+        database: LexidexUserDatabase,
+        recorder: SyncChangeRecorder,
+        slug: String,
+        origin: TermOrigin,
+        now: String,
+    ) {
+        val versions = database.termVersionDao()
+        val current = versions.activeSync(slug, origin)?.revision ?: return
+        val revision = current + 1
+        if (recorder.activeChanged(origin, slug, null, revision, now) != null) {
+            versions.putActiveSync(TermActiveSyncEntity(slug, origin, revision))
+        }
+    }
+
+    /** Anota el borrado de una copia, si el hub la llego a tener. */
+    private suspend fun recordCopyDeleted(recorder: SyncChangeRecorder, version: TermVersionEntity, now: String) {
+        if (version.syncRevision <= 0) return
+        recorder.versionDeleted(version.origin, version.slug, version.contentSha256, version.syncRevision + 1, now)
+    }
+
+    // endregion
 
     /**
      * Todos los terminos que la actualizacion masiva puede revisar.

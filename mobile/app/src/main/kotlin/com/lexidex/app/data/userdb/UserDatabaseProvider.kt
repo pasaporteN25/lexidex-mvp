@@ -1,5 +1,20 @@
 package com.lexidex.app.data.userdb
 
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.Json
+import java.time.temporal.ChronoUnit
+import java.time.Instant
+import com.lexidex.app.domain.sync.validateOutgoingChange
+import com.lexidex.app.domain.sync.TERM_VERSION_ENTITY
+import com.lexidex.app.domain.sync.TERM_ACTIVE_ENTITY
+import com.lexidex.app.domain.sync.SyncClientChange
+import com.lexidex.app.domain.sync.SyncEntityId
+import com.lexidex.app.domain.TermOrigin
+import com.lexidex.app.domain.ArticleExtent
+import com.lexidex.app.data.userdb.entity.TermVersionEntity
+import com.lexidex.app.data.sync.SyncChangeRecorder
+import com.lexidex.app.data.sync.PreferencesSyncDeviceIdentity
 import android.content.Context
 import androidx.room3.Room
 import androidx.room3.migration.Migration
@@ -379,6 +394,141 @@ internal val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
+/**
+ * v6 -> v7 ([migration6To7]): las copias fechadas viajan por la sincronizacion (10.10b).
+ *
+ * Tres cosas. Las dos primeras son la revision que el hub le da a cada copia y a la eleccion de cual
+ * se lee, que es la base contra la que se manda el proximo cambio; el SQL es **el que genera Room**,
+ * copiado al pie de la letra de `LexidexUserDatabase_Impl`, por la misma razon que en
+ * [MIGRATION_4_5].
+ *
+ * La tercera es volver el cursor de cada hub a 0, y es la importante. Mientras este telefono hablaba
+ * v1, un hub v2 le salteaba las copias de los otros dispositivos: su cursor ya paso por encima de
+ * ellas y sin volver a empezar no las veria nunca. Hacerlo aca, una sola vez, al instalar el build
+ * que sabe de copias, es correcto en cualquier orden de actualizacion: si el hub todavia es v1 no
+ * puede haber copias por debajo del cursor, porque un hub v1 no sabe guardarlas. Repasar el journal
+ * es seguro porque el telefono aplica lo que baja tal cual, revision incluida.
+ */
+internal fun migration6To7(
+    deviceId: String,
+    now: String = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString(),
+    newChangeId: () -> String = SyncChangeRecorder::randomChangeId,
+) = object : Migration(6, 7) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE `term_versions` ADD COLUMN `sync_revision` INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("CREATE TABLE IF NOT EXISTS `term_active_sync` (`slug` TEXT NOT NULL, `origin` TEXT NOT NULL, `revision` INTEGER NOT NULL, PRIMARY KEY(`slug`, `origin`))")
+        connection.execSQL("UPDATE `sync_replica_cursors` SET `last_applied_cursor` = 0")
+        seedExistingCopies(connection, deviceId, now, newChangeId)
+    }
+}
+
+/**
+ * Anota en la bandeja las copias que el telefono ya tenia antes de saber sincronizarlas.
+ *
+ * Sin esto nunca llegarian al hub: se guardaron cuando no habia nada que las anotara, y nada las
+ * vuelve a mirar. Es el mismo criterio que el bootstrap de ADR 0004 -lo que ya estaba se convierte en
+ * cambios normales del contrato- y se hace aca, una sola vez, con el mismo codigo que usa el
+ * recorder: la identidad sale de `canonicalJson` y el payload de `versionPayload`, no de JSON armado
+ * en SQL, que seria otra forma de escribir lo mismo y otra oportunidad de que difieran.
+ *
+ * Primero todas las copias y despues las elecciones: el hub rechaza elegir una copia que no tiene.
+ * Lo que no pasaria el lector estricto se saltea en vez de anotarse, porque tumbaria el pedido entero.
+ */
+private fun seedExistingCopies(
+    connection: SQLiteConnection,
+    deviceId: String,
+    now: String,
+    newChangeId: () -> String,
+) {
+    data class Row(val version: TermVersionEntity, val active: Boolean)
+
+    val rows = mutableListOf<Row>()
+    connection.prepare(
+        "SELECT `uid`, `slug`, `origin`, `summary`, `content`, `content_sha256`, `retrieved_at`, " +
+            "`source_url`, `is_active`, `created_at`, `extent`, `revision_id` FROM `term_versions` " +
+            "ORDER BY `slug`, `origin`, `retrieved_at`",
+    ).use { statement ->
+        while (statement.step()) {
+            val origin = when (statement.getText(2)) {
+                "package" -> TermOrigin.PACKAGE
+                "personal" -> TermOrigin.PERSONAL
+                else -> continue
+            }
+            val version = TermVersionEntity(
+                uid = statement.getText(0),
+                slug = statement.getText(1),
+                origin = origin,
+                summary = statement.getText(3),
+                content = statement.getText(4),
+                contentSha256 = statement.getText(5),
+                retrievedAt = statement.getText(6),
+                sourceUrl = statement.getText(7),
+                isActive = statement.getLong(8) == 1L,
+                createdAt = statement.getText(9),
+                extent = if (statement.getText(10) == "FULL") ArticleExtent.FULL else ArticleExtent.INTRO,
+                revisionId = if (statement.isNull(11)) null else statement.getLong(11),
+            )
+            rows += Row(version, version.isActive)
+        }
+    }
+
+    fun append(entityType: String, entityId: Map<String, String>, payload: String): Boolean {
+        val change = SyncClientChange(
+            changeId = newChangeId(),
+            deviceId = deviceId,
+            entityType = entityType,
+            entityId = seedJson.decodeFromString<SyncEntityId>(SyncChangeRecorder.canonicalJson(entityId)),
+            operation = SyncChangeRecorder.OPERATION_UPSERT,
+            baseRevision = 0,
+            payloadVersion = 1,
+            changedAt = now,
+            payload = seedJson.parseToJsonElement(payload).jsonObject,
+        )
+        if (runCatching { validateOutgoingChange(change) }.isFailure) return false
+        connection.prepare(
+            "INSERT INTO `sync_journal` (`source_device_id`, `change_id`, `entity_type`, " +
+                "`entity_id_json`, `operation`, `revision`, `payload_version`, `changed_at`, " +
+                "`payload_json`) VALUES (?, ?, ?, ?, 'upsert', 1, 1, ?, ?)",
+        ).use { insert ->
+            insert.bindText(1, deviceId)
+            insert.bindText(2, change.changeId)
+            insert.bindText(3, entityType)
+            insert.bindText(4, SyncChangeRecorder.canonicalJson(entityId))
+            insert.bindText(5, now)
+            insert.bindText(6, payload)
+            insert.step()
+        }
+        return true
+    }
+
+    val seeded = mutableSetOf<String>()
+    rows.forEach { (version, _) ->
+        val identity = SyncChangeRecorder.versionIdentity(version.origin, version.slug, version.contentSha256)
+        if (append(TERM_VERSION_ENTITY, identity, SyncChangeRecorder.versionPayload(version).toString())) {
+            seeded += version.uid
+            connection.prepare("UPDATE `term_versions` SET `sync_revision` = 1 WHERE `uid` = ?").use { update ->
+                update.bindText(1, version.uid)
+                update.step()
+            }
+        }
+    }
+    rows.filter { it.active && it.version.uid in seeded }.forEach { (version, _) ->
+        val payload = """{"at":${JsonPrimitive(now)},"content_sha256":${JsonPrimitive(version.contentSha256)}}"""
+        val identity = SyncChangeRecorder.referenceIdentity(version.origin, version.slug)
+        if (append(TERM_ACTIVE_ENTITY, identity, payload)) {
+            connection.prepare(
+                "INSERT OR REPLACE INTO `term_active_sync` (`slug`, `origin`, `revision`) VALUES (?, ?, 1)",
+            ).use { insert ->
+                insert.bindText(1, version.slug)
+                insert.bindText(2, identity.getValue("origin"))
+                insert.step()
+            }
+        }
+    }
+}
+
+private val seedJson = Json { ignoreUnknownKeys = false }
+
 private fun isHttpUrlForMigration(value: String): Boolean = try {
     val uri = URI(value)
     uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()
@@ -433,7 +583,14 @@ class UserDatabaseProvider(
             )
                 .setDriver(BundledSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    migration6To7(PreferencesSyncDeviceIdentity(context).deviceId()),
+                )
                 .build()
         }
     }

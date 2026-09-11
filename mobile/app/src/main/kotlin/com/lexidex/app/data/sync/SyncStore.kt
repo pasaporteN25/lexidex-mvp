@@ -7,6 +7,12 @@ import com.lexidex.app.data.userdb.entity.SyncJournalEntity
 import com.lexidex.app.data.userdb.entity.SyncReplicaCursorEntity
 import com.lexidex.app.data.userdb.entity.SyncTombstoneEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
+import com.lexidex.app.data.userdb.entity.TermActiveSyncEntity
+import com.lexidex.app.data.userdb.entity.TermVersionEntity
+import com.lexidex.app.data.repository.newVersionUid
+import com.lexidex.app.domain.ArticleExtent
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
 import com.lexidex.app.data.userdb.mergeLegacyPrimarySource
 import com.lexidex.app.domain.TermOrigin
@@ -29,6 +35,13 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 interface SyncStore {
     suspend fun pending(limit: Int): List<SyncJournalEntity>
+
+    /**
+     * Lo pendiente que un hub de esa version sabe leer (10.10b). Contra un hub v1 las copias
+     * esperan en la bandeja: mandarlas tumbaria el pedido entero, y cuando el hub se actualice
+     * salen solas.
+     */
+    suspend fun pending(limit: Int, entityTypes: Set<String>): List<SyncJournalEntity>
     suspend fun pendingCount(): Long
     suspend fun storedCursor(hubId: String): String
 
@@ -57,6 +70,20 @@ interface SyncStore {
     )
 
     suspend fun putTombstone(entityType: String, entityIdJson: String, revision: Long, cursor: Long, deletedAt: String)
+
+    /** Una copia que llega del hub. Si ya estaba, se actualiza en su lugar y conserva si se lee. */
+    suspend fun upsertTermVersion(
+        origin: TermOrigin,
+        slug: String,
+        contentSha256: String,
+        payload: JsonObject,
+        revision: Long,
+    )
+
+    suspend fun deleteTermVersion(origin: TermOrigin, slug: String, contentSha256: String)
+
+    /** Cual copia se lee, segun el hub. Null es volver al texto de base. */
+    suspend fun setActiveVersion(origin: TermOrigin, slug: String, contentSha256: String?, revision: Long)
     suspend fun forget(changeIds: List<String>)
     suspend fun saveCursor(hubId: String, cursor: Long)
 
@@ -66,6 +93,9 @@ interface SyncStore {
 
 class RoomSyncStore(private val database: LexidexUserDatabase) : SyncStore {
     override suspend fun pending(limit: Int) = database.syncStorageDao().pendingChanges(limit)
+
+    override suspend fun pending(limit: Int, entityTypes: Set<String>) =
+        database.syncStorageDao().pendingChangesOf(limit, entityTypes.toList())
 
     override suspend fun pendingCount() = database.syncStorageDao().pendingCount()
 
@@ -203,6 +233,57 @@ class RoomSyncStore(private val database: LexidexUserDatabase) : SyncStore {
                 purgeAfter = plusRetention(deletedAt),
             ),
         )
+    }
+
+    override suspend fun upsertTermVersion(
+        origin: TermOrigin,
+        slug: String,
+        contentSha256: String,
+        payload: JsonObject,
+        revision: Long,
+    ) {
+        val dao = database.termVersionDao()
+        val existing = dao.withContent(slug, origin, contentSha256)
+        dao.insert(
+            TermVersionEntity(
+                id = existing?.id ?: 0,
+                uid = existing?.uid ?: newVersionUid(),
+                slug = slug,
+                origin = origin,
+                summary = payload.text("summary"),
+                content = payload.text("content"),
+                contentSha256 = contentSha256,
+                retrievedAt = payload.text("retrieved_at"),
+                sourceUrl = payload.text("source_url"),
+                // Que se lea lo decide `term_active`, que viaja aparte: una copia que llega no
+                // se vuelve la activa por llegar.
+                isActive = existing?.isActive ?: false,
+                createdAt = existing?.createdAt ?: payload.text("retrieved_at"),
+                extent = if (payload.text("extent") == "FULL") ArticleExtent.FULL else ArticleExtent.INTRO,
+                revisionId = (payload["revision_id"] as? JsonPrimitive)?.longOrNull,
+                syncRevision = revision,
+            ),
+        )
+    }
+
+    override suspend fun deleteTermVersion(origin: TermOrigin, slug: String, contentSha256: String) {
+        val dao = database.termVersionDao()
+        val existing = dao.withContent(slug, origin, contentSha256) ?: return
+        dao.deleteByUid(listOf(existing.uid))
+    }
+
+    override suspend fun setActiveVersion(
+        origin: TermOrigin,
+        slug: String,
+        contentSha256: String?,
+        revision: Long,
+    ) {
+        val dao = database.termVersionDao()
+        dao.deactivateAll(slug, origin)
+        if (contentSha256 != null) {
+            dao.withContent(slug, origin, contentSha256)?.let { chosen -> dao.markActive(chosen.uid) }
+        }
+        dao.putActiveSync(TermActiveSyncEntity(slug, origin, revision))
     }
 
     override suspend fun forget(changeIds: List<String>) {

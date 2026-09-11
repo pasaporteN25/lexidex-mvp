@@ -173,6 +173,9 @@ class SyncHttpClient(
         401, 403 -> SyncError.Unauthorized("unauthorized_device", "El hub rechazo la credencial.")
         410 -> SyncError.CursorExpired()
         429 -> SyncError.RateLimited(30)
+        // Sin cuerpo de contrato (un proxy en el medio), el 426 igual quiere decir version: es lo
+        // que dispara la caida a v1, y confundirlo con otro error dejaria al telefono sin sincronizar.
+        426 -> SyncError.Protocol("unsupported_version", "El hub no conoce esta version del protocolo.")
         in 500..599 -> SyncError.HubUnreachable()
         else -> SyncError.Protocol("invalid_request", "El hub respondio $status.")
     }

@@ -5,6 +5,7 @@ import androidx.room3.Insert
 import androidx.room3.OnConflictStrategy
 import androidx.room3.Query
 import androidx.room3.Transaction
+import com.lexidex.app.data.userdb.entity.TermActiveSyncEntity
 import com.lexidex.app.data.userdb.entity.TermVersionEntity
 import com.lexidex.app.domain.TermOrigin
 
@@ -89,6 +90,16 @@ interface TermVersionDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(version: TermVersionEntity)
+
+    @Query("UPDATE term_versions SET sync_revision = :revision WHERE uid = :uid")
+    suspend fun setSyncRevision(uid: String, revision: Long)
+
+    /** La revision de la eleccion de este termino, o null si nunca se sincronizo ninguna. */
+    @Query("SELECT * FROM term_active_sync WHERE slug = :slug AND origin = :origin")
+    suspend fun activeSync(slug: String, origin: TermOrigin): TermActiveSyncEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putActiveSync(entity: TermActiveSyncEntity)
 
     @Query("UPDATE term_versions SET is_active = 0 WHERE slug = :slug AND origin = :origin")
     suspend fun deactivateAll(slug: String, origin: TermOrigin)

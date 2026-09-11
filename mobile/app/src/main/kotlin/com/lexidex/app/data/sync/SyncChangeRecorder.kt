@@ -5,6 +5,10 @@ import com.lexidex.app.data.userdb.entity.SyncJournalEntity
 import com.lexidex.app.data.userdb.entity.SyncTombstoneEntity
 import com.lexidex.app.data.userdb.entity.UserTermEntity
 import com.lexidex.app.data.userdb.entity.PersonalTermSourceEntity
+import com.lexidex.app.data.userdb.entity.TermVersionEntity
+import com.lexidex.app.domain.sync.TERM_ACTIVE_ENTITY
+import com.lexidex.app.domain.sync.TERM_VERSION_ENTITY
+import com.lexidex.app.domain.sync.validateOutgoingChange
 import com.lexidex.app.data.userdb.mergeLegacyPrimarySource
 import com.lexidex.app.domain.TermOrigin
 import java.time.Duration
@@ -161,6 +165,104 @@ class SyncChangeRecorder(
         changedAt,
     )
 
+    // region Copias fechadas (10.10b, protocolo v2)
+
+    /**
+     * Una copia guardada. [revision] es la que va a tener, la base mas uno, igual que en favoritos.
+     *
+     * Devuelve null, y no anota nada, si el cambio no pasaria el lector estricto del hub: no se
+     * rechazaria solo, tumbaria el pedido entero. Hoy el caso real es una copia vacia, que no es
+     * una copia de nada.
+     */
+    suspend fun versionStored(version: TermVersionEntity, revision: Long, changedAt: String): Long? =
+        appendIfValid(
+            entityType = TERM_VERSION_ENTITY,
+            entityId = versionIdentity(version.origin, version.slug, version.contentSha256),
+            operation = OPERATION_UPSERT,
+            revision = revision,
+            payload = versionPayload(version),
+            changedAt = changedAt,
+        )
+
+    /**
+     * Una copia borrada. Deja lapida con su revision: es lo unico que permite volver a traerla
+     * despues sin que el hub lo rechace por viejo, porque la fila local ya no esta. **Si algun dia
+     * se purgan las lapidas, las de copias no pueden purgarse igual que las demas**: hoy nadie
+     * purga, y el hub guarda la fila ausente para siempre.
+     */
+    suspend fun versionDeleted(
+        origin: TermOrigin,
+        slug: String,
+        contentSha256: String,
+        revision: Long,
+        changedAt: String,
+    ): Long? {
+        val identity = versionIdentity(origin, slug, contentSha256)
+        val cursor = appendIfValid(
+            entityType = TERM_VERSION_ENTITY,
+            entityId = identity,
+            operation = OPERATION_DELETE,
+            revision = revision,
+            payload = null,
+            changedAt = changedAt,
+        ) ?: return null
+        writeTombstone(TERM_VERSION_ENTITY, identity, revision, cursor, changedAt)
+        return cursor
+    }
+
+    /** Cual copia se lee. Null es volver al texto de base. */
+    suspend fun activeChanged(
+        origin: TermOrigin,
+        slug: String,
+        contentSha256: String?,
+        revision: Long,
+        changedAt: String,
+    ): Long? = appendIfValid(
+        entityType = TERM_ACTIVE_ENTITY,
+        entityId = referenceIdentity(origin, slug),
+        operation = if (contentSha256 != null) OPERATION_UPSERT else OPERATION_DELETE,
+        revision = revision,
+        payload = contentSha256?.let { sha ->
+            buildJsonObject {
+                put("content_sha256", sha)
+                put("at", changedAt)
+            }
+        },
+        changedAt = changedAt,
+    )
+
+    /** La revision contra la que se manda una copia nueva: la de su lapida, si alguna vez se borro. */
+    suspend fun versionBaseRevision(origin: TermOrigin, slug: String, contentSha256: String): Long =
+        journal.tombstone(
+            TERM_VERSION_ENTITY,
+            canonicalJson(versionIdentity(origin, slug, contentSha256)),
+        )?.revision ?: 0
+
+    private suspend fun appendIfValid(
+        entityType: String,
+        entityId: Map<String, String>,
+        operation: String,
+        revision: Long,
+        payload: JsonObject?,
+        changedAt: String,
+    ): Long? {
+        val entity = SyncJournalEntity(
+            sourceDeviceId = deviceId,
+            changeId = newChangeId(),
+            entityType = entityType,
+            entityIdJson = canonicalJson(entityId),
+            operation = operation,
+            revision = revision,
+            payloadVersion = 1,
+            changedAt = changedAt,
+            payloadJson = payload?.toString(),
+        )
+        val valid = runCatching { validateOutgoingChange(entity.toClientChange(deviceId)) }.isSuccess
+        return if (valid) journal.appendJournal(entity) else null
+    }
+
+    // endregion
+
     private suspend fun reference(
         entityType: String,
         entityId: Map<String, String>,
@@ -238,6 +340,19 @@ class SyncChangeRecorder(
         const val OPERATION_DELETE = "delete"
 
         fun uidIdentity(uid: String): Map<String, String> = mapOf("uid" to uid)
+
+        /** La identidad de una copia es su contenido (contrato v2): no hay uid que viaje. */
+        fun versionIdentity(origin: TermOrigin, slug: String, contentSha256: String): Map<String, String> =
+            mapOf("origin" to wireOrigin(origin), "slug" to slug, "content_sha256" to contentSha256)
+
+        fun versionPayload(version: TermVersionEntity): JsonObject = buildJsonObject {
+            put("summary", version.summary)
+            put("content", version.content)
+            put("retrieved_at", version.retrievedAt)
+            put("source_url", version.sourceUrl)
+            put("extent", version.extent.name)
+            put("revision_id", version.revisionId?.let(::JsonPrimitive) ?: JsonNull)
+        }
 
         fun referenceIdentity(origin: TermOrigin, slug: String): Map<String, String> =
             mapOf("origin" to wireOrigin(origin), "slug" to slug)

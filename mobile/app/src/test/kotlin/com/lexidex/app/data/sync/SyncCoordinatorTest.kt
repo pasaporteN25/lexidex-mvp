@@ -40,6 +40,8 @@ private class RecordingSyncStore(
     var transactions = 0
 
     override suspend fun pending(limit: Int) = outbox.take(limit)
+    override suspend fun pending(limit: Int, entityTypes: Set<String>) =
+        outbox.filter { it.entityType in entityTypes }.take(limit)
     override suspend fun pendingCount() = outbox.size.toLong()
     override suspend fun storedCursor(hubId: String) = "0"
     override suspend fun lastSyncAt(hubId: String): String? = null
@@ -103,6 +105,29 @@ private class RecordingSyncStore(
         deletedAt: String,
     ) {
         tombstones += "$entityType:$entityIdJson:$revision:$cursor"
+    }
+
+    override suspend fun upsertTermVersion(
+        origin: TermOrigin,
+        slug: String,
+        contentSha256: String,
+        payload: JsonObject,
+        revision: Long,
+    ) {
+        calls += "version:$slug:${contentSha256.take(8)}:$revision"
+    }
+
+    override suspend fun deleteTermVersion(origin: TermOrigin, slug: String, contentSha256: String) {
+        calls += "versionDelete:$slug:${contentSha256.take(8)}"
+    }
+
+    override suspend fun setActiveVersion(
+        origin: TermOrigin,
+        slug: String,
+        contentSha256: String?,
+        revision: Long,
+    ) {
+        calls += "active:$slug:${contentSha256?.take(8)}:$revision"
     }
 
     override suspend fun forget(changeIds: List<String>) {

@@ -1,6 +1,7 @@
 package com.lexidex.app.data.userdb
 
 import androidx.sqlite.SQLiteConnection
+import com.lexidex.app.data.sync.toClientChange
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import java.nio.file.Files
@@ -254,6 +255,109 @@ class UserDatabaseMigrationTest {
         )
     }
 
+    /**
+     * La cadena entera hasta v7 (10.10b), sobre la base v2 de siempre.
+     *
+     * Lo que importa de la 6 -> 7 es el cursor: mientras el telefono hablaba v1, un hub v2 le
+     * salteaba las copias de los otros dispositivos, y si el cursor no vuelve a 0 no las ve nunca. Y
+     * que las columnas nuevas queden **exactamente** como las declara Room, que es donde falla una
+     * migracion sin avisar hasta que la base no abre.
+     */
+    @Test
+    fun `v7 gives copies a sync revision and sends every hub cursor back to zero`() = runTest {
+        MIGRATION_2_3.migrate(connection)
+        MIGRATION_3_4.migrate(connection)
+        MIGRATION_4_5.migrate(connection)
+        MIGRATION_5_6.migrate(connection)
+        connection.execSQL(
+            "INSERT INTO term_versions(uid, slug, origin, summary, content, content_sha256, " +
+                "retrieved_at, source_url, is_active, created_at, extent) VALUES " +
+                "('ver_1', 'poligenismo', 'package', '', 'texto', 'f46e3b17a6b639e5efddc3d1498ad73491599c22220f7ef6e14772f4ee25b913', '2026-08-19T00:00:00Z', " +
+                "'https://es.wikipedia.org/wiki/Poligenismo', 1, '2026-08-19T00:00:00Z', 'FULL')",
+        )
+        connection.execSQL(
+            "INSERT INTO sync_replica_cursors(device_id, last_applied_cursor, updated_at) " +
+                "VALUES ('hub_" + "2".repeat(32) + "', 512, '2026-09-10T20:00:00Z')",
+        )
+
+        migration6To7(deviceId = "dev_" + "1".repeat(32), now = "2026-09-11T12:00:00Z").migrate(connection)
+
+        assertEquals(0L, scalarLong(connection, "SELECT last_applied_cursor FROM sync_replica_cursors"))
+        // La fecha de la ultima sincronizacion es lo que muestra Opciones: no se toca.
+        assertEquals("2026-09-10T20:00:00Z", scalarText(connection, "SELECT updated_at FROM sync_replica_cursors"))
+        // La copia que ya estaba queda anotada: su revision es la que va a tener en el hub.
+        assertEquals(1L, scalarLong(connection, "SELECT sync_revision FROM term_versions WHERE uid = 'ver_1'"))
+        assertEquals("FULL", scalarText(connection, "SELECT extent FROM term_versions WHERE uid = 'ver_1'"))
+        assertEquals(
+            listOf("slug", "origin", "revision"),
+            tableColumns(connection, "term_active_sync"),
+        )
+        assertEquals(listOf("slug", "origin"), tablePrimaryKey(connection, "term_active_sync"))
+        assertEquals("ok", scalarText(connection, "PRAGMA integrity_check"))
+    }
+
+
+    /**
+     * Las copias que el telefono tenia **antes** de saber sincronizarlas.
+     *
+     * Se guardaron cuando nada las anotaba, y nada las vuelve a mirar: sin sembrarlas en la bandeja
+     * no llegarian nunca al hub. Lo que se prueba es que entren, en el orden que el hub necesita -la
+     * copia antes que la eleccion, porque el hub rechaza elegir una copia que no tiene-, y sobre todo
+     * que **cada fila pase el lector estricto**: una sola invalida tumbaria el pedido entero.
+     */
+    @Test
+    fun `v7 seeds the copies it already had, copy before choice, and skips an empty one`() = runTest {
+        MIGRATION_2_3.migrate(connection)
+        MIGRATION_3_4.migrate(connection)
+        MIGRATION_4_5.migrate(connection)
+        MIGRATION_5_6.migrate(connection)
+        val intro = "El poligenismo es una teoria."
+        val sha = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(intro.toByteArray()).joinToString("") { "%02x".format(it) }
+        connection.execSQL(
+            "INSERT INTO term_versions(uid, slug, origin, summary, content, content_sha256, " +
+                "retrieved_at, source_url, is_active, created_at, extent) VALUES " +
+                "('ver_1', 'poligenismo', 'package', '', '$intro', '$sha', '2026-08-19T00:00:00Z', " +
+                "'https://es.wikipedia.org/wiki/Poligenismo', 1, '2026-08-19T00:00:00Z', 'INTRO')",
+        )
+        // Una copia vacia: hoy se puede crear al actualizar un termino que no tenia texto. No es una
+        // copia de nada, y el contrato la rechaza.
+        connection.execSQL(
+            "INSERT INTO term_versions(uid, slug, origin, summary, content, content_sha256, " +
+                "retrieved_at, source_url, is_active, created_at, extent) VALUES " +
+                "('ver_2', 'vacio', 'package', '', '', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', " +
+                "'2026-08-19T00:00:00Z', '', 0, '2026-08-19T00:00:00Z', 'INTRO')",
+        )
+
+        migration6To7(deviceId = "dev_" + "1".repeat(32), now = "2026-09-11T12:00:00Z").migrate(connection)
+
+        assertEquals(
+            listOf("term_version", "term_active"),
+            queryTextColumn(connection, "SELECT entity_type FROM sync_journal ORDER BY cursor", 0),
+        )
+        // Cada fila sembrada, leida como la va a mandar el telefono, pasa el lector estricto v2.
+        connection.prepare(
+            "SELECT change_id, entity_type, entity_id_json, operation, revision, changed_at, payload_json " +
+                "FROM sync_journal ORDER BY cursor",
+        ).use { statement ->
+            while (statement.step()) {
+                val change = com.lexidex.app.data.userdb.entity.SyncJournalEntity(
+                    sourceDeviceId = "dev_" + "1".repeat(32),
+                    changeId = statement.getText(0),
+                    entityType = statement.getText(1),
+                    entityIdJson = statement.getText(2),
+                    operation = statement.getText(3),
+                    revision = statement.getLong(4),
+                    changedAt = statement.getText(5),
+                    payloadJson = statement.getText(6),
+                ).toClientChange("dev_" + "1".repeat(32))
+                com.lexidex.app.domain.sync.validateOutgoingChange(change)
+                assertEquals(0L, change.baseRevision)
+            }
+        }
+        assertEquals(1L, scalarLong(connection, "SELECT revision FROM term_active_sync"))
+        assertEquals(0L, scalarLong(connection, "SELECT sync_revision FROM term_versions WHERE uid = 'ver_2'"))
+    }
     private fun tableColumns(connection: SQLiteConnection, table: String): List<String> =
         queryTextColumn(connection, "PRAGMA table_info(`$table`)", 1)
 

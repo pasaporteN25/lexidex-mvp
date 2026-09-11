@@ -25,6 +25,16 @@ interface SyncStorageDao {
     @Query("SELECT * FROM sync_journal ORDER BY cursor LIMIT :limit")
     suspend fun pendingChanges(limit: Int): List<SyncJournalEntity>
 
+    /**
+     * Lo pendiente que un hub de esa version puede leer (10.10b).
+     *
+     * Filtrado en la consulta y no despues: si las primeras doscientas filas fueran copias y el
+     * hub hablara v1, filtrar el resultado dejaria un lote vacio y los cambios v1 de atras no
+     * saldrian nunca.
+     */
+    @Query("SELECT * FROM sync_journal WHERE entity_type IN (:entityTypes) ORDER BY cursor LIMIT :limit")
+    suspend fun pendingChangesOf(limit: Int, entityTypes: List<String>): List<SyncJournalEntity>
+
     @Query("SELECT COUNT(*) FROM sync_journal")
     suspend fun pendingCount(): Long
 
