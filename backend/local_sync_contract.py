@@ -6,7 +6,15 @@ from urllib.parse import urlparse
 
 
 SYNC_PROTOCOL_NAME = "lexidex-local-sync"
+# v1 es la capa personal original; v2 es v1 mas las copias fechadas de un articulo (10.10b).
+# Un hub habla las dos, y cada documento dice cual habla: un lector v1 rechaza el documento entero
+# ante un `entity_type` que no conoce, asi que mandarle una copia a un telefono viejo lo dejaria sin
+# poder sincronizar nada. ADR 0004 lo previo: "un cambio incompatible sera deliberadamente visible
+# y exigira v2".
 SYNC_PROTOCOL_VERSION = 1
+SYNC_PROTOCOL_V2 = 2
+SUPPORTED_SYNC_PROTOCOL_VERSIONS = frozenset({1, 2})
+LATEST_SYNC_PROTOCOL_VERSION = SYNC_PROTOCOL_V2
 MAX_SYNC_REQUEST_BYTES = 1024 * 1024
 MAX_SYNC_CHANGES = 200
 DEFAULT_SYNC_PULL_LIMIT = 100
@@ -25,13 +33,29 @@ SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 LANGUAGE_PATTERN = re.compile(r"^(?:und|[a-z]{2,3}(?:-[a-z0-9]{2,8})*)$")
 CURSOR_PATTERN = re.compile(r"^(?:0|[1-9][0-9]{0,18})$")
 
-ENTITY_TYPES = {
-    "personal_term",
-    "favorite",
-    "history",
-    "collection",
-    "collection_member",
-}
+ENTITY_TYPES_V1 = frozenset(
+    {
+        "personal_term",
+        "favorite",
+        "history",
+        "collection",
+        "collection_member",
+    }
+)
+TERM_VERSION_ENTITY = "term_version"
+TERM_ACTIVE_ENTITY = "term_active"
+ENTITY_TYPES_V2 = ENTITY_TYPES_V1 | {TERM_VERSION_ENTITY, TERM_ACTIVE_ENTITY}
+TERM_VERSION_EXTENTS = frozenset({"INTRO", "FULL"})
+
+# Campos que puede traer un `entity_id`. `content_sha256` solo existe en v2: en un documento v1
+# sigue siendo una clave desconocida, igual que para un lector viejo.
+_IDENTITY_FIELDS_V1 = frozenset({"uid", "collection_uid", "origin", "slug"})
+_IDENTITY_FIELDS_V2 = _IDENTITY_FIELDS_V1 | {"content_sha256"}
+
+
+def entity_types_for(version):
+    """Que entidades puede nombrar un documento de esa version."""
+    return ENTITY_TYPES_V2 if version >= SYNC_PROTOCOL_V2 else ENTITY_TYPES_V1
 OPERATIONS = {"upsert", "delete"}
 ACKNOWLEDGEMENT_STATUSES = {"applied", "duplicate", "conflict", "rejected"}
 CHANGE_PROBLEM_CODES = {
@@ -70,7 +94,7 @@ class SyncContractError(ValueError):
 
 def parse_exchange_request(text):
     request = _decode_document(text)
-    _validate_envelope(request, {"request_id"})
+    version = _validate_envelope(request, {"request_id"})
     _require_exact_keys(
         request,
         {
@@ -100,7 +124,7 @@ def parse_exchange_request(text):
     seen = set()
     for raw_change in changes:
         change = _require_object(raw_change, "change")
-        _validate_client_change(change)
+        _validate_client_change(change, version)
         change_id = change["change_id"]
         if change_id in seen:
             _invalid("duplicate_change_id", "El lote repite un change_id.")
@@ -112,7 +136,7 @@ def parse_exchange_request(text):
 
 def parse_exchange_response(text):
     response = _decode_document(text)
-    _validate_envelope(response, {"request_id"})
+    version = _validate_envelope(response, {"request_id"})
     _require_exact_keys(
         response,
         {
@@ -142,7 +166,7 @@ def parse_exchange_response(text):
     previous_cursor = -1
     for raw_change in changes:
         change = _require_object(raw_change, "change")
-        _validate_server_change(change)
+        _validate_server_change(change, version)
         cursor = _cursor_number(change["cursor"])
         if cursor <= previous_cursor:
             _invalid("invalid_request", "Los cambios del servidor no estan ordenados por cursor.")
@@ -196,18 +220,21 @@ def _validate_envelope(document, required):
     for field in required:
         if field not in document:
             _invalid("invalid_request", f"Falta {field}.")
-    _validate_protocol(document.get("protocol"), document.get("version"))
+    version = _validate_protocol(document.get("protocol"), document.get("version"))
     _require_pattern(document["request_id"], REQUEST_ID_PATTERN, "invalid_request", "request_id")
+    return version
 
 
 def _validate_protocol(protocol, version):
     if protocol != SYNC_PROTOCOL_NAME:
         _invalid("unsupported_protocol", "El protocolo solicitado no es Lexidex local sync.")
-    if _require_int(version, "version") != SYNC_PROTOCOL_VERSION:
+    number = _require_int(version, "version")
+    if number not in SUPPORTED_SYNC_PROTOCOL_VERSIONS:
         _invalid("unsupported_version", f"La version {version} del protocolo no esta soportada.")
+    return number
 
 
-def validate_client_change(change):
+def validate_client_change(change, version=LATEST_SYNC_PROTOCOL_VERSION):
     """
     Valida una mutacion suelta, fuera de un exchange.
 
@@ -215,11 +242,11 @@ def validate_client_change(change):
     pasar exactamente los mismos controles que una que llego por la red, porque despues viaja a
     una replica que la va a leer con el lector estricto.
     """
-    _validate_client_change(change)
+    _validate_client_change(change, version)
     return change
 
 
-def _validate_client_change(change):
+def _validate_client_change(change, version):
     _require_exact_keys(
         change,
         {
@@ -246,10 +273,11 @@ def _validate_client_change(change):
         changed_at=change["changed_at"],
         payload=change["payload"],
         revision_can_be_zero=True,
+        version=version,
     )
 
 
-def _validate_server_change(change):
+def _validate_server_change(change, version):
     _require_exact_keys(
         change,
         {
@@ -283,6 +311,7 @@ def _validate_server_change(change):
         changed_at=change["changed_at"],
         payload=change["payload"],
         revision_can_be_zero=False,
+        version=version,
     )
 
 
@@ -296,8 +325,9 @@ def _validate_common_change(
     changed_at,
     payload,
     revision_can_be_zero,
+    version,
 ):
-    if not isinstance(entity_type, str) or entity_type not in ENTITY_TYPES:
+    if not isinstance(entity_type, str) or entity_type not in entity_types_for(version):
         _invalid("invalid_change", "entity_type no es valido.")
     if not isinstance(operation, str) or operation not in OPERATIONS:
         _invalid("invalid_change", "operation no es valida.")
@@ -313,22 +343,35 @@ def _validate_common_change(
         _invalid("unsupported_payload_version", "payload_version no esta soportada.")
     _require_timestamp(changed_at, "changed_at")
     identity = _require_object(entity_id, "entity_id", "invalid_change")
-    _validate_entity_id(entity_type, identity)
+    _validate_entity_id(entity_type, identity, version)
     _validate_payload(entity_type, identity, operation, numeric_payload_version, payload)
 
 
-def _validate_entity_id(entity_type, identity):
+def _validate_entity_id(entity_type, identity, version):
+    fields = _IDENTITY_FIELDS_V2 if version >= SYNC_PROTOCOL_V2 else _IDENTITY_FIELDS_V1
     if entity_type == "personal_term":
-        _require_nullable_union_keys(identity, {"uid"})
+        _require_nullable_union_keys(identity, {"uid"}, fields)
         _require_pattern(identity["uid"], PERSONAL_UID_PATTERN, "invalid_change", "entity_id.uid")
     elif entity_type == "collection":
-        _require_nullable_union_keys(identity, {"uid"})
+        _require_nullable_union_keys(identity, {"uid"}, fields)
         _require_pattern(identity["uid"], COLLECTION_UID_PATTERN, "invalid_change", "entity_id.uid")
-    elif entity_type in {"favorite", "history"}:
-        _require_nullable_union_keys(identity, {"origin", "slug"})
+    elif entity_type in {"favorite", "history", TERM_ACTIVE_ENTITY}:
+        _require_nullable_union_keys(identity, {"origin", "slug"}, fields)
         _validate_reference(identity["origin"], identity["slug"])
+    elif entity_type == TERM_VERSION_ENTITY:
+        # La copia se identifica por su contenido y no por un uid: dos dispositivos que traen la
+        # misma revision de un articulo producen la misma entidad. Solo es cierto desde 4.7, cuando
+        # la web y el telefono empezaron a derivar los mismos bytes del mismo articulo.
+        _require_nullable_union_keys(identity, {"origin", "slug", "content_sha256"}, fields)
+        _validate_reference(identity["origin"], identity["slug"])
+        _require_pattern(
+            identity["content_sha256"],
+            SHA256_PATTERN,
+            "invalid_change",
+            "entity_id.content_sha256",
+        )
     else:
-        _require_nullable_union_keys(identity, {"collection_uid", "origin", "slug"})
+        _require_nullable_union_keys(identity, {"collection_uid", "origin", "slug"}, fields)
         _require_pattern(
             identity["collection_uid"],
             COLLECTION_UID_PATTERN,
@@ -362,6 +405,10 @@ def _validate_payload(entity_type, identity, operation, payload_version, payload
         _validate_term_payload(identity["uid"], payload_version, value)
     elif entity_type == "collection":
         _validate_collection_payload(value)
+    elif entity_type == TERM_VERSION_ENTITY:
+        _validate_term_version_payload(identity, value)
+    elif entity_type == TERM_ACTIVE_ENTITY:
+        _validate_term_active_payload(value)
     else:
         _validate_timestamp_payload(value)
 
@@ -497,6 +544,43 @@ def _validate_timestamp_payload(payload):
     _require_timestamp(payload["at"], "at")
 
 
+def _validate_term_version_payload(identity, payload):
+    """
+    Una copia fechada. Su identidad **es** el hash del contenido, asi que se verifica: sin esto un
+    par podria mandar un texto con la identidad de otro, y como la copia no tiene uid nada mas lo
+    detectaria.
+    """
+    _require_exact_keys(
+        payload,
+        {"summary", "content", "retrieved_at", "source_url", "extent", "revision_id"},
+        "invalid_change",
+    )
+    _require_text(payload["summary"], 2000, "summary", "invalid_change", allow_blank=True)
+    content = _require_text(payload["content"], 100_000, "content", "invalid_change")
+    if hashlib.sha256(content.encode("utf-8")).hexdigest() != identity["content_sha256"]:
+        _invalid("invalid_change", "content_sha256 no corresponde al contenido de la copia.")
+    _require_timestamp(payload["retrieved_at"], "retrieved_at")
+    source_url = _require_text(
+        payload["source_url"], 2048, "source_url", "invalid_change", allow_blank=True
+    )
+    if source_url:
+        parsed = urlparse(source_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            _invalid("invalid_change", "source_url no es una URL http valida.")
+    if payload["extent"] not in TERM_VERSION_EXTENTS:
+        _invalid("invalid_change", "extent no es valido.")
+    revision_id = payload["revision_id"]
+    if revision_id is not None and _require_int(revision_id, "revision_id", "invalid_change") < 1:
+        _invalid("invalid_change", "revision_id no es valido.")
+
+
+def _validate_term_active_payload(payload):
+    """Cual copia se lee. Apunta a una copia por su hash; que exista lo decide el hub, no el lector."""
+    _require_exact_keys(payload, {"content_sha256", "at"}, "invalid_change")
+    _require_pattern(payload["content_sha256"], SHA256_PATTERN, "invalid_change", "content_sha256")
+    _require_timestamp(payload["at"], "at")
+
+
 def _validate_acknowledgement(acknowledgement):
     _require_allowed_keys(
         acknowledgement,
@@ -613,8 +697,7 @@ def _require_allowed_keys(value, required, optional, code="invalid_request"):
         _invalid(code, "El documento contiene campos ausentes o desconocidos.")
 
 
-def _require_nullable_union_keys(value, required):
-    all_fields = {"uid", "collection_uid", "origin", "slug"}
+def _require_nullable_union_keys(value, required, all_fields=_IDENTITY_FIELDS_V1):
     _require_allowed_keys(
         value,
         required=required,

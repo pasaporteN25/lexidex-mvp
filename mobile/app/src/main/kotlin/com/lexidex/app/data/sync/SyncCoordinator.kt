@@ -24,7 +24,12 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private const val MAX_PAGES_PER_SYNC = 50
 private const val TOMBSTONE_RETENTION_DAYS = 30L
-private val requestJson = Json { encodeDefaults = true }
+/**
+ * El codificador de los pedidos. `internal` para que `LocalSyncContractV2Test` pruebe **este** y no una
+ * copia de su configuracion: con `encodeDefaults` los nulls se escriben, y un campo de identidad v2
+ * que se colara en un pedido v1 dejaria al telefono sin poder hablar con un hub viejo.
+ */
+internal val requestJson = Json { encodeDefaults = true }
 private val ACCEPTED_STATUSES = setOf("applied", "duplicate")
 
 internal fun plusRetention(deletedAt: String): String = try {

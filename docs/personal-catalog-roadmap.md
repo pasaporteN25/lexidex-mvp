@@ -1738,12 +1738,86 @@ segundo plano mientras el proyecto no tome `androidx.work`.
       clear`, importadas, 23 recuperadas en 12 terminos con exactamente una
       activa cada uno y las 23 en el indice de busqueda.
       Siete tests de la regla mas dos del formato.
-- [ ] **10.10b** _(Opus 5 · L)_ Que las copias viajen tambien por la
-      sincronizacion. Es lo caro de los dos y hay que decidir antes si tiene
-      sentido: son copias del mismo articulo publico, cada dispositivo puede
-      volver a traerlas por su cuenta, y sumarlas al contrato (ADR 0004) fija una
-      lista de tablas que despues no se cambia gratis. Con el respaldo cubierto,
-      ya no hay perdida de datos silenciosa.
+- [ ] **10.10b** _(Opus 5 · XL)_ Que las copias viajen tambien por la
+      sincronizacion. **Decidido el 2026-09-11: si.** Se planteo el costo -una
+      copia completa pesa 8,5 KB de mediana desde la epica 4, ~13 veces lo que
+      pesaba cuando se anoto esta tarea- y Lucas eligio avanzar igual.
+
+      **Por que no alcanza con sumar una tabla.** Los dos lectores del contrato
+      rechazan el **documento entero** ante un `entity_type` que no conocen: no
+      descartan el cambio, lanzan. Si un hub nuevo le mandara una copia a un
+      telefono con un build viejo, ese telefono dejaria de poder sincronizar
+      nada. Es exactamente el caso que ADR 0004 previo: "un cambio incompatible
+      sera deliberadamente visible y exigira v2". Por eso esto es el
+      **protocolo v2**, y v1 sigue funcionando sin cambios.
+
+      **Diseno.** Dos entidades nuevas, y no una:
+
+      - `term_version` es la copia, identificada por **`{origin, slug,
+        content_sha256}`** y no por un uid. Dos dispositivos que traen la misma
+        revision de un articulo producen la misma entidad, sin conflicto posible.
+        Eso solo es cierto desde 4.7: antes la web y el telefono derivaban bytes
+        distintos del mismo articulo y los hashes nunca habrian coincidido.
+        Semantica de presencia, como `favorite`: `upsert` existe, `delete` no.
+      - `term_active` es cual copia se lee, identificado por `{origin, slug}`.
+        Un valor por termino, como `history`: el hub ordena las elecciones
+        concurrentes. Asi "una sola copia activa por termino" vale **por
+        construccion** y no porque tres implementaciones apliquen bien una regla
+        derivada. La eleccion viaja porque decide que se lee y que se busca: si
+        uno se queda con la copia vieja en el telefono, la web tiene que mostrar
+        esa y no otra.
+
+      **Dos trampas del cursor, resueltas en el diseno:**
+
+      - Un hub nuevo le sirve a un cliente v1 paginas **sin** estas entidades.
+        El contrato exige que `next_cursor` sea el cursor del ultimo cambio
+        devuelto, y los clientes viejos ya instalados lo validan; asi que la
+        pagina se corta en el ultimo cambio visible, y si todo lo leido eran
+        copias se devuelve vacia con el cursor adelantado, que es el unico caso
+        en que el contrato lo permite.
+      - Un cliente que pasa de v1 a v2 ya dejo atras esas copias. La primera vez
+        que habla v2, vuelve el cursor a 0: aplicar lo que baja es idempotente
+        -el telefono aplica el estado tal cual, revision incluida-, asi que
+        repasar el journal una vez es seguro.
+
+      **Subtareas:**
+
+      - [x] **10.10b-1** ✅ Hecho el 2026-09-11. Contrato v2 en los dos lectores,
+            con fixtures compartidas: v2 acepta las dos entidades, v1 las sigue
+            rechazando. Normativo en `contracts/local-sync/v2/README.md`.
+
+            Salio una trampa que ningun test de v2 hubiera visto: el cliente
+            codifica con `encodeDefaults = true`, que **escribe los nulls**. Con
+            solo agregar `content_sha256` a `SyncEntityId`, un telefono
+            actualizado habria mandado `"content_sha256": null` en cada
+            identidad de cada pedido, v1 incluido, y un hub viejo lo habria
+            rechazado por clave desconocida: **actualizar el telefono lo dejaba
+            sin sincronizar**. El campo lleva `@EncodeDefault(NEVER)`, y el test
+            prueba el codificador real del cliente, no una copia de su
+            configuracion.
+
+            La otra cara: Kotlin decodifica a data classes, donde una clave
+            ausente y una en null quedan iguales, y Python las distingue. Para
+            que los dos lectores rechacen el mismo documento, Kotlin mira las
+            claves crudas de las identidades v1 antes de decodificar.
+
+            La identidad de una copia **es** el hash de su contenido, y los dos
+            lectores lo verifican: sin eso un par podria mandar un texto con la
+            identidad de otro y, sin uid, nada mas lo detectaria.
+
+            Once tests en Python y diez en Kotlin sobre las mismas seis fixtures;
+            los 149 y 294 anteriores siguen verdes, que es la prueba de que v1 no
+            cambio.
+      - [ ] **10.10b-2** Hub: tablas en la base de la web, reglas de aplicacion,
+            bajas derivadas (borrar un termino propio borra sus copias; borrar
+            la copia activa borra la eleccion) y paginas v1 filtradas.
+      - [ ] **10.10b-3** Android: registrar las copias en el journal, aplicar las
+            que bajan, hablar v2 y caer a v1 ante `426 unsupported_version`.
+      - [ ] **10.10b-4** Punta a punta: dos replicas v2 y una v1 contra un hub
+            real. Las copias viajan, la v1 sigue sincronizando sin verlas, y el
+            mismo articulo traido de los dos lados converge en una sola entidad.
+      - [ ] **10.10b-5** La web muestra de que copia sale el texto -extension y
+            revision-, que es la mitad de 4.7 que quedo bloqueada.
 - [x] **10.9** ✅ Hecho el 2026-09-03. El paquete vigente pasa a ser
       **v0.5.1-licensed.1**, con `license_name` en 4.480 de las 4.539 fuentes.
       `build_corpus.py` la escribe al construir segun el proyecto de origen, y

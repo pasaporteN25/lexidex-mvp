@@ -1,0 +1,31 @@
+{
+  "protocol": "lexidex-local-sync",
+  "version": 1,
+  "request_id": "req_00000000000000000000000000000002",
+  "device_id": "dev_11111111111111111111111111111111",
+  "package": {
+    "package_id": "lexidex-core",
+    "package_version": "0.5.1-licensed.1"
+  },
+  "since_cursor": "210",
+  "limit": 100,
+  "changes": [
+    {
+      "change_id": "chg_d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4",
+      "device_id": "dev_11111111111111111111111111111111",
+      "entity_type": "favorite",
+      "entity_id": {
+        "origin": "package",
+        "slug": "poligenismo",
+        "content_sha256": null
+      },
+      "operation": "upsert",
+      "base_revision": 0,
+      "payload_version": 1,
+      "changed_at": "2026-09-08T03:21:00Z",
+      "payload": {
+        "at": "2026-09-08T03:21:00Z"
+      }
+    }
+  ]
+}

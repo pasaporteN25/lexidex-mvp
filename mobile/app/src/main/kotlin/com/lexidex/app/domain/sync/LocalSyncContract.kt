@@ -3,6 +3,8 @@ package com.lexidex.app.domain.sync
 import java.net.URI
 import java.time.Instant
 import java.security.MessageDigest
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -11,9 +13,27 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 const val SYNC_PROTOCOL_NAME = "lexidex-local-sync"
+/**
+ * v1 es la capa personal original; v2 es v1 mas las copias fechadas de un articulo (10.10b).
+ *
+ * Cada documento dice cual habla. Un lector v1 rechaza el documento **entero** ante un
+ * `entity_type` que no conoce, asi que un hub que le mandara una copia a un telefono viejo lo
+ * dejaria sin poder sincronizar nada: ADR 0004 lo previo, "un cambio incompatible sera
+ * deliberadamente visible y exigira v2".
+ */
 const val SYNC_PROTOCOL_VERSION = 1
+const val SYNC_PROTOCOL_V2 = 2
+const val LATEST_SYNC_PROTOCOL_VERSION = SYNC_PROTOCOL_V2
+val SUPPORTED_SYNC_PROTOCOL_VERSIONS = setOf(SYNC_PROTOCOL_VERSION, SYNC_PROTOCOL_V2)
+
+const val TERM_VERSION_ENTITY = "term_version"
+const val TERM_ACTIVE_ENTITY = "term_active"
 const val MAX_SYNC_REQUEST_BYTES = 1024 * 1024
 const val MAX_SYNC_CHANGES = 200
 const val DEFAULT_SYNC_PULL_LIMIT = 100
@@ -37,13 +57,19 @@ private val SHA256_PATTERN = Regex("^[a-f0-9]{64}$")
 private val LANGUAGE_PATTERN = Regex("^(?:und|[a-z]{2,3}(?:-[a-z0-9]{2,8})*)$")
 private val CURSOR_PATTERN = Regex("^(?:0|[1-9][0-9]{0,18})$")
 
-private val ENTITY_TYPES = setOf(
+private val ENTITY_TYPES_V1 = setOf(
     "personal_term",
     "favorite",
     "history",
     "collection",
     "collection_member",
 )
+private val ENTITY_TYPES_V2 = ENTITY_TYPES_V1 + setOf(TERM_VERSION_ENTITY, TERM_ACTIVE_ENTITY)
+private val TERM_VERSION_EXTENTS = setOf("INTRO", "FULL")
+
+/** Que entidades puede nombrar un documento de esa version. */
+fun entityTypesFor(version: Int): Set<String> =
+    if (version >= SYNC_PROTOCOL_V2) ENTITY_TYPES_V2 else ENTITY_TYPES_V1
 private val OPERATIONS = setOf("upsert", "delete")
 private val ACKNOWLEDGEMENT_STATUSES = setOf("applied", "duplicate", "conflict", "rejected")
 private val CHANGE_PROBLEM_CODES = setOf(
@@ -88,6 +114,16 @@ data class SyncEntityId(
     @SerialName("collection_uid") val collectionUid: String? = null,
     val origin: String? = null,
     val slug: String? = null,
+    /**
+     * Solo en v2, y **nunca se serializa cuando es null**. El cliente codifica con
+     * `encodeDefaults = true`, que escribe los nulls: sin esto un telefono nuevo mandaria
+     * `"content_sha256": null` hasta en un pedido v1, y un hub viejo lo rechazaria por clave
+     * desconocida. Es decir, actualizar el telefono lo dejaria sin sincronizar.
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("content_sha256")
+    val contentSha256: String? = null,
 )
 
 @Serializable
@@ -179,12 +215,36 @@ private val contractJson = Json {
 
 fun parseSyncExchangeRequest(text: String): SyncExchangeRequest {
     requireMaximumBytes(text)
+    rejectV2IdentityFieldsInV1(text)
     return decodeContract<SyncExchangeRequest>(text).also(::validateRequest)
 }
 
 fun parseSyncExchangeResponse(text: String): SyncExchangeResponse {
     requireMaximumBytes(text)
+    rejectV2IdentityFieldsInV1(text)
     return decodeContract<SyncExchangeResponse>(text).also(::validateResponse)
+}
+
+/**
+ * Un documento v1 no puede traer `content_sha256` en una identidad, **ni siquiera en null**.
+ *
+ * Kotlin decodifica a data classes, donde una clave ausente y una en null quedan iguales. Python
+ * las distingue y rechaza la clave, que es lo que haria un lector viejo. Sin mirar el texto crudo
+ * los dos lectores aceptarian documentos distintos, y ADR 0004 lo prohibe: "no una
+ * interpretacion silenciosa distinta entre Kotlin y Python".
+ */
+private fun rejectV2IdentityFieldsInV1(text: String) {
+    val document = runCatching { contractJson.parseToJsonElement(text).jsonObject }.getOrNull()
+        ?: return // decodeContract reporta el JSON invalido con su propio codigo
+    val version = (document["version"] as? JsonPrimitive)?.longOrNull ?: return
+    if (version >= SYNC_PROTOCOL_V2) return
+    val changes = runCatching { document["changes"]?.jsonArray }.getOrNull() ?: return
+    changes.forEach { change ->
+        val identity = runCatching { change.jsonObject["entity_id"]?.jsonObject }.getOrNull()
+        if (identity != null && "content_sha256" in identity) {
+            invalidContract("invalid_change", "entity_id no coincide con entity_type.")
+        }
+    }
 }
 
 fun parseSyncErrorResponse(text: String): SyncErrorResponse {
@@ -220,7 +280,7 @@ private fun validateRequest(request: SyncExchangeRequest) {
         if (change.deviceId != request.deviceId) {
             invalidContract("invalid_request", "El device_id del cambio no coincide con el lote.")
         }
-        validateClientChange(change)
+        validateClientChange(change, request.version)
     }
 }
 
@@ -237,7 +297,7 @@ private fun validateResponse(response: SyncExchangeResponse) {
 
     var previousCursor = -1L
     response.changes.forEach { change ->
-        validateServerChange(change)
+        validateServerChange(change, response.version)
         val cursor = cursorNumber(change.cursor)
         if (cursor <= previousCursor) {
             invalidContract(
@@ -273,7 +333,7 @@ private fun validateProtocol(protocol: String, version: Int) {
     if (protocol != SYNC_PROTOCOL_NAME) {
         invalidContract("unsupported_protocol", "El protocolo solicitado no es Lexidex local sync.")
     }
-    if (version != SYNC_PROTOCOL_VERSION) {
+    if (version !in SUPPORTED_SYNC_PROTOCOL_VERSIONS) {
         invalidContract(
             "unsupported_version",
             "La version $version del protocolo no esta soportada.",
@@ -281,7 +341,7 @@ private fun validateProtocol(protocol: String, version: Int) {
     }
 }
 
-private fun validateClientChange(change: SyncClientChange) {
+private fun validateClientChange(change: SyncClientChange, version: Int) {
     requirePattern(change.changeId, CHANGE_ID_PATTERN, "invalid_change", "change_id")
     requirePattern(change.deviceId, DEVICE_ID_PATTERN, "invalid_change", "device_id")
     validateCommonChange(
@@ -293,10 +353,11 @@ private fun validateClientChange(change: SyncClientChange) {
         changedAt = change.changedAt,
         payload = change.payload,
         revisionCanBeZero = true,
+        version = version,
     )
 }
 
-private fun validateServerChange(change: SyncServerChange) {
+private fun validateServerChange(change: SyncServerChange, version: Int) {
     validateCursor(change.cursor)
     requirePattern(change.changeId, CHANGE_ID_PATTERN, "invalid_change", "change_id")
     requirePattern(change.sourceDeviceId, DEVICE_ID_PATTERN, "invalid_change", "source_device_id")
@@ -309,6 +370,7 @@ private fun validateServerChange(change: SyncServerChange) {
         changedAt = change.changedAt,
         payload = change.payload,
         revisionCanBeZero = false,
+        version = version,
     )
 }
 
@@ -321,8 +383,11 @@ private fun validateCommonChange(
     changedAt: String,
     payload: JsonObject?,
     revisionCanBeZero: Boolean,
+    version: Int,
 ) {
-    if (entityType !in ENTITY_TYPES) invalidContract("invalid_change", "entity_type no es valido.")
+    if (entityType !in entityTypesFor(version)) {
+        invalidContract("invalid_change", "entity_type no es valido.")
+    }
     if (operation !in OPERATIONS) invalidContract("invalid_change", "operation no es valida.")
     if (revision < if (revisionCanBeZero) 0 else 1) {
         invalidContract("invalid_change", "La revision no es valida.")
@@ -357,9 +422,21 @@ private fun validateEntityId(entityType: String, id: SyncEntityId) {
                 "entity_id.uid",
             )
         }
-        "favorite", "history" -> {
+        "favorite", "history", TERM_ACTIVE_ENTITY -> {
             requireIdentityFields(id, setOf("origin", "slug"))
             validateReference(id.origin.orEmpty(), id.slug.orEmpty())
+        }
+        TERM_VERSION_ENTITY -> {
+            // La copia se identifica por su contenido y no por un uid: dos dispositivos que
+            // traen la misma revision de un articulo producen la misma entidad.
+            requireIdentityFields(id, setOf("origin", "slug", "content_sha256"))
+            validateReference(id.origin.orEmpty(), id.slug.orEmpty())
+            requirePattern(
+                id.contentSha256.orEmpty(),
+                SHA256_PATTERN,
+                "invalid_change",
+                "entity_id.content_sha256",
+            )
         }
         "collection_member" -> {
             requireIdentityFields(id, setOf("collection_uid", "origin", "slug"))
@@ -380,6 +457,7 @@ private fun requireIdentityFields(id: SyncEntityId, expected: Set<String>) {
         if (id.collectionUid != null) add("collection_uid")
         if (id.origin != null) add("origin")
         if (id.slug != null) add("slug")
+        if (id.contentSha256 != null) add("content_sha256")
     }
     if (actual != expected) {
         invalidContract("invalid_change", "entity_id no coincide con entity_type.")
@@ -416,6 +494,8 @@ private fun validatePayload(
         "personal_term" -> validateTermPayload(entityId.uid.orEmpty(), payloadVersion, value)
         "collection" -> validateCollectionPayload(value)
         "favorite", "history", "collection_member" -> validateTimestampPayload(value)
+        TERM_VERSION_ENTITY -> validateTermVersionPayload(entityId.contentSha256.orEmpty(), value)
+        TERM_ACTIVE_ENTITY -> validateTermActivePayload(value)
     }
 }
 
@@ -537,6 +617,65 @@ private fun validateCollectionPayload(payload: JsonObject) {
 private fun validateTimestampPayload(payload: JsonObject) {
     requireKeys(payload, setOf("at"))
     payload.requireTimestamp("at")
+}
+
+/**
+ * Una copia fechada. Su identidad **es** el hash del contenido, asi que se verifica: sin esto un
+ * par podria mandar un texto con la identidad de otro, y como la copia no tiene uid nada mas lo
+ * detectaria.
+ */
+private fun validateTermVersionPayload(contentSha256: String, payload: JsonObject) {
+    requireKeys(
+        payload,
+        setOf("summary", "content", "retrieved_at", "source_url", "extent", "revision_id"),
+    )
+    payload.requireString("summary", 2000, allowBlank = true)
+    val content = payload.requireString("content", 100_000)
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest(content.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+    if (digest != contentSha256) {
+        invalidContract("invalid_change", "content_sha256 no corresponde al contenido de la copia.")
+    }
+    payload.requireTimestamp("retrieved_at")
+    val sourceUrl = payload.requireString("source_url", 2048, allowBlank = true)
+    if (sourceUrl.isNotEmpty() && !isHttpUrl(sourceUrl)) {
+        invalidContract("invalid_change", "source_url no es una URL http valida.")
+    }
+    if (payload.requireString("extent", 8) !in TERM_VERSION_EXTENTS) {
+        invalidContract("invalid_change", "extent no es valido.")
+    }
+    when (val revision = payload["revision_id"]) {
+        null -> invalidContract("invalid_change", "Falta revision_id.")
+        JsonNull -> Unit
+        else -> {
+            val number = (revision as? JsonPrimitive)
+                ?.takeUnless { it.isString }
+                ?.longOrNull
+            if (number == null || number < 1) {
+                invalidContract("invalid_change", "revision_id no es valido.")
+            }
+        }
+    }
+}
+
+/** Cual copia se lee. Apunta a una copia por su hash; que exista lo decide el hub, no el lector. */
+private fun validateTermActivePayload(payload: JsonObject) {
+    requireKeys(payload, setOf("content_sha256", "at"))
+    requirePattern(
+        payload.requireString("content_sha256", 64),
+        SHA256_PATTERN,
+        "invalid_change",
+        "content_sha256",
+    )
+    payload.requireTimestamp("at")
+}
+
+private fun isHttpUrl(value: String): Boolean = try {
+    val uri = URI(value)
+    uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()
+} catch (error: Exception) {
+    false
 }
 
 private fun validateAcknowledgement(acknowledgement: SyncAcknowledgement) {

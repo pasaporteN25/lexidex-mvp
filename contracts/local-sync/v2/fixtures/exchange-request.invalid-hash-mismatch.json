@@ -1,0 +1,36 @@
+{
+  "protocol": "lexidex-local-sync",
+  "version": 2,
+  "request_id": "req_00000000000000000000000000000002",
+  "device_id": "dev_11111111111111111111111111111111",
+  "package": {
+    "package_id": "lexidex-core",
+    "package_version": "0.5.1-licensed.1"
+  },
+  "since_cursor": "210",
+  "limit": 100,
+  "changes": [
+    {
+      "change_id": "chg_d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "device_id": "dev_11111111111111111111111111111111",
+      "entity_type": "term_version",
+      "entity_id": {
+        "origin": "package",
+        "slug": "poligenismo",
+        "content_sha256": "9322967b634b0a44a8085505fe00a9e8a38970dd749dcd44907f6a54ee16815f"
+      },
+      "operation": "upsert",
+      "base_revision": 0,
+      "payload_version": 1,
+      "changed_at": "2026-09-08T03:14:50Z",
+      "payload": {
+        "summary": "teoria sobre los origenes del hombre",
+        "content": "El poligenismo es una teoria sobre los origenes del hombre que postula la existencia de diferentes linajes para las razas humanas.\n\n== Concepto ==\nAlgunos mitos de creacion de diversas culturas muestran narraciones interpretables. Una frase agregada.",
+        "retrieved_at": "2026-09-08T03:14:49Z",
+        "source_url": "https://es.wikipedia.org/wiki/Poligenismo",
+        "extent": "FULL",
+        "revision_id": 175190592
+      }
+    }
+  ]
+}
